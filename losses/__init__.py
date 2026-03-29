@@ -9,14 +9,14 @@ CLASSES = [L1Loss, L2Loss]
 LOSSES = {c._name: c for c in CLASSES}
 
 
-def get_losses(data: Dict[str, Any]) -> List[Loss]:
-    losses = []
+def get_losses(data: Dict[str, Any]) -> Dict[str, Loss]:
+    losses = {}
     for l in data.keys():
-        lcls = LOSSES.get(c, None)
+        lcls = LOSSES.get(l, None)
         if lcls is None:
             raise KeyError(
-                f"Class '{c}' is an invalid callback class.\n Valid classes:\n{LOSSES.keys()}"
+                f"Class '{l}' is an invalid callback class.\n Valid classes:\n{LOSSES.keys()}"
             )
         kwargs = data[l]
-        losses.append(lcls(**kwargs))
+        losses[l] = lcls(**kwargs)
     return losses

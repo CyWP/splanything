@@ -1,7 +1,7 @@
 import comfy.model_management as mm
 import torch
 
-from typing import Sequence, Callable, Dict, Any, Optional
+from typing import Sequence, List, Callable, Dict, Any, Optional
 
 from primitives import Primitive
 from utils.img import ImgUtils
@@ -23,7 +23,7 @@ class Trainer:
         target: F,
         primitive: Primitive,
         optimizer: torch.optim.Optimizer,
-        losses: Sequence[Callable],
+        losses: Dict[str, Callable],
         callbacks: Sequence[Callable],
         patch_size: Optional[int] = None,
     ):
@@ -33,6 +33,7 @@ class Trainer:
         self.optimizer = optimizer
         self.losses = losses
         self.callbacks = callbacks
+        self.train_stats: Dict[int, Dict[str, Any]] = {}
 
     def call_back(self, stage: str):
         for c in self.callbacks:
@@ -55,9 +56,12 @@ class Trainer:
         self.call_back(EPOCH_START)
         self.optimizer.zero_grad()
         self.last_output = self.primitive.optim_step()
-        self.last_losses = [l(self) for l in self.losses]
-        self.last_loss = sum(self.last_losses)
+        self.last_losses = {name: l(self) for name, l in self.losses.items()}
+        self.last_loss = sum(self.last_losses.values())
         self.last_loss.backward()
         self.call_back(PRE_STEP)
         self.optimizer.step()
         self.call_back(EPOCH_END)
+
+    def log_stat(self, key: str, val: Any):
+        self.train_stats[self.epoch][key] = val
