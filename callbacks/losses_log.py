@@ -1,9 +1,6 @@
-import torch
-
-from typing import List, Optional, Any
+from typing import List
 
 from trainers import Trainer, EPOCH_END
-from utils.comfy import ComfyUtils
 
 from .generic import Callback
 

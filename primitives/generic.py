@@ -1,10 +1,8 @@
 from __future__ import annotations
-import math
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 from utils.img import ImgUtils
 
 F = torch.FloatTensor

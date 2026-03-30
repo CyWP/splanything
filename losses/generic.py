@@ -9,6 +9,7 @@ F = torch.FloatTensor
 class Loss(nn.Module):
 
     def __init__(self, weight: float, **kwargs):
+        super().__init__(self.__class__)
         self.weight = weight
 
     def compute(self, trainer: Trainer) -> F:

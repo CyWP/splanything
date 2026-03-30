@@ -1,10 +1,8 @@
-import comfy.model_management as mm
 import torch
 
-from typing import Sequence, List, Callable, Dict, Any, Optional
+from typing import Sequence, Callable, Dict, Any, Optional
 
 from primitives import Primitive
-from utils.img import ImgUtils
 
 TRAIN_START = "train_start"
 TRAIN_END = "train_end"
@@ -33,7 +31,7 @@ class Trainer:
         self.optimizer = optimizer
         self.losses = losses
         self.callbacks = callbacks
-        self.train_stats: Dict[int, Dict[str, Any]] = {}
+        self.logs: Dict[int, Dict[str, Any]] = {}
 
     def call_back(self, stage: str):
         for c in self.callbacks:
@@ -64,4 +62,9 @@ class Trainer:
         self.call_back(EPOCH_END)
 
     def log_stat(self, key: str, val: Any):
-        self.train_stats[self.epoch][key] = val
+        self.logs[self.epoch][key] = val
+
+    def log(self, msg: str):
+        if self.logs[self.epoch].get("msg", None) is None:
+            self.logs[self.epoch]["msg"] = ""
+        self.logs[self.epoch]["msg"] += f"\n{msg}"

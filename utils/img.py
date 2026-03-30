@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import math
 import torch
+import torch.nn.functional as torchF
 
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union, Sequence
 
 F = torch.FloatTensor
 
@@ -12,11 +13,11 @@ class ImgUtils:
 
     @staticmethod
     def img2tensor(img: F) -> F:
-        return img * 2 - 1
+        return (img * 2 - 1).permute(0, 3, 1, 2)
 
     @staticmethod
     def tensor2img(x: F) -> F:
-        return ((x + 1) * 2).clamp(0, 1)
+        return (((x + 1) * 2).clamp(0, 1)).permute(0, 2, 3, 1)
 
     @staticmethod
     @torch.no_grad()
@@ -83,3 +84,80 @@ class ImgUtils:
         pad_H = 0 if assembled_H == H else (assembled_H - pad_H) // 2
         pad_W = 0 if assembled_W == W else (assembled_W - pad_W) // 2
         return assembled[..., pad_H : H + pad_H, pad_W : W + pad_W]
+
+    @staticmethod
+    @torch.no_grad()
+    def gaussian_kernel(
+        kernel_size: Union[int, Sequence[int]],
+        sigma: Union[float, Sequence[float]],
+    ) -> F:
+        if isinstance(kernel_size, int):
+            kH, kW = kernel_size, kernel_size
+        elif len(kernel_size) == 1:
+            kH, kW = kernel_size[0], kernel_size[0]
+        elif len(kernel_size) == 2:
+            kH, kW = kernel_size
+        else:
+            raise Exception(
+                f"2D gaussian kernel cannot accept more than 2 axes. Kernel '{kernel_size} is too long."
+            )
+        if isinstance(sigma, int):
+            sH, sW = sigma, sigma
+        elif len(sigma) == 1:
+            sH, sW = sigma[0], sigma[0]
+        elif len(sigma) == 2:
+            sH, sW = sigma
+        else:
+            raise Exception(
+                f"2D gaussian kernel cannot accept more than 2 axes. Sigmas '{kernel_size} are too many."
+            )
+        sq2pi = (2 * math.pi) ** 0.5
+        muH = (kH - 1) / 2
+        xH = torch.exp(-0.5 * ((torch.linspace(0, kH - 1, kH) - muH) / sH) ** 2) / (
+            sH * sq2pi
+        )
+        if kH == kW and sH == sW:
+            xW = xH
+        else:
+            muW = (kW - 1) / 2
+            xW = torch.exp(-0.5 * ((torch.linspace(0, kW - 1, kW) - muW) / sW) ** 2) / (
+                sW * sq2pi
+            )
+        return (xH.unsqueeze(1) @ xW.unsqueeze(0)).unsqueeze(0).unsqueeze(0)
+
+    @staticmethod
+    def convolve(
+        img: F,
+        kernel: F,
+        match_channels: bool = False,
+        stride: Union[int, Tuple[int]] = 1,
+        padding: str = "same",
+    ) -> F:
+        Bi, Ci, Hi, Wi = img.shape
+        Ck, Gk, Hk, Wk = kernel.shape
+        if match_channels:
+            if Ck != 1 or Gk != 1:
+                raise Exception(
+                    f"Cannot match channels for kernel with non-singleton dimensions.\nKernel shape: {kernel.shape}"
+                )
+            kernel = kernel.expand(Ci, Ci, -1, -1)
+        return torchF.conv2d(img, kernel, stride=stride, padding=padding)
+
+    @staticmethod
+    def SSIM(
+        img1: F, img2: F, kernel: F, eps1: float = 0.0004, eps2: float = 0.0036
+    ) -> F:
+        mux = ImgUtils.convolve(img1, kernel, match_channels=True)
+        muy = ImgUtils.convolve(img2, kernel, match_channels=True)
+        mu2x = mux**2
+        mu2y = muy**2
+        sig2x = ImgUtils.convolve(img1**2, kernel, match_channels=True) ** 2 - mu2x
+        sig2y = ImgUtils.convolve(img2**2, kernel, match_channels=True) ** 2 - mu2y
+        sigxy = (
+            ImgUtils.convolve(img1 * img2, kernel, match_channels=True) ** 2 - mux * muy
+        )
+        return (
+            (2 * mux * muy + eps1)
+            * (sigxy + eps2)
+            / ((mu2x + mu2y + eps2) * (sig2x + sig2y + eps2))
+        )
