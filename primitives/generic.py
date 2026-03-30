@@ -12,6 +12,9 @@ B = torch.BoolTensor
 
 class Primitive(nn.Module):
 
+    def __init__(self, **kwargs):
+        super().__init__(self.__class__)
+
     @torch.no_grad()
     def prepare_for_optimization(self, target: F, patch_size: Optional[int] = None):
         H, W = target.shape[-2:]

@@ -21,6 +21,30 @@ class ImgUtils:
 
     @staticmethod
     @torch.no_grad()
+    def ensure_rgba(img: F) -> F:
+        B, C, H, W = img.shape
+        if C == 4:
+            return img
+        elif C == 3:
+            return torch.cat(
+                [img, torch.ones((B, 1, H, W), device=img.device, dtype=img.dtype)],
+                dim=1,
+            )
+        elif C == 1:
+            return torch.cat(
+                [
+                    img.repeat(1, 3, 1, 1),
+                    torch.ones((B, 1, H, W), device=img.device, dtype=img.dtype),
+                ],
+                dim=1,
+            )
+        else:
+            raise Exception(
+                f"Cannot recognize image format for tensor with shape {img.shape}"
+            )
+
+    @staticmethod
+    @torch.no_grad()
     def gen_px_coords(H: int, W: int, device: torch.device) -> F:
         H_half = 0.5 / H
         W_half = 0.5 / W
