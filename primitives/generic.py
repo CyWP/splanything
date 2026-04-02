@@ -2,7 +2,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 from utils.img import ImgUtils
 
 F = torch.FloatTensor
@@ -14,6 +14,16 @@ class Primitive(nn.Module):
 
     def __init__(self, **kwargs):
         super().__init__(self.__class__)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> Primitive:
+        primitive = cls(**data)
+        state_dict = data.get("state_dict", None)
+        if state_dict is not None:
+            with open(state_dict, "r") as f:
+                state_dict = torch.load(f)
+            primitive.load_state_dict(state_dict)
+        return primitive
 
     @torch.no_grad()
     def prepare_for_optimization(self, target: F, patch_size: Optional[int] = None):
