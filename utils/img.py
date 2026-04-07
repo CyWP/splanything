@@ -2,26 +2,55 @@ from __future__ import annotations
 
 import math
 import torch
-import torch.nn.functional as torchF
+import torch.nn.functional as F
 
 from typing import Optional, Tuple, Union, Sequence
-
-F = torch.FloatTensor
+from jaxtyping import Float
+from torch import Tensor
 
 
 class ImgUtils:
+    """Image processing utilities for tensor operations.
+
+    Static methods for converting between image and tensor formats,
+    patch extraction/assembly, Gaussian kernels, and SSIM computation.
+    """
 
     @staticmethod
-    def img2tensor(img: F) -> F:
+    def img2tensor(img: Float[Tensor, "B H W C"]) -> Float[Tensor, "B C H W"]:
+        """Convert [0,1] HWC image to [-1,1] CHW tensor.
+
+        Args:
+            img: Image tensor (B, H, W, C) in [0, 1].
+
+        Returns:
+            Tensor (B, C, H, W) in [-1, 1].
+        """
         return (img * 2 - 1).permute(0, 3, 1, 2)
 
     @staticmethod
-    def tensor2img(x: F) -> F:
+    def tensor2img(x: Float[Tensor, "B C H W"]) -> Float[Tensor, "B H W C"]:
+        """Convert [-1,1] CHW tensor to [0,1] HWC image.
+
+        Args:
+            x: Tensor (B, C, H, W) in [-1, 1].
+
+        Returns:
+            Image (B, H, W, C) in [0, 1].
+        """
         return (((x + 1) * 2).clamp(0, 1)).permute(0, 2, 3, 1)
 
     @staticmethod
     @torch.no_grad()
-    def ensure_rgba(img: F) -> F:
+    def ensure_rgba(img: Float[Tensor, "B C H W"]) -> Float[Tensor, "B 4 H W"]:
+        """Ensure image has 4 channels (RGBA).
+
+        Args:
+            img: Input tensor (B, C, H, W).
+
+        Returns:
+            RGBA tensor (B, 4, H, W).
+        """
         B, C, H, W = img.shape
         if C == 4:
             return img
@@ -45,7 +74,17 @@ class ImgUtils:
 
     @staticmethod
     @torch.no_grad()
-    def gen_px_coords(H: int, W: int, device: torch.device) -> F:
+    def gen_px_coords(H: int, W: int, device: torch.device) -> Float[Tensor, "2 H W"]:
+        """Generate normalized pixel coordinates.
+
+        Args:
+            H: Image height.
+            W: Image width.
+            device: Target device.
+
+        Returns:
+            Coordinates tensor (2, H, W) with values in [0, 1].
+        """
         H_half = 0.5 / H
         W_half = 0.5 / W
         return torch.cat(
@@ -59,7 +98,20 @@ class ImgUtils:
 
     @staticmethod
     @torch.no_grad()
-    def extract_patches(co: F, patch_size: Optional[int]) -> Tuple[F, F]:
+    def extract_patches(
+        co: Float[Tensor, "C H W"], patch_size: Optional[int]
+    ) -> Tuple[Float[Tensor, "P S 2"], Float[Tensor, "P 2"]]:
+        """Extract patches from coordinate grid.
+
+        Args:
+            co: Coordinate tensor (C, H, W).
+            patch_size: Size of patches to extract.
+
+        Returns:
+            Tuple of (patches, centers):
+                - patches: (P, S, 2) where P=num_patches, S=patch_size^2
+                - centers: (P, 2)
+        """
         if patch_size < 1:
             raise Exception("Patch size must be strictly positive integer.")
         C, H, W = co.shape
@@ -78,24 +130,49 @@ class ImgUtils:
             kernel_size=patch_size,
             stride=patch_size,
             padding=(pad_H, pad_W),
-        ).squeeze(
-            0
-        )  # [num_patches, patch_size**2, 2]
-        centers = patches.mean(dim=1)  # [num_patches, 2]
+        ).squeeze(0)
+        centers = patches.mean(dim=1)
         return patches, centers
 
     @staticmethod
     @torch.no_grad()
     def get_patches(
         H: int, W: int, device: torch.device, patch_size: Optional[int] = None
-    ) -> Tuple[F, F]:
-        return ImgUtils.extract_patches(ImgUtils.gen_coords(H, W, device), patch_size)
+    ) -> Tuple[Float[Tensor, "P S 2"], Float[Tensor, "P 2"]]:
+        """Get patches for image dimensions.
+
+        Args:
+            H: Image height.
+            W: Image width.
+            device: Target device.
+            patch_size: Optional patch size.
+
+        Returns:
+            Tuple of (patches, centers).
+        """
+        return ImgUtils.extract_patches(
+            ImgUtils.gen_px_coords(H, W, device), patch_size
+        )
 
     @staticmethod
     @torch.no_grad()
-    def assemble_patches(sampled_patches: F, H: int, W: int) -> F:
-        num_patches, patch_size_sq, C = sampled_patches.shape
-        patch_size = int(patch_size_sq**0.5)
+    def assemble_patches(
+        sampled_patches: Float[Tensor, "P S C"],
+        H: int,
+        W: int,
+    ) -> Float[Tensor, "B C H W"]:
+        """Assemble sampled patches into full image.
+
+        Args:
+            sampled_patches: Sampled patches (P, S, C) where S=patch_size^2.
+            H: Output height.
+            W: Output width.
+
+        Returns:
+            Assembled image (B, C, H, W).
+        """
+        P, S, C = sampled_patches.shape
+        patch_size = int(S**0.5)
         patches_H = math.ceil(H / patch_size)
         patches_W = math.ceil(W / patch_size)
         assembled = F.fold(
@@ -114,7 +191,16 @@ class ImgUtils:
     def gaussian_kernel(
         kernel_size: Union[int, Sequence[int]],
         sigma: Union[float, Sequence[float]],
-    ) -> F:
+    ) -> Float[Tensor, "1 1 KH KW"]:
+        """Generate 2D Gaussian kernel.
+
+        Args:
+            kernel_size: Kernel size (int or [H, W]).
+            sigma: Standard deviation (float or [H, W]).
+
+        Returns:
+            Gaussian kernel (1, 1, KH, KW).
+        """
         if isinstance(kernel_size, int):
             kH, kW = kernel_size, kernel_size
         elif len(kernel_size) == 1:
@@ -151,12 +237,24 @@ class ImgUtils:
 
     @staticmethod
     def convolve(
-        img: F,
-        kernel: F,
+        img: Float[Tensor, "B C H W"],
+        kernel: Float[Tensor, "C G KH KW"],
         match_channels: bool = False,
         stride: Union[int, Tuple[int]] = 1,
         padding: str = "same",
-    ) -> F:
+    ) -> Float[Tensor, "B C H W"]:
+        """Convolve image with kernel.
+
+        Args:
+            img: Input image (B, C, H, W).
+            kernel: Convolution kernel (C, G, KH, KW).
+            match_channels: If True, expand kernel to match input channels.
+            stride: Convolution stride.
+            padding: Padding mode ("same" or "valid").
+
+        Returns:
+            Convolved output (B, C, H, W).
+        """
         Bi, Ci, Hi, Wi = img.shape
         Ck, Gk, Hk, Wk = kernel.shape
         if match_channels:
@@ -165,12 +263,28 @@ class ImgUtils:
                     f"Cannot match channels for kernel with non-singleton dimensions.\nKernel shape: {kernel.shape}"
                 )
             kernel = kernel.expand(Ci, Ci, -1, -1)
-        return torchF.conv2d(img, kernel, stride=stride, padding=padding)
+        return F.conv2d(img, kernel, stride=stride, padding=padding)
 
     @staticmethod
     def SSIM(
-        img1: F, img2: F, kernel: F, eps1: float = 0.0004, eps2: float = 0.0036
-    ) -> F:
+        img1: Float[Tensor, "B C H W"],
+        img2: Float[Tensor, "B C H W"],
+        kernel: Float[Tensor, "1 1 KH KW"],
+        eps1: float = 0.0004,
+        eps2: float = 0.0036,
+    ) -> Float[Tensor, "B C H W"]:
+        """Compute Structural Similarity Index (SSIM).
+
+        Args:
+            img1: First image (B, C, H, W).
+            img2: Second image (B, C, H, W).
+            kernel: Gaussian kernel (1, 1, KH, KW).
+            eps1: Stability constant for means.
+            eps2: Stability constant for variances.
+
+        Returns:
+            SSIM map (B, C, H, W) with values in [-1, 1].
+        """
         mux = ImgUtils.convolve(img1, kernel, match_channels=True)
         muy = ImgUtils.convolve(img2, kernel, match_channels=True)
         mu2x = mux**2

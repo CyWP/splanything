@@ -33,6 +33,16 @@ SCHEDULERS = {
 
 
 def init_optimizer(name: str, params, **kwargs) -> optim.Optimizer:
+    """Create optimizer by name.
+
+    Args:
+        name: Optimizer name (e.g., "adam", "sgd").
+        params: Parameters to optimize.
+        **kwargs: Optimizer-specific arguments.
+
+    Returns:
+        Optimizer instance.
+    """
     name = name.lower()
     if name not in OPTIMIZERS:
         raise ValueError(
@@ -44,6 +54,16 @@ def init_optimizer(name: str, params, **kwargs) -> optim.Optimizer:
 def init_scheduler(
     name: str, optimizer: optim.Optimizer, **kwargs
 ) -> lr_scheduler._LRScheduler:
+    """Create learning rate scheduler by name.
+
+    Args:
+        name: Scheduler name (e.g., "step", "cosine").
+        optimizer: Optimizer to schedule.
+        **kwargs: Scheduler-specific arguments.
+
+    Returns:
+        Scheduler instance.
+    """
     name = name.lower()
     if name not in SCHEDULERS:
         raise ValueError(
