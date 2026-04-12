@@ -1,11 +1,17 @@
 from __future__ import annotations
 import torch
 import torch.nn as nn
+import logging
+import copy
 
-from typing import Dict, Optional, Any
-from jaxtyping import Float, Bool
+from contextlib import contextmanager
+from typing import Dict, Optional, Any, Sequence, ItemsView, Set
+from jaxtyping import Float, Bool, Shaped
 from torch import Tensor
 from utils.img import ImgUtils
+from utils.pytorch import TensorIndex
+
+_logger = logging.getLogger(__name__)
 
 
 class Primitive(nn.Module):
@@ -19,33 +25,211 @@ class Primitive(nn.Module):
         dtype: Computed dtype (torch.dtype).
 
     Notes:
-        - Subclasses must implement `_sample_impl()`, `__len__`, and `parameters` properties.
-        - The instance method `sample()` calls `_sample_impl()` with extracted parameters.
+        - Subclasses must implement `_sample()`, `__len__`, and `parameters` properties.
+        - The instance method `sample()` calls `_sample()` with extracted parameters.
         - Uses lazy evaluation via `@lazy_tree` for property caching.
+        - Uses tensor shaping [B, C, H, W], but image range remains [0, 1].
+        - Supports refinement via `filter()`, `__getitem__()`, `cat()`, `combine()`.
+        - Supports implicit masking via `masked()` contextmanager.
     """
 
-    def __init__(self, **kwargs):
-        super().__init__(self.__class__)
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        self._batched_params: Set[str] = set()
+        self._stable_params: Set[str] = set()
+        self._context_mask: Optional[Bool[Tensor, "N"]] = None
 
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> Primitive:
-        """Deserialize primitive from dict configuration.
+    @property
+    def device(self) -> torch.device:
+        for p in self.parameters():
+            return p.device
+        for b in self.buffers():
+            return b.device
+        raise RuntimeError("Module has no parameters or buffers")
+
+    @property
+    def dtype(self) -> torch.dtype:
+        for p in self.parameters():
+            return p.dtype
+        for b in self.buffers():
+            return b.dtype
+        raise RuntimeError("Module has no parameters or buffers")
+
+    @contextmanager
+    def masked(self, mask: Bool[Tensor, "N"]):
+        """Context manager for implicit masking of batched parameters.
+
+        When active, accessing batched parameters returns masked versions.
+        Supports nested contexts.
 
         Args:
-            data: Dict containing primitive config and optional state_dict path.
+            mask: Boolean tensor where True=keep, False=remove.
+
+        Yields:
+            None.
+        """
+        old_mask = self._context_mask
+        if old_mask is None:
+            self._context_mask = mask
+        else:
+            if mask.shape == old_mask.shape:
+                self._context_mask = old_mask & mask
+            elif mask.shape[0] == old_mask.sum().item():
+                m = old_mask.clone()
+                m[old_mask] = m[old_mask] & mask
+            else:
+                raise ValueError(
+                    "Mask incompatible within current nested mask context."
+                )
+        try:
+            yield
+        finally:
+            self._context_mask = old_mask
+
+    def __getattribute__(self, name: str) -> Any:
+        if name in object.__getattribute__(self, "__dict__").get(
+            "_batched_parameters", set()
+        ):
+            p = object.__getattribute__(self, name)
+            msk = object.__getattribute__(self, "_context_mask")
+            if msk is not None:
+                return p[msk]
+            return p
+        return object.__getattribute__(self, name)
+
+    def copy(self) -> Primitive:
+        """Create a copy of this primitive.
 
         Returns:
-            Primitive instance initialized from config.
+            New Primitive instance with same state.
         """
-        primitive = cls(**data)
-        state_dict = data.get("state_dict", None)
-        if state_dict is not None:
-            with open(state_dict, "r") as f:
-                state_dict = torch.load(f)
-            primitive.load_state_dict(state_dict)
-        return primitive
+        return copy.deepcopy(self)
 
-    @torch.no_grad()
+    def add_parameter(
+        self,
+        name: str,
+        param: Shaped[Tensor, ""],
+        batched: bool = True,
+        trainable: bool = True,
+    ):
+        if name in self._batched_params | self._stable_params:
+            raise KeyError(
+                f"Cannot register different parameters with same name: {name}."
+            )
+        if batched:
+            if len(self._batched_params) == 0:
+                self.size = param.shape[0]
+            elif self.size != param.shape[0]:
+                raise Exception(
+                    f"Registered batched parameters must all have the same shape in dim 0: {self.size}."
+                )
+            self._batched_params.add(name)
+        else:
+            self._stable_params.add(name)
+        if trainable:
+            self.register_parameter(name, nn.Parameter(param))
+        else:
+            self.register_buffer(name, param)
+
+    def update_parameters(self, updates: Dict[str, Tensor]):
+        """Update parameters with new tensors.
+
+        Replaces parameters with new tensors. After update, validates that
+        all batched parameters have the same size in their first dimension.
+
+        Args:
+            updates: Dict mapping parameter names to new tensors.
+
+        Raises:
+            KeyError: If a parameter name is not found.
+            ValueError: If batched parameters have inconsistent first-dimension sizes.
+        """
+        for name, tensor in updates.items():
+            if name not in self._batched_params and name not in self._stable_params:
+                raise KeyError(f"Unknown parameter: {name}")
+            if name in self._batched_params:
+                param = nn.Parameter(tensor)
+                # self.register_parameter(name, param)
+                self.__setattr__(name, param)
+            else:
+                self.__setattr__(name, param)  # self.register_buffer(name, tensor)
+
+        self._validate_batched_sizes()
+
+    def state_dict(self) -> Dict[str, Any]:
+        """Return state dict with class name for serialization."""
+        state = super().state_dict()
+        state["_class"] = self.__class__.__name__.lower()
+        return state
+
+    def __len__(self) -> int:
+        """Number of primitives in this object."""
+        if len(self._batched_params) == 0:
+            return 0
+        if self._context_mask is not None:
+            return self._context_mask.sum().item()
+        return self.__getattr__(next(iter(self._batched_params))).shape[0]
+
+    def filter(self, key: TensorIndex):
+        """In-place index selection of batched elements.
+
+        Filters primitive parameters to keep only elements matching key.
+        Modifies the primitive in-place.
+
+        Args:
+            key: Boolean mask or integer indices to select.
+
+        Notes:
+            - Only applies to batched parameters (shape[0] == len(self)).
+            - Used by refinement rules to cull primitives.
+        """
+        updates = {}
+        for name, param in self.batched_parameters():
+            updates[name] = param[key]
+        self.update_parameters(updates)
+
+    def _validate_batched_sizes(self):
+        """Ensure all batched parameters have the same first-dimension size."""
+        sizes = set()
+        for name in self._batched_params:
+            param = self.__getattr__(name)
+            sizes.add(param.shape[0])
+        if len(sizes) > 1:
+            raise ValueError(
+                f"Batched parameters have inconsistent sizes: {sizes}. "
+                f"All batched parameters must have the same size in dim 0."
+            )
+
+    def __getitem__(self, key: TensorIndex) -> Primitive:
+        """Index retrieval returning new object.
+
+        Creates a new primitive containing only elements matching key.
+        Does not modify original.
+
+        Args:
+            key: Boolean mask or integer indices to select.
+
+        Returns:
+            New Primitive with selected elements.
+
+        Notes:
+            - Only applies to batched parameters (shape[0] == len(self)).
+            - Non-batched parameters are copied as-is.
+        """
+        new = self.copy()
+
+        old_state = self.state_dict()
+        new_state = {}
+
+        for name, param in old_state.items():
+            if name in self._batched_params:
+                new_state[name] = param[key].clone()
+            else:
+                new_state[name] = param.clone()
+
+        new.load_state_dict(new_state)
+        return new
+
     def prepare_for_optimization(
         self, target: Float[Tensor, "..."], patch_size: Optional[int] = None
     ):
@@ -55,16 +239,24 @@ class Primitive(nn.Module):
             target: Target image tensor (C, H, W) or (B, C, H, W).
             patch_size: Optional patch size for patch-based rendering.
         """
-        H, W = target.shape[-2:]
-        self._buffer_patches, self._buffer_centers = ImgUtils.get_patches(
-            H, W, target.device, patch_size=patch_size
-        )
-        self._buffer_H = H
-        self._buffer_W = W
+        with torch.no_grad():
+            H, W = target.shape[-2:]
+            self._buffer_patches, self._buffer_centers = ImgUtils.get_patches(
+                H, W, target.device, patch_size=patch_size
+            )
+            self._buffer_H = H
+            self._buffer_W = W
+            self._trained_H = H
+            self._trained_W = W
+            self._trained_aspect_ratio = W / H if H > 0 else 1.0
+        self.train()
+
+    def end_optimization(self):
+        self.eval()
 
     @torch.no_grad()
     def patch_mask(
-        self, center: Float[Tensor, "N 2"], patch_size: int
+        self, center: Float[Tensor, "N 2"], patch_size: int, H: int, W: int
     ) -> Bool[Tensor, "N"]:
         """Compute mask for valid patches at given centers.
 
@@ -77,69 +269,43 @@ class Primitive(nn.Module):
         """
         return torch.ones((len(self),), dtype=torch.bool, device=self.device)
 
-    @staticmethod
-    def _sample_impl(
+    @classmethod
+    def _sample(
+        cls,
         co: Float[Tensor, "N 2"],
-        mask: Optional[Bool[Tensor, "N"]],
-        thetas: Float[Tensor, "N"],
-        centroids: Float[Tensor, "N 2"],
-        range1: Float[Tensor, "N"],
-        range2: Float[Tensor, "N"],
-        color1: Float[Tensor, "N 3"],
-        color2: Float[Tensor, "N 3"],
-        alpha: Float[Tensor, "N"],
-        device: torch.device,
-        dtype: torch.dtype,
+        *args,
+        **kwargs,
     ) -> Float[Tensor, "N 4"]:
         """Implementation of sampling logic. Subclasses must implement this.
 
         Args:
             co: Coordinates to sample at (N, 2).
-            mask: Optional mask for active primitives (N,).
-            thetas: Rotation angles (N,).
-            centroids: Center positions (N, 2).
-            range1: Primary falloff range (N,).
-            range2: Secondary falloff range (N,).
-            color1: Primary color (N, 3).
-            color2: Secondary color (N, 3).
-            alpha: Opacity values (N,).
-            device: Target device.
-            dtype: Target dtype.
 
         Returns:
             Sampled RGBA values (N, 4).
+
+        Notes:
+            - Assumes non-empty batched parameters (len(self) > 0).
+            - Uses masked batched parameters if context is active.
         """
         raise NotImplementedError()
 
-    def sample(
-        self, co: Float[Tensor, "N 2"], mask: Optional[Bool[Tensor, "N"]] = None
-    ) -> Float[Tensor, "N 4"]:
+    def sample(self, co: Float[Tensor, "N 2"]) -> Float[Tensor, "N 4"]:
         """Sample primitive values at coordinates.
 
         Args:
             co: Coordinates to sample at (N, 2).
-            mask: Optional mask for active primitives (N,).
 
         Returns:
             Sampled RGBA values (N, 4).
-        """
-        return self._sample_impl(
-            co,
-            mask,
-            self.thetas,
-            self.centroids,
-            self.range1,
-            self.range2,
-            self.color1,
-            self.color2,
-            self.alpha,
-            self.device,
-            self.dtype,
-        )
 
-    def __len__(self) -> int:
-        """Number of primitives in this object."""
-        raise NotImplementedError()
+        Notes:
+            - Returns zeros if len(self) == 0.
+            - Uses masked batched parameters if context is active.
+        """
+        if len(self) == 0:
+            return torch.zeros(co.shape[0], 4, device=self.device, dtype=self.dtype)
+        return self._sample(co)
 
     def forward(
         self,
@@ -159,13 +325,14 @@ class Primitive(nn.Module):
         Returns:
             Rendered image (B, C, H, W).
         """
+        P, S, C = patches.shape
+        patch_size = S if P == 1 else int(S**0.5)
         gen_patches = []
         for patch_idx in range(len(patches)):
-            gen_patches.append(
-                self.sample(
-                    patches[patch_idx], mask=self.patch_mask(centers[patch_idx])
-                )
-            )
+            patch = patches[patch_idx]
+            mask = self.patch_mask(centers[patch_idx], patch_size=patch_size, H=H, W=W)
+            with self.masked(mask):
+                gen_patches.append(self._sample(patch))
         return ImgUtils.assemble_patches(torch.stack(gen_patches, dim=0), H, W)
 
     def optim_step(self) -> Float[Tensor, "B C H W"]:
@@ -180,24 +347,6 @@ class Primitive(nn.Module):
 
     def rasterize(
         self, H: int, W: int, patch_size: Optional[int] = None
-    ) -> Float[Tensor, "B C H W"]:
-        """Rasterize primitive to image tensor.
-
-        Args:
-            H: Output height.
-            W: Output width.
-            patch_size: Optional patch size.
-
-        Returns:
-            Image tensor (B, C, H, W).
-        """
-        patches, centers = ImgUtils.get_patches(
-            H, W, self.device, patch_size=patch_size
-        )
-        return self(H, W, patches, centers)
-
-    def image(
-        self, H: int, W: int, patch_size: Optional[int] = None
     ) -> Float[Tensor, "B H W C"]:
         """Convert rasterized output to displayable image.
 
@@ -209,14 +358,114 @@ class Primitive(nn.Module):
         Returns:
             Image tensor (B, H, W, C) in [0, 1] range.
         """
-        return ImgUtils.tensor2img(self.rasterize(H, W, patch_size=patch_size))
+        return ImgUtils.tensor2img(
+            self(H, W, patch_size=patch_size), normalized=False, clamp=True
+        )
 
-    @property
-    def parameters(self) -> Dict[str, Float[Tensor, "..."]]:
-        """All parameters (trainable and non-trainable)."""
-        raise NotImplementedError()
+    # @torch.no_grad()
+    # def cat(self, other: Primitive, weight: float = 0.0):
+    #     """Concatenate another primitive in-place.
 
-    @property
-    def trainable_parameters(self) -> Dict[str, Float[Tensor, "..."]]:
-        """Only trainable parameters."""
-        raise NotImplementedError()
+    #     Appends batched parameters from other to self.
+
+    #     Args:
+    #         other: Primitive to concatenate.
+    #         weight: importance to other's non batched params. 0 = keep original, 1 = use new.
+
+    #     Notes:
+    #         - Only concatenates batched parameters (shape[0] == len(self)).
+    #         - Modifies self in-place.
+    #     """
+    #     np2 = dict(other.batched_parameters())
+    #     for name, param in self.batched_parameters():
+    #         param = torch.cat([param, np2[name]], dim=0)
+
+    # @classmethod
+    # @torch.no_grad()
+    # def combine(cls, primitives: Sequence[Primitive]) -> Primitive:
+    #     """Combine multiple primitives into one.
+
+    #     Concatenates all primitives in sequence into first primitive.
+
+    #     Args:
+    #         primitives: Sequence of primitives to combine.
+
+    #     Returns:
+    #         Combined primitive (first element with others concatenated).
+
+    #     Raises:
+    #         Exception: If primitives is empty.
+    #     """
+    #     if not primitives:
+    #         raise Exception("Primitives empty or None.")
+    #     p = primitives[0]
+    #     for other in primitives[1:]:
+    #         p.cat(other)
+    #     return p
+
+    def batched_parameters(self) -> ItemsView[str, Float[Tensor, "N ..."]]:
+        """Get parameters with batch dimension.
+
+        Returns:
+            ItemsView of (name, param) for batched parameters.
+        """
+        return {name: self.__getattr__(name) for name in self._batched_params}.items()
+
+    def stable_parameters(self) -> ItemsView[str, Float[Tensor, "N ..."]]:
+        """Get parameters with batch dimension.
+
+        Returns:
+            ItemsView of (name, param) for batched parameters.
+        """
+        return {name: self.__getattr__(name) for name in self._stable_params}.items()
+
+    def named_grads(self) -> ItemsView[str, Float[Tensor, "..."]]:
+        """Get named gradients.
+
+        Returns:
+            ItemsView of (name, grad) for parameters with gradients.
+        """
+        grad = {
+            name: param.grad
+            for name, param in self.named_parameters()
+            if param.grad is not None
+        }
+        return grad.items()
+
+    def batched_grads(self) -> ItemsView[str, Float[Tensor, "..."]]:
+        """Get gradients with batch dimension.
+
+        Returns:
+            ItemsView of (name, grad) for batched parameters with gradients.
+
+        Notes:
+            - Only returns gradients for batched parameters.
+            - Uses masked gradients if context is active.
+            - Used by refinement rules like GradSplit.
+        """
+        grads = {}
+        for name in self._batched_params:
+            param = self.__getattr__(name)
+            if param.grad is not None:
+                grad = param.grad
+                if self._context_mask is not None:
+                    grad = grad[self._context_mask]
+                grads[name] = grad
+        return grads.items()
+
+    def stable_grads(self) -> ItemsView[str, Float[Tensor, "..."]]:
+        """Get gradients with batch dimension.
+
+        Returns:
+            ItemsView of (name, grad) for batched parameters with gradients.
+
+        Notes:
+            Only returns gradients for batched parameters.
+            Used by refinement rules like GradSplit.
+        """
+        grads = {
+            name: param.grad
+            for name, param in self.stable_parameters()
+            if param.grad is not None
+        }
+        return grads.items()

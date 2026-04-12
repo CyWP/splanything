@@ -51,4 +51,6 @@ class SSIMLoss(Loss):
         """
         out = trainer.last_output
         target = trainer.target
-        return 1 - (ImgUtils.SSIM(target, out, self.kernel)) / 2
+        if out.device != self.kernel.device:
+            self.kernel = self.kernel.to(out.device)
+        return (1 - (ImgUtils.SSIM(target, out, self.kernel)) / 2).mean()

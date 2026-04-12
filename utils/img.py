@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import math
+import numpy as np
 import torch
 import torch.nn.functional as F
 
-from typing import Optional, Tuple, Union, Sequence
+from typing import Optional, Tuple, Union, Sequence, List
 from jaxtyping import Float
+from PIL import Image
 from torch import Tensor
 
 
@@ -17,7 +19,9 @@ class ImgUtils:
     """
 
     @staticmethod
-    def img2tensor(img: Float[Tensor, "B H W C"]) -> Float[Tensor, "B C H W"]:
+    def img2tensor(
+        img: Float[Tensor, "B H W C"], normalize: bool = True
+    ) -> Float[Tensor, "B C H W"]:
         """Convert [0,1] HWC image to [-1,1] CHW tensor.
 
         Args:
@@ -26,10 +30,18 @@ class ImgUtils:
         Returns:
             Tensor (B, C, H, W) in [-1, 1].
         """
-        return (img * 2 - 1).permute(0, 3, 1, 2)
+        x = img.permute(0, 3, 1, 2)
+        if normalize:
+            return x * 2 - 1
+        return x
 
     @staticmethod
-    def tensor2img(x: Float[Tensor, "B C H W"]) -> Float[Tensor, "B H W C"]:
+    def tensor2img(
+        x: Float[Tensor, "B C H W"],
+        normalized: bool = True,
+        clamp: bool = True,
+        mode: str = "RGBA",
+    ) -> Float[Tensor, "B H W C"]:
         """Convert [-1,1] CHW tensor to [0,1] HWC image.
 
         Args:
@@ -38,7 +50,36 @@ class ImgUtils:
         Returns:
             Image (B, H, W, C) in [0, 1].
         """
-        return (((x + 1) * 2).clamp(0, 1)).permute(0, 2, 3, 1)
+        B, C, H, W = x.shape
+        img = x.permute(0, 2, 3, 1)
+        if normalized:
+            img = (img + 1) / 2
+        if clamp:
+            img = img.clamp(0, 1)
+        return img
+
+    @staticmethod
+    def tensor2pil(
+        x: Float[Tensor, "B C H W"], normalized: bool = True
+    ) -> Union[Image.Image, List[Image.Image]]:
+        """Convert tensor to PIL Image.
+
+        Args:
+            x: Tensor (B, C, H, W) in [-1, 1] or [0, 1].
+
+        Returns:
+            PIL Image as uint8 [0, 255].
+        """
+        B, C, H, W = x.shape
+        mode = "RGB" if C == 3 else "RGBA"
+        img = ImgUtils.tensor2img(x, normalized=normalized, clamp=True)
+        img_np = (img.cpu().numpy() * 255).astype(np.uint8)
+        imgs = []
+        for i in range(B):
+            imgs.append(Image.fromarray(img_np[i], mode=mode))
+        if B == 1:
+            return imgs[0]
+        return imgs
 
     @staticmethod
     @torch.no_grad()
@@ -74,6 +115,29 @@ class ImgUtils:
 
     @staticmethod
     @torch.no_grad()
+    def ensure_rgb(img: Float[Tensor, "B C H W"]) -> Float[Tensor, "B 4 H W"]:
+        """Ensure image has 3 channels (RGB).
+
+        Args:
+            img: Input tensor (B, C, H, W).
+
+        Returns:
+            RGBA tensor (B, 4, H, W).
+        """
+        B, C, H, W = img.shape
+        if C == 3:
+            return img
+        elif C == 4:
+            return img[:, :3] * img[:, 3].unsqueeze(1)
+        elif C == 1:
+            return img.repeat(1, 3, 1, 1)
+        else:
+            raise Exception(
+                f"Cannot recognize image format for tensor with shape {img.shape}"
+            )
+
+    @staticmethod
+    @torch.no_grad()
     def gen_px_coords(H: int, W: int, device: torch.device) -> Float[Tensor, "2 H W"]:
         """Generate normalized pixel coordinates.
 
@@ -87,7 +151,7 @@ class ImgUtils:
         """
         H_half = 0.5 / H
         W_half = 0.5 / W
-        return torch.cat(
+        out = torch.stack(
             torch.meshgrid(
                 torch.linspace(H_half, 1 - H_half, H, device=device),
                 torch.linspace(W_half, 1 - W_half, W, device=device),
@@ -95,12 +159,12 @@ class ImgUtils:
             ),
             dim=0,
         )
+        return out
 
     @staticmethod
-    @torch.no_grad()
     def extract_patches(
-        co: Float[Tensor, "C H W"], patch_size: Optional[int]
-    ) -> Tuple[Float[Tensor, "P S 2"], Float[Tensor, "P 2"]]:
+        co: Float[Tensor, "C H W"], patch_size: Optional[int] = None
+    ) -> Tuple[Float[Tensor, "P S C"], Float[Tensor, "P C"]]:
         """Extract patches from coordinate grid.
 
         Args:
@@ -109,33 +173,35 @@ class ImgUtils:
 
         Returns:
             Tuple of (patches, centers):
-                - patches: (P, S, 2) where P=num_patches, S=patch_size^2
-                - centers: (P, 2)
+                - patches: (P, S, C) where P=num_patches, S=patch_size^2
+                - centers: (P, C)
         """
         if patch_size < 1:
             raise Exception("Patch size must be strictly positive integer.")
         C, H, W = co.shape
-        if patch_size is None or all(patch_size < d for d in [H, W]):
-            return co.reshape(C, -1).permute(0, 1), torch.tensor(
-                [0.5, 0.5], device=co.device
+        if patch_size is None or all(patch_size > d for d in [H, W]):
+            patches = co.permute(1, 2, 0).reshape(1, H * W, C)  # [1, S, C]
+            centers = torch.tensor(
+                [0.5, 0.5], device=co.device, dtype=co.dtype
             ).unsqueeze(0)
-        pad_H = H % patch_size
-        if pad_H != 0:
-            pad_H == pad_H // 2 + 1
-        pad_W = W % patch_size
-        if pad_W != 0:
-            pad_W == pad_W // 2 + 1
-        patches = F.unfold(
-            co.unsqueeze(0),
-            kernel_size=patch_size,
-            stride=patch_size,
-            padding=(pad_H, pad_W),
-        ).squeeze(0)
+            return patches, centers
+        S = patch_size**2
+        pad_H = (patch_size - (H % patch_size)) % patch_size
+        pad_W = (patch_size - (W % patch_size)) % patch_size
+        co = ImgUtils.coords_pad(co, pad_H, pad_W)
+        patches = (
+            F.unfold(
+                co.unsqueeze(0),
+                kernel_size=patch_size,
+                stride=patch_size,
+            )
+            .reshape(C, S, -1)
+            .permute(2, 1, 0)
+        )  # [P, S, C]
         centers = patches.mean(dim=1)
         return patches, centers
 
     @staticmethod
-    @torch.no_grad()
     def get_patches(
         H: int, W: int, device: torch.device, patch_size: Optional[int] = None
     ) -> Tuple[Float[Tensor, "P S 2"], Float[Tensor, "P 2"]]:
@@ -155,11 +221,40 @@ class ImgUtils:
         )
 
     @staticmethod
-    @torch.no_grad()
+    def coords_pad(
+        co: Float[Tensor, "C H W"], pad_H: int, pad_W: int
+    ) -> Float[Tensor, "C (H+pad_H) (W+pad_W)"]:
+        C, H, W = co.shape
+        y_coords = co[0, :, 0]
+        x_coords = co[1, 0, :]
+        y_step = (
+            y_coords[1] - y_coords[0]
+            if H > 1
+            else torch.tensor(1.0 / H, device=co.device, dtype=co.dtype)
+        )
+        x_step = (
+            x_coords[1] - x_coords[0]
+            if W > 1
+            else torch.tensor(1.0 / W, device=co.device, dtype=co.dtype)
+        )
+        y_extra = (
+            y_coords[-1]
+            + torch.arange(1, pad_H + 1, device=co.device, dtype=co.dtype) * y_step
+        )
+        x_extra = (
+            x_coords[-1]
+            + torch.arange(1, pad_W + 1, device=co.device, dtype=co.dtype) * x_step
+        )
+        y_full = torch.cat([y_coords, y_extra], dim=0)
+        x_full = torch.cat([x_coords, x_extra], dim=0)
+        yy, xx = torch.meshgrid(y_full, x_full, indexing="ij")
+        return torch.stack([yy, xx], dim=0)
+
+    @staticmethod
     def assemble_patches(
         sampled_patches: Float[Tensor, "P S C"],
-        H: int,
-        W: int,
+        H: Optional[int] = None,
+        W: Optional[int] = None,
     ) -> Float[Tensor, "B C H W"]:
         """Assemble sampled patches into full image.
 
@@ -175,16 +270,17 @@ class ImgUtils:
         patch_size = int(S**0.5)
         patches_H = math.ceil(H / patch_size)
         patches_W = math.ceil(W / patch_size)
-        assembled = F.fold(
-            sampled_patches,
-            (patch_size * patches_H, patch_size * patches_W),
+        output_H = patch_size * patches_H
+        output_W = patch_size * patches_W
+        # if output_H * output_W != P:
+        #     raise Exception(f"patches do not match image output size.")
+        folded = F.fold(
+            sampled_patches.permute(2, 1, 0).reshape(1, C * S, P),
+            output_size=(output_H, output_W),
             kernel_size=patch_size,
             stride=patch_size,
         )
-        assembled_H, assembled_W = assembled.shape[-2:]
-        pad_H = 0 if assembled_H == H else (assembled_H - pad_H) // 2
-        pad_W = 0 if assembled_W == W else (assembled_W - pad_W) // 2
-        return assembled[..., pad_H : H + pad_H, pad_W : W + pad_W]
+        return folded[:, :, :H, :W]
 
     @staticmethod
     @torch.no_grad()
@@ -299,3 +395,28 @@ class ImgUtils:
             * (sigxy + eps2)
             / ((mu2x + mu2y + eps2) * (sig2x + sig2y + eps2))
         )
+
+    @staticmethod
+    def load_image(
+        path: str, mode: str = "RGBA", normalize: bool = False
+    ) -> Float[Tensor, "B C H W"]:
+        """Load image from path as tensor.
+
+        Args:
+            path: Path to image file (PNG, JPG, etc.).
+            mode: Color mode for PIL Image ("RGBA", "RGB", "L", etc.).
+            normalize: If True, normalize to [-1, 1] instead of [0, 1].
+
+        Returns:
+            Image tensor (B, C, H, W) with values in [0, 1] or [-1, 1].
+        """
+        from PIL import Image
+        import numpy as np
+
+        img = Image.open(path).convert(mode)
+        arr = np.array(img).astype(np.float32) / 255.0
+        tensor = torch.from_numpy(arr).unsqueeze(0)
+        tensor = tensor.permute(0, 3, 1, 2)
+        if normalize:
+            tensor = tensor * 2 - 1
+        return tensor

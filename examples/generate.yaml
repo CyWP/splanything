@@ -1,0 +1,4 @@
+checkpoint: /path/to/file.pt
+H: 256
+W: 256
+patch_size: 64

@@ -2,38 +2,68 @@
 
 Exposes:
 - Callback: Base class for training callbacks
-- LoopControl: Epoch counting and interrupt handling
-- ImgUpdate: Real-time image preview during training
+- LoopControl: Epoch counting and progress bar (tqdm)
+- ComfyUIControl: ComfyUI-specific loop control with interrupt handling
+- NodePreview: Real-time image preview during training
+- PreviewWindow: Preview window with optional target side-by-side
+- PrimitiveCheckpoint: Save primitive checkpoint at interval
 - LossLogger: Logs loss values per epoch
+- get_callback: Factory function to instantiate a single callback from config
 """
 
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from .generic import Callback
 from .loop_control import LoopControl
-from .img_update import ImgUpdate
+from .comfy_control import ComfyUIControl
+from .img_update import NodePreview
+from .preview_window import PreviewWindow
+from .primitive_checkpoint import PrimitiveCheckpoint
 from .losses_log import LossLogger
 
-CLASSES = [LoopControl, ImgUpdate, LossLogger]
-CALLBACKS = {c._name: c for c in CLASSES}
+CLASSES = [
+    LoopControl,
+    ComfyUIControl,
+    NodePreview,
+    PreviewWindow,
+    PrimitiveCheckpoint,
+    LossLogger,
+]
+
+CALLBACKS = {c.__name__.lower(): c for c in CLASSES}
 
 
-def get_callbacks(data: Dict[str, Any]) -> List[Callback]:
-    """Instantiate callbacks from configuration dict.
+def register_callback(cls: type[Callback]):
+    """Register a callback class for use in the framework.
 
     Args:
-        data: Dict mapping callback name to config kwargs.
+        cls: Callback class to register.
 
     Returns:
-        List of Callback instances.
+        The registered class.
     """
-    callbacks = []
-    for c in data.keys():
-        ccls = CALLBACKS.get(c, None)
-        if ccls is None:
-            raise KeyError(
-                f"Class '{c}' is an invalid callback class.\n Valid classes:\n{CALLBACKS.keys()}"
-            )
-        kwargs = data[c]
-        callbacks.append(ccls(**kwargs))
-    return callbacks
+    CLASSES.append(cls)
+    CALLBACKS[cls.__name__.lower()] = cls
+    return cls
+
+
+def get_callback(name: str, kwargs: Dict[str, Any]) -> Callback:
+    """Instantiate a single callback from name and kwargs.
+
+    Args:
+        name: Callback class name (e.g., "NodePreview").
+        kwargs: Constructor arguments.
+
+    Returns:
+        Callback instance.
+
+    Raises:
+        KeyError: If name is not a valid callback class.
+    """
+    ccls = CALLBACKS.get(name.lower(), None)
+    if ccls is None:
+        raise KeyError(
+            f"'{name}' is an invalid callback class.\n"
+            f"Valid classes: {list(CALLBACKS.keys())}"
+        )
+    return ccls(**kwargs)

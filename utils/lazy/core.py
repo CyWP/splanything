@@ -173,6 +173,10 @@ def lazy_tree(cls: Type):
     tree_template.build_children()
     tree_template.detect_cycles()
 
+    lazy_prop_names = frozenset(
+        name for name, node in tree_template.nodes.items() if node.compute is not None
+    )
+
     orig_init = cls.__init__
 
     @wraps(orig_init)
@@ -207,11 +211,18 @@ def lazy_tree(cls: Type):
         if not node.compute:
             continue
 
-        def make_prop(nm):
+        def make_prop(nm, dps):
+            # Only trigger getattr for deps that are themselves lazy properties.
+            # Other deps (e.g. nn.Parameter attributes, nn.Module properties like
+            # device/dtype, or __class__) are accessed naturally when compute() runs
+            # and should NOT be eagerly resolved via getattr — many aren't simple
+            # attributes and may not exist on all PyTorch versions.
+            cached_deps = frozenset(d for d in dps if d in lazy_prop_names)
+
             def getter(self):
                 node = self.__lazy_tree__.nodes[nm]
                 if node.dirty:
-                    for dep in node.deps:
+                    for dep in cached_deps:
                         getattr(self, dep)
                     node.value = node.compute(self)
                     node.dirty = False
@@ -219,7 +230,7 @@ def lazy_tree(cls: Type):
 
             return property(getter)
 
-        setattr(cls, name, make_prop(name))
+        setattr(cls, name, make_prop(name, node.deps))
 
     def clear_cache(self):
         self.__lazy_tree__.clear_cache()

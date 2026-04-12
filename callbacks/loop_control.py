@@ -1,37 +1,41 @@
-import torch
-
-from typing import List, Optional, Any
+from typing import List, Optional
 
 from trainers import Trainer, EPOCH_START, EPOCH_END
-from utils.comfy import ComfyUtils
 
 from .generic import Callback
 
 
 class LoopControl(Callback):
-    """Training loop control with epoch counting and interrupt handling.
+    """Training loop control with epoch counting and progress bar.
 
-    Manages training duration and responds to ComfyUI interrupt signals.
-    Updates a progress bar if epochs are specified.
+    Manages training duration and updates a tqdm progress bar if epochs
+    are specified.
 
     Stages: EPOCH_START, EPOCH_END
     """
 
     _stages: List[str] = [EPOCH_START, EPOCH_END]
 
-    def __init__(self, epochs: Optional[int] = None, node: Optional[Any] = None):
+    def __init__(self, epochs: Optional[int] = None):
         """Initialize loop control.
 
         Args:
             epochs: Optional max epochs. If None, runs until interrupted.
-            node: Optional ComfyUI node reference.
         """
-        super().__init__(node=node)
+        super().__init__()
         self.epochs = epochs
-        if epochs is not None and epochs > 0:
-            self.pbar = ComfyUtils.make_progress(epochs)
-        else:
-            self.pbar = None
+        self._pbar = None
+
+    def _get_pbar(self):
+        """Lazy initialization of tqdm progress bar."""
+        if self._pbar is None and self.epochs is not None and self.epochs > 0:
+            try:
+                from tqdm import tqdm
+
+                self._pbar = tqdm(total=self.epochs, desc="Training")
+            except ImportError:
+                pass
+        return self._pbar
 
     def run(self, trainer: Trainer, stage: str):
         """Handle epoch start/end.
@@ -41,7 +45,12 @@ class LoopControl(Callback):
             stage: Current training stage.
         """
         if stage == EPOCH_START:
-            if ComfyUtils.is_interrupted():
-                trainer.stop()
+            pass
         elif stage == EPOCH_END:
-            ComfyUtils.update_progress(self.pbar, trainer.epoch)
+            pbar = self._get_pbar()
+            if pbar is not None:
+                pbar.update(1)
+                if hasattr(trainer, "last_loss") and trainer.last_loss is not None:
+                    pbar.set_postfix({"loss": f"{trainer.last_loss.item():.4f}"})
+        if trainer.epoch == self.epochs:
+            trainer.stop()

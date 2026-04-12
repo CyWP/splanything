@@ -26,7 +26,7 @@ class Loss(nn.Module):
         Args:
             weight: Weight multiplier for this loss term.
         """
-        super().__init__(self.__class__)
+        super().__init__()
         self.weight = weight
 
     def compute(self, trainer: Trainer) -> Float[Tensor, ""]:

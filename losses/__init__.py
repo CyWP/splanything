@@ -4,36 +4,52 @@ Exposes:
 - Loss: Base class for loss functions
 - L1Loss: L1 (MAE) loss
 - L2Loss: L2 (MSE) loss
-- get_losses: Factory function to instantiate losses from config
+- get_loss: Factory function to instantiate a single loss from config
 """
 
-from typing import Dict, List, Any
+from typing import Dict, Any
 
 from .generic import Loss
 from .l1 import L1Loss
 from .l2 import L2Loss
+from .ssim import SSIMLoss
 
-CLASSES = [L1Loss, L2Loss]
+CLASSES = [L1Loss, L2Loss, SSIMLoss]
 
-LOSSES = {c._name: c for c in CLASSES}
+LOSSES = {c._name.lower(): c for c in CLASSES}
 
 
-def get_losses(data: Dict[str, Any]) -> Dict[str, Loss]:
-    """Instantiate losses from configuration dict.
+def register_loss(cls: type[Loss]):
+    """Register a loss class for use in the framework.
 
     Args:
-        data: Dict mapping loss name to config kwargs (must include 'weight').
+        cls: Loss class to register.
 
     Returns:
-        Dict mapping name to Loss instance.
+        The registered class.
     """
-    losses = {}
-    for l in data.keys():
-        lcls = LOSSES.get(l, None)
-        if lcls is None:
-            raise KeyError(
-                f"Class '{l}' is an invalid callback class.\n Valid classes:\n{LOSSES.keys()}"
-            )
-        kwargs = data[l]
-        losses[l] = lcls(**kwargs)
-    return losses
+    CLASSES.append(cls)
+    LOSSES[cls._name.lower()] = cls
+    return cls
+
+
+def get_loss(name: str, kwargs: Dict[str, Any]) -> Loss:
+    """Instantiate a single loss from name and kwargs.
+
+    Args:
+        name: Loss class name (e.g., "L1", "L2").
+        kwargs: Constructor arguments including 'weight'.
+
+    Returns:
+        Loss instance.
+
+    Raises:
+        KeyError: If name is not a valid loss class.
+    """
+    lcls = LOSSES.get(name.lower(), None)
+    if lcls is None:
+        raise KeyError(
+            f"'{name}' is an invalid loss class.\n"
+            f"Valid classes: {list(LOSSES.keys())}"
+        )
+    return lcls(**kwargs)

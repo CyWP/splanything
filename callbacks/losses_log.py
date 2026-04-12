@@ -25,4 +25,4 @@ class LossLogger(Callback):
         """
         losses = {k: v.item() for k, v in trainer.last_losses.items()}
         losses["total"] = trainer.last_loss.item()
-        trainer.log_stats("losses", losses)
+        trainer.log_stat("losses", losses)

@@ -1,0 +1,50 @@
+primitive:
+        CubicGrad:
+                size: 20
+
+optimizer:
+        name: adamw
+        lr: 0.005
+        weight_decay: 0.0001
+        # scheduler:
+        #       name: cosine
+        #       T_max: 100
+
+losses:
+      - L2:
+                weight: 1.0
+      - SSIM:
+                weight: 0.25
+# - L1:
+#     weight: 1.0
+
+callbacks:
+      - LoopControl:
+                epochs: 10000
+      # - PrimitiveCheckpoint:
+      #     interval: 10
+      - LossLogger: {}
+      - PreviewWindow: {}
+
+refinement:
+      - AlphaCull:
+                threshold: 0.1
+                interval: 10
+      - GradSplit:
+                threshold: 0.01
+                interval: 25
+      #       - AreaSplit:
+      #                 threshold: 0.02
+      #                 interval: 30
+      - IsoSplit:
+                threshold: 3.5
+                interval: 10
+
+trainer:
+        name: cubic_test
+        patch_size: 64
+
+target:
+        path: examples/target.png
+        mode: RGBA
+        normalize: false

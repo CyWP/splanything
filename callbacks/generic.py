@@ -1,7 +1,7 @@
 import torch
 
 from abc import ABC, abstractmethod
-from typing import List, Optional, Any
+from typing import List
 
 from trainers import STAGES, Trainer
 
@@ -14,7 +14,6 @@ class Callback(ABC):
 
     Attributes:
         stages: List of stages this callback responds to.
-        node: Optional ComfyUI node reference for UI updates.
 
     Notes:
         - Subclasses must define `_stages` as a class attribute.
@@ -23,15 +22,10 @@ class Callback(ABC):
 
     _stages: List[str] = []
 
-    def __init__(self, node: Optional[Any] = None):
-        """Initialize callback.
-
-        Args:
-            node: Optional ComfyUI node for preview updates.
-        """
+    def __init__(self):
+        """Initialize callback."""
         self.stages = self.__class__._stages.copy()
         assert all([s in STAGES for s in self.stages])
-        self.node = node
 
     def __call__(self, trainer: Trainer, stage: str):
         """Invoke callback if stage matches.
