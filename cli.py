@@ -19,6 +19,7 @@ import json
 import os
 import sys
 import tempfile
+import torch
 import yaml
 
 
@@ -103,12 +104,11 @@ def generate(args):
 
     loaded = load_gen_config(config)
     generator = loaded["generator"]
-
-    img = generator.to_image()
-
+    primitive = loaded["primitive"]
     output_path = args.output or "output.png"
-    tensor_img = ImgUtils.tensor2img(img)
-    tensor_img.save(output_path)
+    with torch.no_grad():
+        img = ImgUtils.tensor2pil(generator(primitive), normalized=False)
+    img.save(output_path)
     print(f"Saved to {output_path}")
     return 0
 
@@ -189,9 +189,11 @@ def main(argv: list = None):
     gen_parser.add_argument("--config", help="Config file (JSON or YAML)")
     gen_parser.add_argument("--output", help="Output image path")
 
-    filtered_argv = [a for i, a in enumerate(argv) if not (
-        a.startswith("--") and _get_key(a) not in known
-    )]
+    filtered_argv = [
+        a
+        for i, a in enumerate(argv)
+        if not (a.startswith("--") and _get_key(a) not in known)
+    ]
     args = parser.parse_args(filtered_argv)
     args.overrides = _parse_overrides(override_args) if override_args else {}
 

@@ -8,6 +8,7 @@ from jaxtyping import Float
 from torch import Tensor
 
 from primitives import Primitive
+from rasterizers import Rasterizer
 from utils.lazy import clear_all_caches
 
 _logger = logging.getLogger(__name__)
@@ -55,6 +56,7 @@ class Trainer:
         scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
         refinements: Sequence[Callable] = (),
         device: Optional[Union[str, torch.device]] = None,
+        rasterizer: Optional[Rasterizer] = None,
     ):
         """Initialize trainer.
 
@@ -70,6 +72,7 @@ class Trainer:
             scheduler: Optional learning rate scheduler.
             refinements: List of FilterRule and SplitRule instances for epoch-end refinement.
             device: Optional device override. Uses get_device() fallback if None.
+            rasterizer: Optional rasterizer override. Uses WeightedRasterizer default.
         """
         from utils.pytorch import get_device
 
@@ -85,6 +88,7 @@ class Trainer:
         self.target = target.to(device)
         self.primitive = primitive.to(device)
         self.patch_size = patch_size
+        self.rasterizer = rasterizer
         self.optimizer = optimizer
         self.losses = losses
         self.callbacks = callbacks
@@ -158,7 +162,7 @@ class Trainer:
             State dict with current epoch, loss, and output for inspection.
         """
         self.primitive.prepare_for_optimization(
-            target=self.target, patch_size=self.patch_size
+            target=self.target, patch_size=self.patch_size, rasterizer=self.rasterizer
         )
         self.should_continue = True
         self.call_back(TRAIN_START)

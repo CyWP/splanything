@@ -1,4 +1,8 @@
-checkpoint: /path/to/file.pt
-H: 256
-W: 256
-patch_size: 64
+primitive:
+  path: ./cubic_test/primitive_e500.pt
+H: 3240
+W: 3840
+patch_size: 128
+
+# rasterizer:
+#   name: probabilisticrasterizer

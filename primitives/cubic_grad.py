@@ -9,6 +9,7 @@ from utils.math import soft_clamp
 from utils.pytorch import TensorIndex
 from .generic import Primitive
 from .protocols import HasAlphas, HasAreas, Splittable, HasScales
+from rasterizers import SampleOutput
 
 
 class CubicGrad(Primitive, HasAlphas, HasAreas, Splittable, HasScales):
@@ -157,7 +158,7 @@ class CubicGrad(Primitive, HasAlphas, HasAreas, Splittable, HasScales):
     def scales(self) -> Tuple[Float[Tensor, "N"], Float[Tensor, "N"]]:
         return (self.range_1, self.range_2)
 
-    def _sample(self, co: Float[Tensor, "N 2"]) -> Float[Tensor, "Nm 4"]:
+    def _sample(self, co: Float[Tensor, "N 2"]) -> SampleOutput:
         """Sample primitive values at coordinates.
 
         Args:
@@ -165,7 +166,7 @@ class CubicGrad(Primitive, HasAlphas, HasAreas, Splittable, HasScales):
             mask: Optional mask for active primitives (N,).
 
         Returns:
-            Sampled RGBA values (N, 4).
+            SampleOutput with rgb (Nc, N, 3), alpha (N,), weights (Nc, N).
 
         Notes:
             Nm is the sum of the mask (number of splats that are actually used for computation).
@@ -195,63 +196,40 @@ class CubicGrad(Primitive, HasAlphas, HasAreas, Splittable, HasScales):
         alpha: Float[Tensor, "N"],
         ax_1: Float[Tensor, "N 2"],
         ax_2: Float[Tensor, "N 2"],
-    ) -> Float[Tensor, "Nm 4"]:
-        """Sample cubic gradients at coordinates.
+    ) -> SampleOutput:
+        """Sample cubic gradients at coordinates, returning intermediate data.
 
         Args:
             co: Coordinates to sample at (Nc, 2).
-            mask: Optional mask for active primitives (N,).
             centroids: Center positions (N, 2).
             range_1: Primary falloff range (N,).
             range_2: Secondary falloff range (N,).
             color_1: Primary color (N, 3).
             color_2: Secondary color (N, 3).
             alpha: Opacity values (N,).
-            thetas: Rotation angles (N,).
-            R: Rotation matrix derived from thetas. Overrides use of thetas if provided. (N, 2, 2)
+            ax_1: Primary axis vectors (N, 2).
+            ax_2: Secondary axis vectors (N, 2).
 
         Returns:
-            Sampled RGBA values (Nc, 4).
-
-        Notes:
-            Nm is the sum of the mask (number of splats that are actually used for computation).
+            SampleOutput with rgb (Nc, N, 3), alpha (N,), weights (Nc, N).
         """
-        Nc = co.shape[0]
-        c_mask = centroids
-        Nm = c_mask.shape[0]
-        deltas = co[:, None, :] - c_mask[None, :, :]  # [Nc, Nm, 2]
-        dists = deltas.norm(dim=-1)  # [Nc, Nm]
-        dot1 = (deltas * ax_1).sum(dim=-1).abs()  # [Nc, Nm]
-        dot2 = (deltas * ax_2).sum(dim=-1).abs()  # [Nc, Nm]
-        axmask = dot1 > dot2  # [Nc, Nm]
-        dots = torch.where(
-            axmask,
-            dot1,
-            dot2,
-        )  # [Nc, Nm]
-        ranges = torch.where(
-            axmask,
-            range_1[None, :].expand(Nc, Nm),
-            range_2[None, :].expand(Nc, Nm),
-        )  # [Nc, Nm]
+        Nc, N = co.shape[0], centroids.shape[0]
+        deltas = co[:, None, :] - centroids[None, :, :]  # [Nc, N, 2]
+        dists = deltas.norm(dim=-1)  # [Nc, N]
+        dot1 = (deltas * ax_1).sum(dim=-1).abs()  # [Nc, N]
+        dot2 = (deltas * ax_2).sum(dim=-1).abs()  # [Nc, N]
+        axmask = dot1 > dot2  # [Nc, N]
+        dots = torch.where(axmask, dot1, dot2)  # [Nc, N]
+        ranges = torch.where(axmask, range_1[None, :], range_2[None, :])  # [Nc, N]
         weights = (
-            soft_clamp(1 - dots / (ranges + 1e-6), 0, 1, 0.1)
-            * ((dots / (dists)) ** 2).clamp(min=1e-6)
-        ) ** 2  # [Nc, Nm]
-        c1 = color_1[None, :, :].expand(Nc, Nm, 3)  # [Nc, Nm, 3]
-        c2 = color_2[None, :, :].expand(Nc, Nm, 3)  # [Nc, Nm, 3]
-        rgb = torch.where(axmask[:, :, None], c1, c2)
-        rgb = (rgb * weights.unsqueeze(-1)).sum(dim=1)  # [Nc, 3]
-        weight_sum = weights.sum(dim=1, keepdim=True).clamp(min=1e-6)  # [Nc, 1]
-        rgb = (rgb / weight_sum).clamp(0, 1)  # [Nc, 3]
-        a = soft_clamp(
-            (weights * alpha[None, :]).sum(dim=1),
-            min_val=0.0,
-            max_val=1.0,
-            softness=0.1,
-        )  # [Nc, 1]
-        out = torch.cat([rgb, a.unsqueeze(-1)], dim=-1)  # [Nc, 4]
-        return out
+            (1 - dots / (ranges.abs() + 1e-6)).clamp(0, 1)
+            * ((dots / dists.clamp(min=1e-6)) ** 2).clamp(min=1e-6)
+        ) ** 2  # [Nc, N]
+
+        # RGB: select color_1 or color_2 based on axmask (Nc, N, 3)
+        rgb = torch.where(axmask[:, :, None], color_1[None, :, :], color_2[None, :, :])
+
+        return SampleOutput(rgb=rgb, alpha=alpha, weights=weights)
 
     @torch.no_grad()
     def split(self, mask: TensorIndex):
@@ -269,7 +247,7 @@ class CubicGrad(Primitive, HasAlphas, HasAreas, Splittable, HasScales):
             - New centroids are offset by 0.5 * (ax_1 * range_1 + ax_2 * range_2).
         """
         r_1, r_2 = self.range_1, self.range_2
-        r_mask = (r_1 > r_2) & mask
+        r_mask = r_1 > r_2
         ax_1, ax_2 = self.axes
         ax_1 = ax_1[mask] * self.range_1[mask, None]
         ax_2 = ax_2[mask] * self.range_2[mask, None]
@@ -277,17 +255,19 @@ class CubicGrad(Primitive, HasAlphas, HasAreas, Splittable, HasScales):
         self.centroids[mask] -= disp
         new_centroids = torch.cat([self.centroids, self.centroids[mask] + disp], dim=0)
         new_thetas = torch.cat([self.thetas, self.thetas[mask]], dim=0)
+        r1half = self.range_1 / 2
+        r2half = self.range_2 / 2
         new_range_1 = torch.cat(
             [
-                torch.where(r_mask, self.range_1 / 2, self.range_1),
-                self.range_1[mask],
+                torch.where(r_mask & mask, r1half, self.range_1),
+                r1half[mask],
             ],
             dim=0,
         )
         new_range_2 = torch.cat(
             [
-                torch.where(r_mask, self.range_2 / 2, self.range_2),
-                self.range_2[mask],
+                torch.where(~r_mask & mask, r2half, self.range_2),
+                r2half[mask],
             ],
             dim=0,
         )

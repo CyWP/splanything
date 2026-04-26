@@ -10,6 +10,7 @@ from jaxtyping import Float, Bool, Shaped
 from torch import Tensor
 from utils.img import ImgUtils
 from utils.pytorch import TensorIndex
+from rasterizers import Rasterizer, WeightedRasterizer
 
 _logger = logging.getLogger(__name__)
 
@@ -160,14 +161,13 @@ class Primitive(nn.Module):
         """Return state dict with class name for serialization."""
         state = super().state_dict()
         state["_class"] = self.__class__.__name__.lower()
+        state["_size"] = len(self)
         return state
 
     def __len__(self) -> int:
         """Number of primitives in this object."""
         if len(self._batched_params) == 0:
             return 0
-        if self._context_mask is not None:
-            return self._context_mask.sum().item()
         return self.__getattr__(next(iter(self._batched_params))).shape[0]
 
     def filter(self, key: TensorIndex):
@@ -231,13 +231,17 @@ class Primitive(nn.Module):
         return new
 
     def prepare_for_optimization(
-        self, target: Float[Tensor, "..."], patch_size: Optional[int] = None
+        self,
+        target: Float[Tensor, "..."],
+        patch_size: Optional[int] = None,
+        rasterizer: Optional[Rasterizer] = None,
     ):
         """Prepare buffers for optimization.
 
         Args:
             target: Target image tensor (C, H, W) or (B, C, H, W).
             patch_size: Optional patch size for patch-based rendering.
+            rasterizer: Rasterizer for sample to image output (default WeightedRasterizer)
         """
         with torch.no_grad():
             H, W = target.shape[-2:]
@@ -249,6 +253,9 @@ class Primitive(nn.Module):
             self._trained_H = H
             self._trained_W = W
             self._trained_aspect_ratio = W / H if H > 0 else 1.0
+        self._buffer_rasterizer = (
+            WeightedRasterizer() if rasterizer is None else rasterizer
+        )
         self.train()
 
     def end_optimization(self):
@@ -290,11 +297,14 @@ class Primitive(nn.Module):
         """
         raise NotImplementedError()
 
-    def sample(self, co: Float[Tensor, "N 2"]) -> Float[Tensor, "N 4"]:
+    def sample(
+        self, co: Float[Tensor, "N 2"], rasterizer: Rasterizer
+    ) -> Float[Tensor, "N 4"]:
         """Sample primitive values at coordinates.
 
         Args:
             co: Coordinates to sample at (N, 2).
+            rasterizer: Rasterizer Callable to aggregate rgb, a, weights.
 
         Returns:
             Sampled RGBA values (N, 4).
@@ -305,7 +315,7 @@ class Primitive(nn.Module):
         """
         if len(self) == 0:
             return torch.zeros(co.shape[0], 4, device=self.device, dtype=self.dtype)
-        return self._sample(co)
+        return rasterizer(self._sample(co))
 
     def forward(
         self,
@@ -313,6 +323,7 @@ class Primitive(nn.Module):
         W: int,
         patches: Float[Tensor, "P S 2"],
         centers: Float[Tensor, "P 2"],
+        rasterizer: Rasterizer,
     ) -> Float[Tensor, "B C H W"]:
         """Render primitive to full image.
 
@@ -332,7 +343,7 @@ class Primitive(nn.Module):
             patch = patches[patch_idx]
             mask = self.patch_mask(centers[patch_idx], patch_size=patch_size, H=H, W=W)
             with self.masked(mask):
-                gen_patches.append(self._sample(patch))
+                gen_patches.append(self.sample(patch, rasterizer))
         return ImgUtils.assemble_patches(torch.stack(gen_patches, dim=0), H, W)
 
     def optim_step(self) -> Float[Tensor, "B C H W"]:
@@ -341,12 +352,26 @@ class Primitive(nn.Module):
         Returns:
             Rendered image using cached buffers (B, C, H, W).
         """
-        return self(
-            self._buffer_H, self._buffer_W, self._buffer_patches, self._buffer_centers
-        )
+        try:
+            out = self(
+                self._buffer_H,
+                self._buffer_W,
+                self._buffer_patches,
+                self._buffer_centers,
+                self._buffer_rasterizer,
+            )
+        except AttributeError as e:
+            raise e from Exception(
+                "Method 'prepare_for optimization()' may have not been called before running an optimization step."
+            )
+        return out
 
     def rasterize(
-        self, H: int, W: int, patch_size: Optional[int] = None
+        self,
+        H: int,
+        W: int,
+        patch_size: Optional[int] = None,
+        rasterizer: Optional[Rasterizer] = None,
     ) -> Float[Tensor, "B H W C"]:
         """Convert rasterized output to displayable image.
 
@@ -354,12 +379,17 @@ class Primitive(nn.Module):
             H: Output height.
             W: Output width.
             patch_size: Optional patch size.
+            rasterizer: Optional rasterizer override. Uses cached rasterizer if None.
 
         Returns:
             Image tensor (B, H, W, C) in [0, 1] range.
         """
+        if rasterizer is None:
+            rasterizer = self._buffer_rasterizer
         return ImgUtils.tensor2img(
-            self(H, W, patch_size=patch_size), normalized=False, clamp=True
+            self(H, W, patch_size=patch_size, rasterizer=rasterizer),
+            normalized=False,
+            clamp=True,
         )
 
     # @torch.no_grad()

@@ -15,7 +15,7 @@ Exposes:
 
 import torch
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from .protocols import HasAlphas, HasAreas, Splittable, HasScales
 from .generic import Primitive
@@ -51,29 +51,38 @@ def register_primitive(cls: type[Primitive]):
     return cls
 
 
-def get_primitive(name: str, kwargs: Dict[str, Any]) -> Primitive:
+def get_primitive(
+    name: Optional[str] = None, path: Optional[str] = None, **kwargs
+) -> Primitive:
     """Instantiate a single primitive from class name and kwargs.
 
     Args:
-        name: Primitive class name (e.g., "CubicGrad").
-        kwargs: Constructor arguments for the primitive.
+        name: Optional primitive class name (e.g., "CubicGrad").
+        path: Optional apth to pretrained primitive
 
     Returns:
         Primitive instance.
 
-    Raises:
-        KeyError: If name is not a valid primitive class.
+    Notes:
+        Either name or path must be provided.
     """
+    if path is not None:
+        state_dict = torch.load(open(path, mode="rb"))
+        pcls = PRIMITIVES[state_dict.pop("_class") if name is None else name]
+        size = 709  # state_dict.pop("_size")
+        p = pcls(size)
+        p.load_state_dict(state_dict, strict=False)
+        return p
+    if name is None:
+        raise ValueError(
+            "Must either specify the name of primtive type or a path to a pretrained primitive."
+        )
     pcls = PRIMITIVES.get(name.lower(), None)
     if pcls is None:
         raise KeyError(
             f"'{name}' is an invalid primitive class.\n"
             f"Valid classes: {list(PRIMITIVES.keys())}"
         )
-    if "state_dict" in kwargs:
-        p = pcls()
-        p.load_state_dict(torch.load(open(kwargs["state_dict"])))
-        return p
     return pcls(**kwargs)
 
 

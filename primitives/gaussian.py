@@ -8,6 +8,7 @@ from utils.lazy import lazy_tree
 from utils.pytorch import TensorIndex
 from .generic import Primitive
 from .protocols import HasAlphas, HasAreas, Splittable, HasScales
+from rasterizers import SampleOutput
 
 
 class Gaussian(Primitive, HasAlphas, HasAreas, Splittable, HasScales):
@@ -118,20 +119,19 @@ class Gaussian(Primitive, HasAlphas, HasAreas, Splittable, HasScales):
         sig = torch.maximum(self.sigma_1, self.sigma_2)
         return (center - self.centroids).norm(dim=1) - patch_size / min(H, W) < 3 * sig
 
-    def _sample(self, co: Float[Tensor, "N 2"]) -> Float[Tensor, "N 4"]:
-        """Sample Gaussian at coordinates.
+    def _sample(self, co: Float[Tensor, "N 2"]) -> SampleOutput:
+        """Sample Gaussian at coordinates, returning intermediate data.
 
         Args:
             co: Coordinates to sample at (N, 2).
 
         Returns:
-            Sampled RGBA values (N, 4).
+            SampleOutput with rgb (Nc, N, 3), alpha (N,), weights (Nc, N).
 
         Notes:
             - Assumes non-empty batched parameters.
             - Uses masked batched parameters if context is active.
         """
-        Nc = co.shape[0]
         centroids = self.centroids
         sigma_1 = self.sigma_1
         sigma_2 = self.sigma_2
@@ -146,11 +146,11 @@ class Gaussian(Primitive, HasAlphas, HasAreas, Splittable, HasScales):
             * torch.exp(-(dot2**2) / (2 * sigma_2**2 + 1e-8))
             * alpha[None, :]
         )
-        rgb = (color[None, :, :] * weights.unsqueeze(-1)).sum(dim=1)
-        weight_sum = weights.sum(dim=1, keepdim=True).clamp(min=1e-6)
-        rgb = (rgb / weight_sum).clamp(0, 1)
-        a = weights.sum(dim=1).clamp(0, 1)
-        return torch.cat([rgb, a.unsqueeze(-1)], dim=-1)
+
+        # RGB is just color expanded to all coordinates (Nc, N, 3)
+        rgb = color[None, :, :].expand(co.shape[0], -1, -1)
+
+        return SampleOutput(rgb=rgb, alpha=alpha, weights=weights)
 
     @torch.no_grad()
     def split(self, mask: TensorIndex):
@@ -201,7 +201,7 @@ class Gaussian(Primitive, HasAlphas, HasAreas, Splittable, HasScales):
         new_sigma_2 = torch.cat([sigma_2_new, sigma_2_split], dim=0)
 
         new_color = torch.cat([self.color, self.color[mask]], dim=0)
-        new_alphas = torch.cat([self.alphas / sq2, self.alphas[mask]], dim=0)
+        new_alphas = torch.cat([self.alphas, self.alphas[mask]], dim=0)
 
         self.update_parameters(
             {

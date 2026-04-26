@@ -5,7 +5,7 @@ import torch.optim.lr_scheduler as lr_scheduler
 from jaxtyping import Bool, Integer
 from logging import getLogger
 from torch import Tensor
-from typing import Union, Sequence, Dict, Any, get_args
+from typing import Union, Sequence, Dict, Any, Optional
 
 _logger = getLogger(__name__)
 
@@ -50,7 +50,7 @@ SCHEDULERS: Dict[str, lr_scheduler._LRScheduler] = {
 }
 
 
-def get_device() -> torch.device:
+def get_device(device: Optional[str] = None) -> torch.device:
     """Get the most performant compute device available.
 
     Checks in order of performance: CUDA (NVIDIA), HIP (AMD ROCm), MPS (Apple Silicon), CPU.
@@ -58,8 +58,10 @@ def get_device() -> torch.device:
     Returns:
         torch.device: The most performant device available.
     """
+    if device is not None:
+        return torch.device(device)
     if torch.cuda.is_available():
-        return torch.device("cuda")
+        return torch.device("cuda:0")
     if hasattr(torch.version, "hip") and torch.version.hip is not None:
         return torch.device("hip")
     if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():

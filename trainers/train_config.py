@@ -18,6 +18,7 @@ from primitives import Primitive, get_primitive
 from losses import Loss, get_loss
 from callbacks import Callback, get_callback
 from refinement import RefinementRule, get_refinement_rule
+from rasterizers import get_rasterizer
 from .trainer import Trainer
 from utils.pytorch import init_optimizer, init_scheduler, get_device
 from utils.img import ImgUtils
@@ -106,8 +107,7 @@ def load_train_config(
     device = config.get("device", device)
     device = torch.device(device) if device is not None else get_device()
 
-    primitive = config.get("primitive", {})
-    primitive = _build_primitive(primitive)
+    primitive = get_primitive(**config.get("primitive", {}))
 
     losses = config.get("losses", {})
     losses = _build_losses(losses)
@@ -117,6 +117,13 @@ def load_train_config(
 
     refinement = config.get("refinement", {})
     refinement_rules = _build_refinement(refinement, primitive)
+
+    # Build rasterizer
+    rasterizer_cfg = config.get("rasterizer", {"name": "weightedrasterizer"})
+    if isinstance(rasterizer_cfg, str):
+        rasterizer_cfg = {"name": rasterizer_cfg}
+    rasterizer_name = rasterizer_cfg.pop("name", "weightedrasterizer")
+    rasterizer = get_rasterizer(rasterizer_name, rasterizer_cfg)
 
     params = list(primitive.parameters())
     optimizer = config.get("optimizer", {})
@@ -141,6 +148,7 @@ def load_train_config(
             scheduler=scheduler,
             refinements=refinement_rules,
             device=device,
+            rasterizer=rasterizer,
             **trainer,
         )
 
@@ -151,22 +159,8 @@ def load_train_config(
         "optimizer": optimizer,
         "scheduler": scheduler,
         "trainer": trainer,
+        "rasterizer": rasterizer,
     }
-
-
-def _build_primitive(cfg: Dict[str, Any]) -> Primitive:
-    """Build primitive from config.
-
-    Args:
-        cfg: Dict with single key being class name and value being kwargs.
-
-    Returns:
-        Primitive instance.
-    """
-    if len(cfg) != 1:
-        raise ValueError("Primitive config must have exactly one entry.")
-    name, kwargs = next(iter(cfg.items()))
-    return get_primitive(name, kwargs)
 
 
 def _build_losses(cfg: List[Dict[str, Any]]) -> Dict[str, Loss]:
