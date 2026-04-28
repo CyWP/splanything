@@ -69,7 +69,7 @@ def get_primitive(
     if path is not None:
         state_dict = torch.load(open(path, mode="rb"))
         pcls = PRIMITIVES[state_dict.pop("_class") if name is None else name]
-        size = 709  # state_dict.pop("_size")
+        size = state_dict.pop("_size")
         p = pcls(size)
         p.load_state_dict(state_dict, strict=False)
         return p

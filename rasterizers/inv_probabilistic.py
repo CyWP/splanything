@@ -9,22 +9,23 @@ from .sample_out import SampleOutput
 from utils.math import soft_clamp
 
 
-class ProbabilisticRasterizer(Rasterizer):
-    """Probabilistic selection rasterizer.
+class InverseProbabilisticRasterizer(Rasterizer):
+    """Inverse probabilistic selection rasterizer.
 
-    Selects one primitive per coordinate via weighted random sampling.
+    Selects one primitive per coordinate via inverse-weight random sampling.
     RGB comes from selected primitive; alpha is soft-clamped weighted sum.
 
     Attributes:
-        clamp_soft (float): Softness parameter for soft_clamp on alpha.
+        clamp_soft (float): Softness parameter for soft_clamp on alpha
+            (inherited from ProbabilisticRasterizer).
 
     Construction:
-        ProbabilisticRasterizer(clamp_soft: float = 0.1):
+        InverseProbabilisticRasterizer(clamp_soft: float = 0.1):
             Create with specified softness for alpha clamping.
 
     Notes:
-        - Uses torch.multinomial for selection (replacement=False).
-        - Alpha uses soft_clamp instead of hard clamp.
+        - Uses (max_weight - weight) for selection probabilities.
+        - Same soft_clamp behavior as ProbabilisticRasterizer.
     """
 
     def __init__(self, clamp_soft: float = 0.1):
@@ -36,21 +37,22 @@ class ProbabilisticRasterizer(Rasterizer):
         self.clamp_soft = clamp_soft
 
     def __call__(self, sample: SampleOutput, **kwargs) -> Float[Tensor, "N 4"]:
-        """Aggregate via probabilistic selection.
+        """Aggregate via inverse-probabilistic selection.
 
         Args:
             sample: SampleOutput with rgb (Nc, N, 3), alpha (N,), weights (Nc, N).
 
         Returns:
-            RGBA tensor (N, 4): RGB from sampled primitive, soft-clamped alpha.
+            RGBA tensor (N, 4): RGB from inverse-sampled primitive, soft-clamped alpha.
 
         Shape:
-            - selected: (Nc, 1) indices from multinomial
+            - weights: (Nc, N) -> (Nc, N) via max - weight
+            - selected: (Nc, 1) indices from inverse-weight multinomial
             - rgb: gather along N -> (Nc, 3)
-            - alpha: soft_clamp(sum(w * a)) -> (N,)
         """
-        # (Nc, N) -> (Nc, 1) via multinomial selection
-        selected = torch.multinomial(sample.weights, 1)  # (Nc, 1)
+        # Compute inverse weights and sample
+        weights = sample.weights.max(dim=0).values[None, :] - sample.weights  # (Nc, N)
+        selected = torch.multinomial(weights, 1)  # (Nc, 1)
         Nc = selected.shape[0]
 
         # Gather RGB using selected indices

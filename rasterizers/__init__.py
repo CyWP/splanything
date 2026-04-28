@@ -3,26 +3,44 @@
 Exposes:
 - Rasterizer: Base class for rasterization strategies
 - SampleOutput: Container for per-coordinate per-primitive sampling data
-- WeightedRasterizer: Weight-based aggregation rasterizer (default)
-- ProbabilisticRasterizer: Probabilistic selection rasterizer
+- WeightedRasterizer: Weight-normalized aggregation (default)
+- InverseWeightedRasterizer: Inverse-weight normalization aggregation
+- ProbabilisticRasterizer: Weighted random selection aggregation
+- InverseProbabilisticRasterizer: Inverse-weight random selection aggregation
+- UniformRasterizer: Uniform averaging aggregation
+- ExponentialWeightedRasterizer: Exponent-powered weight aggregation
+- MaxWeightedRasterizer: Maximum weight selection aggregation
 - get_rasterizer: Factory function to instantiate a rasterizer from config
-"""
 
-from typing import Dict, Any, Optional
+Internal:
+- generic.py: Rasterizer base class
+- sample_out.py: SampleOutput container
+"""
 
 from .generic import Rasterizer
 from .sample_out import SampleOutput
 from .weighted import WeightedRasterizer
+from .inv_weighted import InverseWeightedRasterizer
 from .probabilistic import ProbabilisticRasterizer
+from .inv_probabilistic import InverseProbabilisticRasterizer
+from .uniform import UniformRasterizer
+from .exponential import ExponentialWeightedRasterizer
+from .max import MaxWeightedRasterizer
 
-CLASSES = [WeightedRasterizer, ProbabilisticRasterizer]
+CLASSES = [
+    WeightedRasterizer,
+    InverseWeightedRasterizer,
+    ProbabilisticRasterizer,
+    InverseProbabilisticRasterizer,
+    UniformRasterizer,
+    ExponentialWeightedRasterizer,
+    MaxWeightedRasterizer,
+]
 
 RASTERIZERS = {c.__name__.lower(): c for c in CLASSES}
 
 
-def get_rasterizer(
-    name: Optional[str] = None, kwargs: Dict[str, Any] = None
-) -> Rasterizer:
+def get_rasterizer(**kwargs) -> Rasterizer:
     """Instantiate a rasterizer from name and kwargs.
 
     Args:
@@ -35,10 +53,9 @@ def get_rasterizer(
     Raises:
         KeyError: If name is not a valid rasterizer class.
     """
+    name = kwargs.pop("name", None)
     if name is None:
         return WeightedRasterizer()
-    if kwargs is None:
-        kwargs = {}
     rcls = RASTERIZERS.get(name.lower(), None)
     if rcls is None:
         raise KeyError(

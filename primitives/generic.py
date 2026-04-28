@@ -324,6 +324,7 @@ class Primitive(nn.Module):
         patches: Float[Tensor, "P S 2"],
         centers: Float[Tensor, "P 2"],
         rasterizer: Rasterizer,
+        max_batch: Optional[int] = None,
     ) -> Float[Tensor, "B C H W"]:
         """Render primitive to full image.
 
@@ -332,19 +333,35 @@ class Primitive(nn.Module):
             W: Output width.
             patches: Patch coordinates (P, S, 2) where P=num_patches, S=patch_size^2.
             centers: Patch centers (P, 2).
+            max_batch: Optional integer value of max number of primitives to sample at once.
+                Enables sampling multiple patches at once. Does not partially sample patches.
 
         Returns:
             Rendered image (B, C, H, W).
         """
         P, S, C = patches.shape
         patch_size = S if P == 1 else int(S**0.5)
-        gen_patches = []
+        if max_batch is None:
+            gen_patches = []
+            for patch_idx in range(len(patches)):
+                patch = patches[patch_idx]
+                mask = self.patch_mask(
+                    centers[patch_idx], patch_size=patch_size, H=H, W=W
+                )
+                with self.masked(mask):
+                    gen_patches.append(self.sample(patch, rasterizer))
+            return ImgUtils.assemble_patches(torch.stack(gen_patches, dim=0), H, W)
+        patch_mask_sums = torch.empty((P,), device=patches.device, dtype=torch.long)
+        i = 0
+        current_batch_size = 0
+        current_batch = None
+        current_mask = torch.zeros(
+            (len(self),), device=patches.device, dtype=torch.bool
+        )
         for patch_idx in range(len(patches)):
             patch = patches[patch_idx]
             mask = self.patch_mask(centers[patch_idx], patch_size=patch_size, H=H, W=W)
-            with self.masked(mask):
-                gen_patches.append(self.sample(patch, rasterizer))
-        return ImgUtils.assemble_patches(torch.stack(gen_patches, dim=0), H, W)
+            mask_sum = mask.sum()
 
     def optim_step(self) -> Float[Tensor, "B C H W"]:
         """Run one optimization step and return rendered output.

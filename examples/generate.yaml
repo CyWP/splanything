@@ -2,7 +2,8 @@ primitive:
   path: ./cubic_test/primitive_e500.pt
 H: 3240
 W: 3840
-patch_size: 128
+patch_size: 256
 
-# rasterizer:
-#   name: probabilisticrasterizer
+rasterizer:
+  name: exponentialweightedrasterizer
+  exponent: 4

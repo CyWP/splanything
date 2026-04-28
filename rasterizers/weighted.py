@@ -6,20 +6,44 @@ from torch import Tensor
 from .generic import Rasterizer
 from .sample_out import SampleOutput
 
-from utils.math import soft_clamp
-
 
 class WeightedRasterizer(Rasterizer):
+    """Weight-normalized aggregation rasterizer.
 
-    def __init__(self, clamp_soft: float = 0.1):
-        self.clamp_soft = clamp_soft
+    Aggregates per-primitive RGB values by weight-normalized weighted average.
+    Alpha is computed as weight-summed alphas.
+
+    Attributes:
+        None.
+
+    Notes:
+        - Default rasterizer used when none specified.
+        - Weights are normalized by their sum per coordinate.
+        - RGB normalized independently of alpha.
+    """
 
     def __call__(self, sample: SampleOutput, **kwargs) -> Float[Tensor, "N 4"]:
-        # Normalize RGB by weight sum
-        weight_sum = sample.weights.sum(dim=1, keepdim=True).clamp(min=1e-6)
-        rgb = (sample.rgb * sample.weights[..., None]).sum(dim=1) / weight_sum
+        """Aggregate via weight-normalized weighted average.
+
+        Args:
+            sample: SampleOutput with rgb (Nc, N, 3), alpha (N,), weights (Nc, N).
+
+        Returns:
+            RGBA tensor (N, 4): RGB normalized by weight sum, alpha = sum(w * a).
+
+        Shape:
+            - rgb: (Nc, N, 3) -> (N, 3) via weighted average
+            - weights: (Nc, N) -> (N,) via weighted sum
+            - alpha: (N,) unchanged
+        """
+        # (Nc, N) -> (Nc, N, 1) for broadcasting
+        weight_sum = sample.weights.sum(dim=1, keepdim=True).clamp(min=1e-6)  # (Nc, 1)
+        rgb = (sample.rgb * sample.weights[..., None]).sum(
+            dim=1
+        ) / weight_sum  # (Nc, N, 3) -> (N, 3)
         rgb = rgb.clamp(0, 1)
 
-        # Use soft_clamp for alpha with same logic as original
-        a = (sample.weights * sample.alpha[None, :]).sum(dim=1).clamp(0, 1)
-        return torch.cat([rgb, a[:, None]], dim=1)
+        a = (
+            (sample.weights * sample.alpha[None, :]).sum(dim=1).clamp(0, 1)
+        )  # (Nc, N) @ (N,) -> (N,)
+        return torch.cat([rgb, a[:, None]], dim=1)  # (N, 3) + (N, 1) -> (N, 4)
