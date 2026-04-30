@@ -25,6 +25,9 @@ from .probabilistic import ProbabilisticRasterizer
 from .inv_probabilistic import InverseProbabilisticRasterizer
 from .uniform import UniformRasterizer
 from .exponential import ExponentialWeightedRasterizer
+from .inv_exponential import InverseExponentialWeightedRasterizer
+from .inv_exp_prob import InverseExponentialProbabilisticRasterizer
+from .exp_prob import ExponentialProbabilisticRasterizer
 from .max import MaxWeightedRasterizer
 
 CLASSES = [
@@ -34,7 +37,10 @@ CLASSES = [
     InverseProbabilisticRasterizer,
     UniformRasterizer,
     ExponentialWeightedRasterizer,
+    InverseExponentialWeightedRasterizer,
     MaxWeightedRasterizer,
+    InverseExponentialProbabilisticRasterizer,
+    ExponentialProbabilisticRasterizer,
 ]
 
 RASTERIZERS = {c.__name__.lower(): c for c in CLASSES}

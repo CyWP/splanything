@@ -1,11 +1,9 @@
 import torch
 
 from typing import Optional, Tuple
-from jaxtyping import Float, Bool
+from jaxtyping import Float, Bool, Integer
 from torch import Tensor
 
-from utils.lazy import lazy_tree
-from utils.math import soft_clamp
 from utils.pytorch import TensorIndex
 from .generic import Primitive
 from .protocols import HasAlphas, HasAreas, Splittable, HasScales
@@ -157,6 +155,19 @@ class CubicGrad(Primitive, HasAlphas, HasAreas, Splittable, HasScales):
     @property
     def scales(self) -> Tuple[Float[Tensor, "N"], Float[Tensor, "N"]]:
         return (self.range_1, self.range_2)
+
+    @torch.no_grad()
+    def patch_mask(
+        self,
+        centers: Float[Tensor, "P 2"],
+        patch_sizes: Integer[Tensor, "P"],
+        H: Integer[Tensor, "P"],
+        W: Integer[Tensor, "P"],
+    ) -> Bool[Tensor, "P N"]:
+        range_max = torch.maximum(self.range_1, self.range_2)
+        unit_patches = patch_sizes / torch.minimum(H, W)
+        dists = (centers[:, None, :] - self.centroids[None, :, :]).norm(dim=2)
+        return dists - unit_patches[:, None] < range_max[None, :]
 
     def _sample(self, co: Float[Tensor, "N 2"]) -> SampleOutput:
         """Sample primitive values at coordinates.

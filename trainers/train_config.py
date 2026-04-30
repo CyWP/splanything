@@ -23,7 +23,6 @@ from .trainer import Trainer
 from utils.pytorch import init_optimizer, init_scheduler, get_device
 from utils.img import ImgUtils
 
-
 PathLike = Union[str, None]
 
 
@@ -123,7 +122,7 @@ def load_train_config(
     if isinstance(rasterizer_cfg, str):
         rasterizer_cfg = {"name": rasterizer_cfg}
     rasterizer_name = rasterizer_cfg.pop("name", "weightedrasterizer")
-    rasterizer = get_rasterizer(rasterizer_name, rasterizer_cfg)
+    rasterizer = get_rasterizer(name=rasterizer_name, **rasterizer_cfg)
 
     params = list(primitive.parameters())
     optimizer = config.get("optimizer", {})

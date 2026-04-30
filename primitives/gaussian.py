@@ -1,10 +1,9 @@
 import torch
 
 from typing import Optional, Tuple
-from jaxtyping import Float, Bool
+from jaxtyping import Float, Bool, Integer
 from torch import Tensor
 
-from utils.lazy import lazy_tree
 from utils.pytorch import TensorIndex
 from .generic import Primitive
 from .protocols import HasAlphas, HasAreas, Splittable, HasScales
@@ -114,16 +113,22 @@ class Gaussian(Primitive, HasAlphas, HasAreas, Splittable, HasScales):
 
     @torch.no_grad()
     def patch_mask(
-        self, center: Float[Tensor, "N 2"], patch_size: int, H: int, W: int
-    ) -> Bool[Tensor, "N"]:
+        self,
+        centers: Float[Tensor, "P 2"],
+        patch_sizes: Integer[Tensor, "P"],
+        H: Integer[Tensor, "P"],
+        W: Integer[Tensor, "P"],
+    ) -> Bool[Tensor, "P N"]:
         sig = torch.maximum(self.sigma_1, self.sigma_2)
-        return (center - self.centroids).norm(dim=1) - patch_size / min(H, W) < 3 * sig
+        unit_patches = patch_sizes / torch.minimum(H, W)
+        dists = (centers[:, None, :] - self.centroids[None, :, :]).norm(dim=2)
+        return dists - unit_patches[:, None] < 2.5 * sig[None, :]
 
-    def _sample(self, co: Float[Tensor, "N 2"]) -> SampleOutput:
+    def _sample(self, co: Float[Tensor, "Nc 2"]) -> SampleOutput:
         """Sample Gaussian at coordinates, returning intermediate data.
 
         Args:
-            co: Coordinates to sample at (N, 2).
+            co: Coordinates to sample (Nc, 2), in range (0, 1).
 
         Returns:
             SampleOutput with rgb (Nc, N, 3), alpha (N,), weights (Nc, N).
@@ -132,6 +137,33 @@ class Gaussian(Primitive, HasAlphas, HasAreas, Splittable, HasScales):
             - Assumes non-empty batched parameters.
             - Uses masked batched parameters if context is active.
         """
+        # Nc = co.shape[0]
+        # centroids = self.centroids  # (N, 2)
+        # sigma_1 = self.sigma_1  # (N,)
+        # sigma_2 = self.sigma_2  # (N,)
+        # alpha = self.alphas  # (N,)
+        # color = self.color  # (N, 3)
+        # ax_1, ax_2 = self.axes  # (2, N, 2) or similar
+        # # Precompute projections of centroids (N,)
+        # c_ax1 = (centroids * ax_1).sum(dim=-1)
+        # c_ax2 = (centroids * ax_2).sum(dim=-1)
+        # # Project coordinates once → (Nc, N)
+        # co_ax1 = co @ ax_1.T
+        # co_ax2 = co @ ax_2.T
+        # # Differences (Nc, N)
+        # d1 = co_ax1 - c_ax1
+        # d2 = co_ax2 - c_ax2
+        # # Precompute inverse variances (N,)
+        # inv_sigma1 = 1.0 / (2 * sigma_1**2 + 1e-8)
+        # inv_sigma2 = 1.0 / (2 * sigma_2**2 + 1e-8)
+        # # Single fused exponential (Nc, N)
+        # weights = (
+        #     torch.exp(-(d1 * d1) * inv_sigma1 - (d2 * d2) * inv_sigma2) * alpha
+        # )  # broadcast (N,)
+        # # RGB: keep expanded view (no allocation unless forced)
+        # rgb = color.unsqueeze(0).expand(Nc, -1, -1)
+
+        # return SampleOutput(rgb=rgb, alpha=alpha, weights=weights)
         centroids = self.centroids
         sigma_1 = self.sigma_1
         sigma_2 = self.sigma_2

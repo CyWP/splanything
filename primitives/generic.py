@@ -6,7 +6,7 @@ import copy
 
 from contextlib import contextmanager
 from typing import Dict, Optional, Any, Sequence, ItemsView, Set
-from jaxtyping import Float, Bool, Shaped
+from jaxtyping import Float, Bool, Shaped, Integer
 from torch import Tensor
 from utils.img import ImgUtils
 from utils.pytorch import TensorIndex
@@ -263,33 +263,37 @@ class Primitive(nn.Module):
 
     @torch.no_grad()
     def patch_mask(
-        self, center: Float[Tensor, "N 2"], patch_size: int, H: int, W: int
-    ) -> Bool[Tensor, "N"]:
+        self,
+        centers: Float[Tensor, "P 2"],
+        patch_sizes: Integer[Tensor, "P 2"],
+        H: Integer[Tensor, "P"],
+        W: Integer[Tensor, "P"],
+    ) -> Bool[Tensor, "P N"]:
         """Compute mask for valid patches at given centers.
 
         Args:
-            center: Patch center coordinates (N, 2).
-            patch_size: Size of patch.
+            centers: Patch center coordinates (P, 2).
+            patch_sizes: Size of patches (P, 2).
 
         Returns:
-            Bool tensor (N,) indicating which patches are valid.
+            Bool tensor (P, N) indicating which primitives are valid for a given patch.
         """
         return torch.ones((len(self),), dtype=torch.bool, device=self.device)
 
     @classmethod
     def _sample(
         cls,
-        co: Float[Tensor, "N 2"],
+        co: Float[Tensor, "Nc 2"],
         *args,
         **kwargs,
-    ) -> Float[Tensor, "N 4"]:
+    ) -> Float[Tensor, "Nc 4"]:
         """Implementation of sampling logic. Subclasses must implement this.
 
         Args:
-            co: Coordinates to sample at (N, 2).
+            co: Coordinates to sample (Nc, 2).
 
         Returns:
-            Sampled RGBA values (N, 4).
+            Sampled RGBA values (Nc, 4).
 
         Notes:
             - Assumes non-empty batched parameters (len(self) > 0).
@@ -298,8 +302,8 @@ class Primitive(nn.Module):
         raise NotImplementedError()
 
     def sample(
-        self, co: Float[Tensor, "N 2"], rasterizer: Rasterizer
-    ) -> Float[Tensor, "N 4"]:
+        self, co: Float[Tensor, "Nc 2"], rasterizer: Rasterizer
+    ) -> Float[Tensor, "Nc 4"]:
         """Sample primitive values at coordinates.
 
         Args:
@@ -324,7 +328,7 @@ class Primitive(nn.Module):
         patches: Float[Tensor, "P S 2"],
         centers: Float[Tensor, "P 2"],
         rasterizer: Rasterizer,
-        max_batch: Optional[int] = None,
+        max_batch: int = 100,
     ) -> Float[Tensor, "B C H W"]:
         """Render primitive to full image.
 
@@ -340,28 +344,44 @@ class Primitive(nn.Module):
             Rendered image (B, C, H, W).
         """
         P, S, C = patches.shape
-        patch_size = S if P == 1 else int(S**0.5)
-        if max_batch is None:
-            gen_patches = []
-            for patch_idx in range(len(patches)):
-                patch = patches[patch_idx]
-                mask = self.patch_mask(
-                    centers[patch_idx], patch_size=patch_size, H=H, W=W
-                )
-                with self.masked(mask):
-                    gen_patches.append(self.sample(patch, rasterizer))
-            return ImgUtils.assemble_patches(torch.stack(gen_patches, dim=0), H, W)
-        patch_mask_sums = torch.empty((P,), device=patches.device, dtype=torch.long)
-        i = 0
-        current_batch_size = 0
-        current_batch = None
-        current_mask = torch.zeros(
-            (len(self),), device=patches.device, dtype=torch.bool
+        patch_sizes = torch.full(
+            (P,), S if P == 1 else int(S**0.5), dtype=torch.long, device=patches.device
         )
-        for patch_idx in range(len(patches)):
-            patch = patches[patch_idx]
-            mask = self.patch_mask(centers[patch_idx], patch_size=patch_size, H=H, W=W)
-            mask_sum = mask.sum()
+        H = torch.full((P,), H, dtype=torch.long, device=patches.device)
+        W = torch.full((P,), W, dtype=torch.long, device=patches.device)
+        patch_masks = self.patch_mask(centers, patch_sizes, H, W)  # [P, N]
+        patch_mask_sums = patch_masks.sum(dim=1)  # [P,]
+        gen = []
+        i = 0
+        mask = torch.empty((len(self),), dtype=torch.bool, device=patches.device)
+        while i < P:
+            acc_patches = []
+            batch_size = 0
+            mask.zero_()
+            while (
+                i < P
+                and (len(acc_patches) + 1) * batch_size + patch_mask_sums[i] < max_batch
+            ):
+                mask = mask | patch_masks[i]
+                batch_size = mask.sum()
+                acc_patches.append(patches[i])
+                i += 1
+            # Only True if a single patch must be done in multiple passes
+            if len(acc_patches) == 0:
+                b_patches = torch.chunk(
+                    patches[i], patch_mask_sums[i] // max_batch, dim=0
+                )
+                mask = patch_masks[i]
+                for b in b_patches:
+                    with self.masked(mask):
+                        gen.append(self.sample(b, rasterizer))
+                i += 1
+            else:
+                with self.masked(mask):
+                    co = torch.cat(acc_patches, dim=0)
+                    gen.append(self.sample(co, rasterizer))
+        patch_gen = torch.cat(gen, dim=0).reshape(P, S, 4)
+        return ImgUtils.assemble_patches(patch_gen, H[0], W[0])
 
     def optim_step(self) -> Float[Tensor, "B C H W"]:
         """Run one optimization step and return rendered output.

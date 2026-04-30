@@ -1,6 +1,6 @@
 primitive:
         name: cubicgrad
-        size: 20
+        size: 150
 
 optimizer:
         name: adamw
@@ -14,8 +14,8 @@ scheduler:
 losses:
       #       - L2:
       #                 weight: 1.0
-      - SSIM:
-                weight: 0.25
+      #       - SSIM:
+      #                 weight: 0.25
       - L1:
                 weight: 1.0
 
@@ -28,19 +28,19 @@ callbacks:
       - PreviewWindow: {}
 
 refinement:
-      - AlphaCull:
+      #       - AlphaCull:
+      #                 threshold: 0.1
+      #                 interval: 25
+      - GradSplit:
                 threshold: 0.05
                 interval: 50
-      - GradSplit:
-                threshold: 0.01
-                interval: 50
       - IsoSplit:
-                threshold: 2.5
+                threshold: 2
                 interval: 50
 
 trainer:
         name: cubic_test
-        patch_size: 32
+        patch_size: 16
 
 target:
         path: examples/target.png

@@ -48,7 +48,8 @@ class TkImageWindow:
         """Update the displayed image.
 
         Args:
-            img: PIL Image
+            img: PIL Image. Will be resized to fit within window bounds
+                while preserving aspect ratio.
         """
         W, H = img.size
         if self._toplevel is None:
@@ -59,14 +60,17 @@ class TkImageWindow:
                 self._toplevel, width=self.width, height=self.height
             )
             self._canvas.pack()
-        if W != self.width or H != self.height:
-            self.width = W
-            self.height = H
-            self._canvas.configure(width=W, height=H)
+
+        scale = min(self.width / W, self.height / H, 1.0)
+        if scale < 1.0:
+            new_W, new_H = int(W * scale), int(H * scale)
+            img = img.resize((new_W, new_H), Image.Resampling.LANCZOS)
 
         self._photo = ImageTk.PhotoImage(img)
         self._canvas.delete("all")
-        self._canvas.create_image(0, 0, anchor="nw", image=self._photo)
+        offset_x = (self.width - img.width) // 2
+        offset_y = (self.height - img.height) // 2
+        self._canvas.create_image(offset_x, offset_y, anchor="nw", image=self._photo)
         self._toplevel.update()
 
     def close(self) -> None:
