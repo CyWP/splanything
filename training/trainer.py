@@ -1,15 +1,15 @@
 import json
 import logging
-import os
 import torch
 
 from typing import Sequence, Callable, Dict, Any, Optional, Union
 from jaxtyping import Float
+from pathlib import Path
 from torch import Tensor
 
-from primitives import Primitive
-from rasterizers import Rasterizer
 from utils.lazy import clear_all_caches
+from utils.pytorch import get_device
+from .train_sampler import TrainSampler
 
 _logger = logging.getLogger(__name__)
 
@@ -46,59 +46,37 @@ class Trainer:
     def __init__(
         self,
         name: str,
-        target: Float[Tensor, "B C H W"],
-        primitive: Primitive,
+        sampler: TrainSampler,
         optimizer: torch.optim.Optimizer,
         losses: Dict[str, Callable],
         callbacks: Sequence[Callable],
-        base_folder: Optional[str] = None,
-        patch_size: Optional[int] = None,
+        batch_size: Optional[int] = None,
+        base_folder: Optional[Path] = None,
         scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
         refinements: Sequence[Callable] = (),
-        device: Optional[Union[str, torch.device]] = None,
-        rasterizer: Optional[Rasterizer] = None,
     ):
-        """Initialize trainer.
-
-        Args:
-            name: Name for this training run (used to create run folder).
-            target: Target image tensor (B, C, H, W).
-            primitive: Primitive to optimize.
-            optimizer: Optimizer for primitive parameters.
-            losses: Dict of loss functions {"name": Loss}.
-            callbacks: List of Callback instances.
-            base_folder: Base folder for saving runs (default: current directory).
-            patch_size: Optional patch size for patch-based rendering.
-            scheduler: Optional learning rate scheduler.
-            refinements: List of FilterRule and SplitRule instances for epoch-end refinement.
-            device: Optional device override. Uses get_device() fallback if None.
-            rasterizer: Optional rasterizer override. Uses WeightedRasterizer default.
-        """
-        from utils.pytorch import get_device
 
         self.name = name
-        self.base_folder = base_folder or "."
-        self.run_folder = os.path.join(self.base_folder, name)
-        os.makedirs(self.run_folder, exist_ok=True)
+        self.base_folder = base_folder or Path(".")
+        self.run_folder = self.base_folder / name
+        self.run_folder.mkdir(parents=True, exist_ok=True)
 
         device = device or get_device()
         if isinstance(device, str):
             device = torch.device(device)
 
-        self.target = target.to(device)
-        self.primitive = primitive.to(device)
-        self.patch_size = patch_size
-        self.rasterizer = rasterizer
+        self.sampler = sampler
         self.optimizer = optimizer
+        self.batch_size = batch_size
         self.losses = losses
         self.callbacks = callbacks
         self.refinements = list(refinements)
         self.scheduler = scheduler
         self.logs: Dict[int, Dict[str, Any]] = dict()
 
-        self.trainer_path = os.path.join(self.run_folder, "trainer.pt")
-        self.primitive_path = os.path.join(self.run_folder, "primitive.pt")
-        self.logs_path = os.path.join(self.run_folder, "logs.json")
+        self.trainer_path = self.run_folder / "trainer.pt"
+        self.primitive_path = self.run_folder / "primitive.pt"
+        self.logs_path = self.run_folder / "logs.json"
 
     def call_back(self, stage: str):
         """Trigger all callbacks for a given stage.
@@ -161,9 +139,8 @@ class Trainer:
         Yields:
             State dict with current epoch, loss, and output for inspection.
         """
-        self.primitive.prepare_for_optimization(
-            target=self.target, patch_size=self.patch_size, rasterizer=self.rasterizer
-        )
+        prim_rg = self.sampler.primitive.requires_grad
+        self.sampler.primitive.requires_grad_(True)
         self.should_continue = True
         self.call_back(TRAIN_START)
         self.epoch = 1
@@ -177,8 +154,8 @@ class Trainer:
             _logger.info("Training interrupted by user")
             self.stop()
         self.call_back(TRAIN_END)
-        self.primitive.end_optimization()
         self._save_all()
+        self.sampler.primitive.requires_grad_(prim_rg)
 
     def exec_epoch(self) -> Dict[str, Any]:
         """Execute one training epoch.
@@ -187,18 +164,32 @@ class Trainer:
         Triggers callbacks at EPOCH_START, PRE_STEP, EPOCH_END.
         """
         self.call_back(EPOCH_START)
-        self.optimizer.zero_grad()
-        self.last_output = self.primitive.optim_step()
-        self.last_losses = {name: l(self) for name, l in self.losses.items()}
-        self.last_loss = sum(self.last_losses.values())
-        self.last_loss.backward()
-        self.call_back(PRE_STEP)
-        self.optimizer.step()
+        self._zero_grad()
+        for gen, target in self.sampler:
+            self.last_output = gen
+            self.last_target = target
+            self._update_losses()
+            self.last_loss.backward()
+            if self.batch_size is not None and self.epoch % self.batch_size == 0:
+                self.call_back(PRE_STEP)
+                self.optimizer.step()
+                self.zero_grad()
         if self.scheduler is not None:
             self.scheduler.step()
         with torch.no_grad():
             self.call_back(EPOCH_END)
             self._apply_refinements()
+
+    def _zero_grad(self):
+        self.optimizer.zero_grad()
+        self.last_losses = {name: 0.0 for name in self.losses.keys()}
+
+    def _update_losses(self):
+        last_losses = {name: l(self) for name, l in self.losses.items()}
+        last_loss = sum(last_losses.values())
+        for name, loss in last_losses.items():
+            self.last_losses[name] = self.last_losses[name] + loss
+        self.last_loss = self.last_loss + last_loss
 
     def _apply_refinements(self):
         """Aggregate and apply filter and split rules.

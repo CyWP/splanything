@@ -10,6 +10,8 @@ from jaxtyping import Float
 from PIL import Image
 from torch import Tensor
 
+from .lazy import lazy_tree
+
 
 class ImgUtils:
     """Image processing utilities for tensor operations.
@@ -80,6 +82,41 @@ class ImgUtils:
         if B == 1:
             return imgs[0]
         return imgs
+
+    @staticmethod
+    def resize(
+        img: Float[Tensor, "B C H W"],
+        H: int,
+        W: int,
+        mode: str = "bilinear",
+        align_corners: Optional[bool] = None,
+        antialias: bool = False,
+    ) -> Float[Tensor, "B C H W"]:
+        """Resize image tensor to target height and width.
+
+        Args:
+            img: Input image (B, C, H_in, W_in).
+            H: Target height.
+            W: Target width.
+            mode: Interpolation mode for F.interpolate (default "bilinear").
+            align_corners: Optional align_corners argument.
+            antialias: Apply antialiasing on downscaling.
+
+        Returns:
+            Resized image (B, C, H, W).
+
+        Notes:
+            - Requires batch dimension; never squeezes.
+            - align_corners is ignored for "nearest" and "area" modes.
+        """
+        if H < 1 or W < 1:
+            raise Exception(f"Target size must be positive, got H={H}, W={W}.")
+
+        kwargs = {"antialias": antialias}
+        if mode not in ("nearest", "area"):
+            kwargs["align_corners"] = align_corners
+
+        return F.interpolate(img, size=(H, W), mode=mode, **kwargs)
 
     @staticmethod
     @torch.no_grad()
@@ -219,6 +256,56 @@ class ImgUtils:
         return ImgUtils.extract_patches(
             ImgUtils.gen_px_coords(H, W, device), patch_size
         )
+
+    @staticmethod
+    def extract_image_patches(
+        img: Float[Tensor, "B C H W"],
+        patch_size: Optional[int],
+        padding_mode: str = "replicate",
+    ) -> Float[Tensor, "B P S C"]:
+        """Extract image patches matching the layout of get_patches coordinates.
+
+        Pads the image so H and W are divisible by patch_size, then extracts
+        non-overlapping square patches using im2col/unfold.
+
+        Args:
+            img: Input image (B, C, H, W).
+            patch_size: Size of square patches. If None or larger than both H and W,
+                returns a single patch containing all H*W pixels.
+            padding_mode: Padding mode for F.pad (default "replicate").
+
+        Returns:
+            Image patches (B, P, S, C). S is patch_size**2 normally, or H*W in
+            the single-patch fallback.
+
+        Notes:
+            - Patch ordering matches ImgUtils.get_patches row-major layout.
+            - Fallback behavior matches ImgUtils.extract_patches exactly.
+            - Never squeezes batch dimension.
+        """
+        if patch_size is not None and patch_size < 1:
+            raise Exception("Patch size must be strictly positive integer.")
+
+        B, C, H, W = img.shape
+
+        # Fallback: matches extract_patches when patch_size is None or > H and > W
+        if patch_size is None or (patch_size > H and patch_size > W):
+            return img.permute(0, 2, 3, 1).reshape(B, 1, H * W, C)  # (B, 1, H*W, C)
+
+        S = patch_size * patch_size
+        pad_H = (patch_size - (H % patch_size)) % patch_size
+        pad_W = (patch_size - (W % patch_size)) % patch_size
+
+        # F.pad order: (left, right, top, bottom) — pad only right/bottom
+        padded = F.pad(
+            img, (0, pad_W, 0, pad_H), mode=padding_mode
+        )  # (B, C, H+pad_H, W+pad_W)
+
+        patches = F.unfold(
+            padded, kernel_size=patch_size, stride=patch_size
+        )  # (B, C*S, P)
+        patches = patches.view(B, C, S, -1).permute(0, 3, 2, 1)  # (B, P, S, C)
+        return patches
 
     @staticmethod
     def coords_pad(
@@ -410,9 +497,6 @@ class ImgUtils:
         Returns:
             Image tensor (B, C, H, W) with values in [0, 1] or [-1, 1].
         """
-        from PIL import Image
-        import numpy as np
-
         img = Image.open(path).convert(mode)
         arr = np.array(img).astype(np.float32) / 255.0
         tensor = torch.from_numpy(arr).unsqueeze(0)
@@ -420,3 +504,25 @@ class ImgUtils:
         if normalize:
             tensor = tensor * 2 - 1
         return tensor
+
+    @staticmethod
+    def img2map(
+        img: Float[Tensor, "B C H W"], min: float = -1.0, max: float = 1.0
+    ) -> Float[Tensor, "B 1 H W"]:
+        return (img.mean(dim=1).unsqueeze(1) + 1) / 2
+
+    @staticmethod
+    def load_map(path: str) -> Float[Tensor, "B 1 H W"]:
+        return ImgUtils.img2map(ImgUtils.load_image(path, mode="RGBA", normalize=False))
+
+    @staticmethod
+    def same_size(*imgs: Float[Tensor, "B C H W"]) -> bool:
+        if len(imgs) <= 1:
+            raise ValueError(
+                f"Function requires a minimum of 2 images to compare. Provided {len(imgs)}."
+            )
+        ref = imgs[0].shape[-2:]
+        for i in imgs[1:]:
+            if i.shape[-2:] != ref:
+                return False
+        return True

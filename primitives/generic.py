@@ -5,12 +5,12 @@ import logging
 import copy
 
 from contextlib import contextmanager
-from typing import Dict, Optional, Any, Sequence, ItemsView, Set
+from typing import Dict, Optional, Any, Sequence, ItemsView, Set, Literal
 from jaxtyping import Float, Bool, Shaped, Integer
 from torch import Tensor
 from utils.img import ImgUtils
 from utils.pytorch import TensorIndex
-from rasterizers import Rasterizer, WeightedRasterizer
+from rasterizers import Rasterizer, SampleOutput
 
 _logger = logging.getLogger(__name__)
 
@@ -230,37 +230,6 @@ class Primitive(nn.Module):
         new.load_state_dict(new_state)
         return new
 
-    def prepare_for_optimization(
-        self,
-        target: Float[Tensor, "..."],
-        patch_size: Optional[int] = None,
-        rasterizer: Optional[Rasterizer] = None,
-    ):
-        """Prepare buffers for optimization.
-
-        Args:
-            target: Target image tensor (C, H, W) or (B, C, H, W).
-            patch_size: Optional patch size for patch-based rendering.
-            rasterizer: Rasterizer for sample to image output (default WeightedRasterizer)
-        """
-        with torch.no_grad():
-            H, W = target.shape[-2:]
-            self._buffer_patches, self._buffer_centers = ImgUtils.get_patches(
-                H, W, target.device, patch_size=patch_size
-            )
-            self._buffer_H = H
-            self._buffer_W = W
-            self._trained_H = H
-            self._trained_W = W
-            self._trained_aspect_ratio = W / H if H > 0 else 1.0
-        self._buffer_rasterizer = (
-            WeightedRasterizer() if rasterizer is None else rasterizer
-        )
-        self.train()
-
-    def end_optimization(self):
-        self.eval()
-
     @torch.no_grad()
     def patch_mask(
         self,
@@ -286,14 +255,14 @@ class Primitive(nn.Module):
         co: Float[Tensor, "Nc 2"],
         *args,
         **kwargs,
-    ) -> Float[Tensor, "Nc 4"]:
+    ) -> SampleOutput:
         """Implementation of sampling logic. Subclasses must implement this.
 
         Args:
             co: Coordinates to sample (Nc, 2).
 
         Returns:
-            Sampled RGBA values (Nc, 4).
+            SampleOutput object.
 
         Notes:
             - Assumes non-empty batched parameters (len(self) > 0).
@@ -329,6 +298,8 @@ class Primitive(nn.Module):
         centers: Float[Tensor, "P 2"],
         rasterizer: Rasterizer,
         max_batch: int = 100,
+        low_vram: bool = False,
+        format: Literal["tensor", "raster", "image"] = "tensor",
     ) -> Float[Tensor, "B C H W"]:
         """Render primitive to full image.
 
@@ -374,41 +345,37 @@ class Primitive(nn.Module):
                 mask = patch_masks[i]
                 for b in b_patches:
                     with self.masked(mask):
-                        gen.append(self.sample(b, rasterizer))
+                        sample = self.sample(b, rasterizer)
+                        if low_vram:
+                            sample = sample.cpu()
+                        gen.append(sample)
                 i += 1
             else:
                 with self.masked(mask):
                     co = torch.cat(acc_patches, dim=0)
-                    gen.append(self.sample(co, rasterizer))
+                    sample = self.sample(co, rasterizer)
+                    if low_vram:
+                        sample = sample.cpu()
+                    gen.append(sample)
         patch_gen = torch.cat(gen, dim=0).reshape(P, S, 4)
-        return ImgUtils.assemble_patches(patch_gen, H[0], W[0])
-
-    def optim_step(self) -> Float[Tensor, "B C H W"]:
-        """Run one optimization step and return rendered output.
-
-        Returns:
-            Rendered image using cached buffers (B, C, H, W).
-        """
-        try:
-            out = self(
-                self._buffer_H,
-                self._buffer_W,
-                self._buffer_patches,
-                self._buffer_centers,
-                self._buffer_rasterizer,
+        out = ImgUtils.assemble_patches(patch_gen, H[0], W[0])
+        if format == "tensor":
+            return out
+        elif format == "raster":
+            return ImgUtils.tensor2img(out, normalized=False, clamp=True)
+        elif format == "image":
+            return ImgUtils.tensor2pil(out, normalized=False)
+        else:
+            raise ValueError(
+                f"'{format}' is an invalid output format. Must be amongst 'tensor', 'raster', or 'image'."
             )
-        except AttributeError as e:
-            raise e from Exception(
-                "Method 'prepare_for optimization()' may have not been called before running an optimization step."
-            )
-        return out
 
     def rasterize(
         self,
         H: int,
         W: int,
+        rasterizer: Rasterizer,
         patch_size: Optional[int] = None,
-        rasterizer: Optional[Rasterizer] = None,
     ) -> Float[Tensor, "B H W C"]:
         """Convert rasterized output to displayable image.
 
@@ -421,54 +388,55 @@ class Primitive(nn.Module):
         Returns:
             Image tensor (B, H, W, C) in [0, 1] range.
         """
-        if rasterizer is None:
-            rasterizer = self._buffer_rasterizer
         return ImgUtils.tensor2img(
             self(H, W, patch_size=patch_size, rasterizer=rasterizer),
             normalized=False,
             clamp=True,
         )
 
-    # @torch.no_grad()
-    # def cat(self, other: Primitive, weight: float = 0.0):
-    #     """Concatenate another primitive in-place.
+    @torch.no_grad()
+    def cat(self, other: Primitive, weight: float = 0.0):
+        """Concatenate another primitive in-place.
 
-    #     Appends batched parameters from other to self.
+        Appends batched parameters from other to self.
 
-    #     Args:
-    #         other: Primitive to concatenate.
-    #         weight: importance to other's non batched params. 0 = keep original, 1 = use new.
+        Args:
+            other: Primitive to concatenate.
+            weight: importance to other's non batched params. 0 = keep original, 1 = use new.
 
-    #     Notes:
-    #         - Only concatenates batched parameters (shape[0] == len(self)).
-    #         - Modifies self in-place.
-    #     """
-    #     np2 = dict(other.batched_parameters())
-    #     for name, param in self.batched_parameters():
-    #         param = torch.cat([param, np2[name]], dim=0)
+        Notes:
+            - Only concatenates batched parameters (shape[0] == len(self)).
+            - Modifies self in-place.
+        """
+        np2 = dict(other.batched_parameters())
+        for name, param in self.batched_parameters():
+            self.__setattr__(name, torch.cat([param, np2[name]], dim=0))
+        np2 = dict(other.stable_parameters())
+        for name, param in self.stable_parameters():
+            self.__setattr__(name, weight * np2[name] + (1 - weight) * param)
 
-    # @classmethod
-    # @torch.no_grad()
-    # def combine(cls, primitives: Sequence[Primitive]) -> Primitive:
-    #     """Combine multiple primitives into one.
+    @classmethod
+    @torch.no_grad()
+    def combine(cls, primitives: Sequence[Primitive]) -> Primitive:
+        """Combine multiple primitives into one.
 
-    #     Concatenates all primitives in sequence into first primitive.
+        Concatenates all primitives in sequence into first primitive.
 
-    #     Args:
-    #         primitives: Sequence of primitives to combine.
+        Args:
+            primitives: Sequence of primitives to combine.
 
-    #     Returns:
-    #         Combined primitive (first element with others concatenated).
+        Returns:
+            Combined primitive (first element with others concatenated).
 
-    #     Raises:
-    #         Exception: If primitives is empty.
-    #     """
-    #     if not primitives:
-    #         raise Exception("Primitives empty or None.")
-    #     p = primitives[0]
-    #     for other in primitives[1:]:
-    #         p.cat(other)
-    #     return p
+        Raises:
+            Exception: If primitives is empty.
+        """
+        if not primitives:
+            raise Exception("Primitives empty or None.")
+        p = primitives[0]
+        for other in primitives[1:]:
+            p.cat(other)
+        return p
 
     def batched_parameters(self) -> ItemsView[str, Float[Tensor, "N ..."]]:
         """Get parameters with batch dimension.

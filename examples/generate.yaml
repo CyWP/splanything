@@ -1,9 +1,9 @@
 primitive:
-  path: ./cubic_test/primitive_e300.pt
-H: 3000
-W: 7000
+  path: ./cubic_test/primitive_e200.pt
+H: 4500
+W: 4500
 patch_size: 16
 
 rasterizer:
   name: exponentialprobabilisticrasterizer
-  exponent: 4
+  exponent: 2.5
