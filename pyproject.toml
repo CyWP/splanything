@@ -4,10 +4,25 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "splanything"
-version = "0.1.0"
-description = "2d splat any differentiable function."
+dynamic = ["version"]
+description = "2D splat any differentiable function."
 readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    {name = "Thomas Peschlow"},
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+]
 dependencies = [
     "torch",
     "torchvision",
@@ -23,11 +38,22 @@ dependencies = [
 dev = [
     "pytest",
     "ruff",
+    "build",
+    "twine",
 ]
 
-[project.scripts]
-splanything = "cli:main"
+[project.urls]
+Homepage = "https://github.com/CyWP/splanything/README.md"
+Repository = "https://github.com/CyWP/splanything"
+Issues = "https://github.com/CyWP/splanything/issues"
+
+[tool.setuptools.dynamic]
+version = {attr = "splanything.__version__"}
 
 [tool.setuptools.packages.find]
-where = ["."]
+where = ["src"]
 include = ["splanything*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

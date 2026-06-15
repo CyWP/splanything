@@ -1,0 +1,6 @@
+exclude AGENTS.md
+exclude MANIFEST.in
+recursive-exclude assets *
+recursive-exclude cubic_test *
+recursive-exclude .vscode *
+recursive-exclude src/splanything/**/__pycache__ *

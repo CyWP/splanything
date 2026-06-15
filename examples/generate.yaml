@@ -1,9 +1,0 @@
-primitive:
-  path: ./cubic_test/primitive_e200.pt
-H: 4500
-W: 4500
-patch_size: 16
-
-rasterizer:
-  name: exponentialprobabilisticrasterizer
-  exponent: 2.5
