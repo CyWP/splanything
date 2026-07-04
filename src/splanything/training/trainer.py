@@ -2,12 +2,13 @@ import json
 import logging
 import torch
 
-from typing import Sequence, Callable, Dict, Any, Optional
+from typing import Sequence, Callable, Dict, Any, Optional, List
 from jaxtyping import Float, Tensor
 from pathlib import Path
 
 from splanything.primitives import Primitive
-from splanything.samplers.train_sampler import TrainSampler
+from splanything.refinement import SplitRule, FilterRule, FineTuneRule
+from splanything.samplers import Sampler, TrainSampler
 from .optimizer import OptimizerWrapper
 
 _logger = logging.getLogger(__name__)
@@ -53,7 +54,10 @@ class Trainer:
         batch_size: Optional[int] = None,
         base_folder: Optional[Path] = None,
         scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
-        refinements: Sequence[Callable] = (),
+        split_rules: Optional[List[SplitRule]] = None,
+        filter_rules: Optional[List[FilterRule]] = None,
+        finetune_rules: Optional[List[FineTuneRule]] = None,
+        low_vram: bool = False,
     ):
 
         self.name = name
@@ -68,9 +72,12 @@ class Trainer:
         self.batch_size = batch_size
         self.losses = losses
         self.callbacks = callbacks
-        self.refinements = list(refinements)
+        self.split_rules = [] if split_rules is None else split_rules
+        self.filter_rules = [] if filter_rules is None else filter_rules
+        self.finetune_rules = [] if finetune_rules is None else finetune_rules
         self.scheduler = scheduler
         self.logs: Dict[int, Dict[str, Any]] = dict()
+        self.low_vram = low_vram
 
         self.trainer_path = self.run_folder / "trainer.pt"
         self.primitive_path = self.run_folder / "primitive.pt"
@@ -159,7 +166,7 @@ class Trainer:
         Runs: zero_grad -> forward -> compute losses -> backward -> step.
         Triggers callbacks at EPOCH_START, PRE_STEP, EPOCH_END.
         """
-        self.last_epoch_image = dict(H=None, W=None, img=None)
+        self.last_epoch_image = None
         self.call_back(EPOCH_START)
         self._zero_grad()
         patch_count = 0
@@ -187,18 +194,37 @@ class Trainer:
 
     def last_image(
         self,
-        H: int,
-        W: int,
         max_batch: Optional[int] = None,
         low_vram: Optional[bool] = None,
+        sampler: Optional[Sampler] = None,
+        force_grad: bool = False,
     ) -> Float[Tensor, "B C H W"]:
-        lei = self.last_epoch_image
-        if lei["img"] is None or H != lei["H"] or W != lei["W"]:
-            img = self.sampler.rasterize(
-                self.primitive, max_batch=max_batch, low_vram=low_vram
-            )
-            self.last_epoch_image = {"H": H, "W": W, "img": img}
-        return self.last_epoch_image["img"]
+        """Get the last rendered image, optionally recomputing it.
+
+        Args:
+            max_batch: Max batch size for rasterization.
+            low_vram: Low-VRAM flag for rasterization.
+            sampler: Optional sampler to rasterize with. If None, the
+                trainer's sampler is used.
+            force_grad: If True and a cached image exists but is detached
+                (requires_grad=False), recompute it under the autograd
+                graph.
+
+        Returns:
+            Rendered image tensor (B, C, H, W).
+        """
+        lv = self.low_vram if low_vram is None else low_vram
+        if (
+            sampler is None
+            and self.last_epoch_image is not None
+            and (not force_grad or self.last_epoch_image.requires_grad)
+        ):
+            return self.last_epoch_image
+        if sampler is not None:
+            return sampler.rasterize(self.primitive, max_batch=max_batch, low_vram=lv)
+        img = self.sampler.rasterize(self.primitive, max_batch=max_batch, low_vram=lv)
+        self.last_epoch_image = img
+        return img
 
     def _update_losses(self):
         last_losses = {name: l(self) for name, l in self.losses.items()}
@@ -207,57 +233,40 @@ class Trainer:
             self.last_losses[name] = self.last_losses[name] + loss
         self.last_loss = self.last_loss + last_loss
 
+    @torch.no_grad()
     def _apply_refinements(self):
         """Aggregate and apply filter and split rules.
 
-        Collects all FilterRule, SplitRule and CombineRule from self.refinements,
+        Collects all FilterRule, SplitRule from self.refinements,
         aggregates their masks, and applies the combined filter/split to the primitive.
 
         Filter rules are applied first, then split rules are computed on the
         filtered primitive and applied after.
         """
-        filter_rules = []
-        split_rules = []
-        combine_rules = []
-        for c in self.refinements:
-            if hasattr(c, "_filter_rule"):
-                filter_rules.append(c)
-            elif hasattr(c, "_split_rule"):
-                split_rules.append(c)
-            elif hasattr(c, "_combine_rule"):
-                combine_rules.append(c)
-
         p = self.primitive
 
         # Apply filter/cull first
-        if filter_rules:
-            combined_keep = torch.ones(len(p), dtype=torch.bool, device=p.thetas.device)
-            for rule in filter_rules:
-                mask = rule(self)
-                if mask is not None:
-                    combined_keep &= mask
-            if (~combined_keep).any():
-                print(f"FilterRule: {(~combined_keep).sum()} primitives culled")
-                p.filter(combined_keep)
-                self.optimizer.filter(p.parameters())
+        combined_keep = torch.ones(len(p), dtype=torch.bool, device=p.thetas.device)
+        for rule in self.filter_rules:
+            mask = rule(p)
+            if mask is not None:
+                combined_keep &= mask
+        if (~combined_keep).any():
+            p.filter(combined_keep)
+            self.optimizer.filter(p.parameters(), combined_keep)
 
         # Compute and apply split on the filtered primitive
-        if split_rules:
-            combined_split = torch.zeros(
-                len(p), dtype=torch.bool, device=p.thetas.device
-            )
-            for rule in split_rules:
-                mask = rule(self)
-                if mask is not None:
-                    combined_split |= mask
-            if combined_split.any():
-                print(f"SplitRule: {combined_split.sum()} primitives split")
-                p.split(combined_split)
-                self.optimizer.reinit(p.parameters())  # ToDo: combine op for optimizer
+        combined_split = torch.zeros(len(p), dtype=torch.bool, device=p.thetas.device)
+        for rule in self.split_rules:
+            mask = rule(p)
+            if mask is not None:
+                combined_split |= mask
+        if combined_split.any():
+            p.split(combined_split)
+            self.optimizer.reinit(p.parameters())  # ToDo: combine op for optimizer
 
-        for rule in combine_rules:
-            p.combine(rule(p))
-            self.optimizer.reinit(p.parameters())
+        for rule in self.finetune_rules:
+            rule(p)
 
     def log_stat(self, key: str, val: Any):
         """Log a scalar value for current epoch.

@@ -13,29 +13,28 @@ splanything/
 ├── src/
 │   └── splanything/       # Main package
 │       ├── primitives/    # Geometric primitives for image reconstruction
-│       │   ├── generic.py   # Base Primitive class
+│       │   ├── base.py       # Base Primitive class
 │       │   ├── cubic_grad.py
-│       │   ├── gaussian.py
-│       │   └── protocols.py
+│       │   └── gaussian.py
 │       ├── rasterizers/   # Sample aggregation strategies
-│       │   ├── generic.py
+│       │   ├── base.py
 │       │   ├── sample_out.py
 │       │   ├── weighted.py
 │       │   ├── probabilistic.py
-│       │   └── ...
+│       │   └──...
 │       ├── losses/        # Loss functions
-│       │   ├── generic.py
+│       │   ├── base.py
 │       │   ├── l1.py
 │       │   ├── l2.py
 │       │   └── ssim.py
 │       ├── callbacks/     # Training callbacks
-│       │   ├── generic.py
+│       │   ├── base.py
 │       │   ├── loop_control.py
 │       │   ├── preview_window.py
 │       │   ├── primitive_checkpoint.py
 │       │   └── losses_log.py
 │       ├── refinement/    # Refinement rules
-│       │   ├── generic.py
+│       │   ├── base.py
 │       │   ├── grad_split.py
 │       │   ├── area_split.py
 │       │   ├── alpha_cull.py
@@ -115,7 +114,7 @@ splanything/
 ### Refinement Rules
 - Inherit from `RefinementRule` (which also inherits `Callback`)
 - Run at `EPOCH_END`, modify primitive in-place
-- Require specific behaviors via protocols (e.g., `Splittable`, `HasAlphas`)
+- Rely on duck-typing for required primitive behaviors (e.g., `areas`, `alphas`, `scales`, `split()`)
 
 ### Lazy Evaluation (external / optional)
 - `utils.lazy` provides `@lazy_tree` for users who want cached properties with dependency tracking

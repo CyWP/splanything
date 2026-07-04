@@ -5,7 +5,7 @@ from typing import List
 
 from splanything.training import Trainer, TRAIN_END
 
-from .generic import Callback
+from .base import Callback
 
 _logger = logging.getLogger(__name__)
 

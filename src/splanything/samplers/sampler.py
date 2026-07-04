@@ -1,12 +1,13 @@
+from __future__ import annotations
+
 import torch
 
 from jaxtyping import Float, Bool
 from torch import Tensor
-from typing import Optional, Iterator
+from typing import Optional, Iterator, Tuple
 from splanything.primitives import Primitive
 from splanything.rasterizers import Rasterizer, WeightedRasterizer
 from splanything.utils.img import ImgUtils
-from splanything.vars import LOW_VRAM, DEVICE
 
 
 class Sampler:
@@ -17,20 +18,34 @@ class Sampler:
         patch_size: Optional[int] = None,
         max_batch: Optional[int] = None,
         rasterizer: Optional[Rasterizer] = None,
-        device: Optional[torch.device] = None,
+        padding: Tuple[int, int, int, int] = (0, 0, 0, 0),
+        low_vram: bool = False,
+        device: torch.device = torch.device("cpu"),
     ):
         self.H = H
         self.W = W
         self.max_batch = max_batch
-        self.device = DEVICE if device is None else device
-        self.set_patch_size(patch_size)
+        self.low_vram = low_vram
+        self.set_patch_size(patch_size, padding)
         self.rasterizer = WeightedRasterizer() if rasterizer is None else rasterizer
+        self.padding = padding
+        self.device = device
 
-    def set_patch_size(self, patch_size: int):
+    def set_patch_size(
+        self, patch_size: int, padding: Tuple[int, int, int, int] = (0, 0, 0, 0)
+    ):
         self.patch_size = patch_size
         self.co_patches, self.co_centers = ImgUtils.get_patches(
-            self.H, self.W, device=self.device, patch_size=patch_size
+            self.H, self.W, device=self.device, patch_size=patch_size, padding=padding
         )
+
+    def set_padding(self, padding: Tuple[int, int, int, int]):
+        self.set_patch_size(self.patch_size, padding)
+        self.padding = padding
+
+    def to(self, device: torch.device) -> Sampler:
+        self.co_patches = self.co_patches.to(device)
+        self.co_centers = self.co_centers.to(device)
 
     @property
     def num_patches(self) -> int:
@@ -42,6 +57,10 @@ class Sampler:
         self,
         p: Primitive,
     ) -> Iterator[Float[Tensor, "S C"]]:
+        if p.device != self.device:
+            raise ValueError(
+                f"Sampler and primitive must be on same device. Currently: {self.device}, {p.device}."
+            )
         patches = self.co_patches
         centers = self.co_centers
         rasterizer = self.rasterizer
@@ -105,7 +124,11 @@ class Sampler:
         max_batch: Optional[int] = None,
         low_vram: Optional[bool] = None,
     ) -> Float[Tensor, "B C H W"]:
-        low_vram = LOW_VRAM if low_vram is None else low_vram
+        if p.device != self.device:
+            raise ValueError(
+                f"Sampler and primitive must be on same device. Currently: {self.device}, {p.device}."
+            )
+        low_vram = self.low_vram if low_vram is None else low_vram
         P, S, C = self.co.patches.shape
         gen = []
         for patch in self.samples(p, max_batch):

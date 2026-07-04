@@ -82,6 +82,59 @@ class ImgUtils:
         return imgs
 
     @staticmethod
+    def pil2tensor(
+        img: Union[Image.Image, List[Image.Image], Sequence[Image.Image]],
+        normalized: bool = False,
+    ) -> Float[Tensor, "B C H W"]:
+        """Convert PIL Image to tensor.
+
+        Args:
+            img: PIL Image or sequence of PIL Images as uint8 [0, 255].
+            normalized: If True, return tensor in [-1, 1]; else [0, 1].
+
+        Returns:
+            Tensor (B, C, H, W) in [0, 1] or [-1, 1].
+        """
+        if isinstance(img, Image.Image):
+            imgs = [img]
+        else:
+            imgs = list(img)
+        arrs = [np.asarray(im.convert("RGBA")) for im in imgs]
+        stacked = np.stack(arrs, axis=0)
+        tensor = torch.from_numpy(stacked).permute(0, 3, 1, 2).float() / 255.0
+        if normalized:
+            tensor = tensor * 2 - 1
+        return tensor
+
+    @staticmethod
+    def tensor2map(
+        x: Float[Tensor, "B C H W"],
+        mode: str = "mean",
+    ) -> Float[Tensor, "B 1 H W"]:
+        """Reduce a multi-channel image tensor to a single-channel map.
+
+        Args:
+            x: Image tensor (B, C, H, W).
+            mode: Reduction mode. One of "R", "G", "B", "A" (select the
+                corresponding channel) or "mean" (average across channels).
+
+        Returns:
+            Single-channel map (B, 1, H, W).
+
+        Raises:
+            ValueError: If mode is not one of "R", "G", "B", "A", "mean".
+        """
+        channel_map = {"R": 0, "G": 1, "B": 2, "A": 3}
+        if mode == "mean":
+            return x.mean(dim=1, keepdim=True)
+        if mode in channel_map:
+            idx = channel_map[mode]
+            return x[:, idx : idx + 1, :, :]
+        raise ValueError(
+            f"Unknown mode '{mode}'; expected one of 'R', 'G', 'B', 'A', 'mean'."
+        )
+
+    @staticmethod
     def resize(
         img: Float[Tensor, "B C H W"],
         H: int,
@@ -173,7 +226,12 @@ class ImgUtils:
 
     @staticmethod
     @torch.no_grad()
-    def gen_px_coords(H: int, W: int, device: torch.device) -> Float[Tensor, "2 H W"]:
+    def gen_px_coords(
+        H: int,
+        W: int,
+        device: torch.device,
+        padding: Tuple[int, int, int, int] = (0, 0, 0, 0),
+    ) -> Float[Tensor, "2 H W"]:
         """Generate normalized pixel coordinates.
 
         Args:
@@ -184,9 +242,12 @@ class ImgUtils:
         Returns:
             Coordinates tensor (2, H, W) with values in [0, 1].
         """
-        H_half = 0.5 / H
-        W_half = 0.5 / W
-        out = torch.stack(
+        p_top, p_bot, p_left, p_right = padding
+        H_frame = H - p_top - p_bot
+        W_frame = W - p_left - p_right
+        H_half = 0.5 / H_frame
+        W_half = 0.5 / W_frame
+        co = torch.stack(
             torch.meshgrid(
                 torch.linspace(H_half, 1 - H_half, H, device=device),
                 torch.linspace(W_half, 1 - W_half, W, device=device),
@@ -194,7 +255,7 @@ class ImgUtils:
             ),
             dim=0,
         )
-        return out
+        return ImgUtils.coords_pad(co, padding=padding)
 
     @staticmethod
     def extract_patches(
@@ -223,7 +284,7 @@ class ImgUtils:
         S = patch_size**2
         pad_H = (patch_size - (H % patch_size)) % patch_size
         pad_W = (patch_size - (W % patch_size)) % patch_size
-        co = ImgUtils.coords_pad(co, pad_H, pad_W)
+        co = ImgUtils.coords_pad(co, padding=(pad_H, 0, pad_W, 0))
         patches = (
             F.unfold(
                 co.unsqueeze(0),
@@ -238,7 +299,11 @@ class ImgUtils:
 
     @staticmethod
     def get_patches(
-        H: int, W: int, device: torch.device, patch_size: Optional[int] = None
+        H: int,
+        W: int,
+        device: torch.device,
+        patch_size: Optional[int] = None,
+        padding: Tuple[int, int, int, int] = (0, 0, 0, 0),
     ) -> Tuple[Float[Tensor, "P S 2"], Float[Tensor, "P 2"]]:
         """Get patches for image dimensions.
 
@@ -252,7 +317,7 @@ class ImgUtils:
             Tuple of (patches, centers).
         """
         return ImgUtils.extract_patches(
-            ImgUtils.gen_px_coords(H, W, device), patch_size
+            ImgUtils.gen_px_coords(H, W, device, padding=padding), patch_size
         )
 
     @staticmethod
@@ -307,8 +372,12 @@ class ImgUtils:
 
     @staticmethod
     def coords_pad(
-        co: Float[Tensor, "C H W"], pad_H: int, pad_W: int
-    ) -> Float[Tensor, "C (H+pad_H) (W+pad_W)"]:
+        co: Float[Tensor, "C H W"],
+        padding: Tuple[int, int, int, int] = (0, 0, 0, 0),
+    ) -> Float[Tensor, "C (H+pad_top+pad_bottom) (W+pad_left+pad_right)"]:
+        pad_top, pad_bottom, pad_left, pad_right = padding
+        if padding == (0, 0, 0, 0):
+            return co
         C, H, W = co.shape
         y_coords = co[0, :, 0]
         x_coords = co[1, 0, :]
@@ -322,16 +391,44 @@ class ImgUtils:
             if W > 1
             else torch.tensor(1.0 / W, device=co.device, dtype=co.dtype)
         )
-        y_extra = (
-            y_coords[-1]
-            + torch.arange(1, pad_H + 1, device=co.device, dtype=co.dtype) * y_step
+        y_extra_top = (
+            (
+                y_coords[0]
+                - torch.arange(1, pad_top + 1, device=co.device, dtype=co.dtype)
+                * y_step
+            ).flip(0)
+            if pad_top > 0
+            else torch.empty((0,), device=co.device, dtype=co.dtype)
         )
-        x_extra = (
-            x_coords[-1]
-            + torch.arange(1, pad_W + 1, device=co.device, dtype=co.dtype) * x_step
+        y_extra_bottom = (
+            (
+                y_coords[-1]
+                + torch.arange(1, pad_bottom + 1, device=co.device, dtype=co.dtype)
+                * y_step
+            )
+            if pad_bottom > 0
+            else torch.empty((0,), device=co.device, dtype=co.dtype)
         )
-        y_full = torch.cat([y_coords, y_extra], dim=0)
-        x_full = torch.cat([x_coords, x_extra], dim=0)
+        x_extra_left = (
+            (
+                x_coords[0]
+                - torch.arange(1, pad_left + 1, device=co.device, dtype=co.dtype)
+                * x_step
+            ).flip(0)
+            if pad_left > 0
+            else torch.empty((0,), device=co.device, dtype=co.dtype)
+        )
+        x_extra_right = (
+            (
+                x_coords[-1]
+                + torch.arange(1, pad_right + 1, device=co.device, dtype=co.dtype)
+                * x_step
+            )
+            if pad_right > 0
+            else torch.empty((0,), device=co.device, dtype=co.dtype)
+        )
+        y_full = torch.cat([y_extra_top, y_coords, y_extra_bottom], dim=0)
+        x_full = torch.cat([x_extra_left, x_coords, x_extra_right], dim=0)
         yy, xx = torch.meshgrid(y_full, x_full, indexing="ij")
         return torch.stack([yy, xx], dim=0)
 

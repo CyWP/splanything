@@ -1,27 +1,7 @@
-"""Geometric primitives for image reconstruction.
+"""Primitive classes for splatting."""
 
-Exposes:
-- Primitive: Base class for trainable image primitives
-- CubicGrad: Cubic gradient primitives
-- Gaussian: Simple Gaussian primitives
-- protocols:
-    - Splittable: Requires split(idx) method for refinement
-    - HasAreas: Requires areas property returning (N,) tensor
-    - HasAlphas: Requires alphas attribute of shape (N,)
-    - HasScales: Requires scales property returning tuple of 2 (N,) tensors
-"""
-
-from .protocols import HasAlphas, HasAreas, Splittable, HasScales
-from .generic import Primitive
+from .base import Primitive
 from .cubic_grad import CubicGrad
 from .gaussian import Gaussian
 
-__all__ = [
-    "Primitive",
-    "CubicGrad",
-    "Gaussian",
-    "HasAlphas",
-    "HasAreas",
-    "Splittable",
-    "HasScales",
-]
+__all__ = ["Primitive", "CubicGrad", "Gaussian"]

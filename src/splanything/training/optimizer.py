@@ -71,7 +71,7 @@ class OptimizerWrapper:
         self.zero_nan_grads()
         self._optimizer.step()
 
-    def filter(self, new_params_iter) -> None:
+    def filter(self, new_params_iter, keep_mask: Bool[Tensor, "N_pre_filter"]) -> None:
         """Filter optimizer state to match new parameters after culling.
 
         Receives the new parameters from the model and updates optimizer
@@ -100,9 +100,9 @@ class OptimizerWrapper:
                             if (
                                 isinstance(v, torch.Tensor)
                                 and len(v.shape) > 0
-                                and v.shape[0] == old_shape
+                                and v.shape[0] == keep_mask.shape[0]
                             ):
-                                new_state_for_p[k] = v[:new_shape]
+                                new_state_for_p[k] = v[keep_mask]
                             else:
                                 new_state_for_p[k] = v
                         new_state[new_p] = new_state_for_p
@@ -117,53 +117,53 @@ class OptimizerWrapper:
         self._optimizer.state.clear()
         self._optimizer.state.update(new_state)
 
-    def split(self, new_params_iter, split_mask: Bool[Tensor, "N"]) -> None:
-        """Update optimizer params and state for split primitives.
+    # def split(self, new_params_iter, split_mask: Bool[Tensor, "N"]) -> None:
+    #     """Update optimizer params and state for split primitives.
 
-        Args:
-            new_params_iter: New parameters after split.
-            split_mask: Boolean tensor where True=was split (duplicated).
-        """
-        new_params_list = list(new_params_iter)
-        split_indices = split_mask.nonzero().squeeze(-1)
-        old_len = len(split_mask)
-        split_count = len(split_indices)
-        new_len = old_len + split_count
+    #     Args:
+    #         new_params_iter: New parameters after split.
+    #         split_mask: Boolean tensor where True=was split (duplicated).
+    #     """
+    #     new_params_list = list(new_params_iter)
+    #     split_indices = split_mask.nonzero().squeeze(-1)
+    #     old_len = len(split_mask)
+    #     split_count = len(split_indices)
+    #     new_len = old_len + split_count
 
-        new_state = {}
-        params_iter = iter(new_params_list)
-        for group in self._optimizer.param_groups:
-            new_group_params = []
-            batched_state = None
-            expanded_batched_state = None
+    #     new_state = {}
+    #     params_iter = iter(new_params_list)
+    #     for group in self._optimizer.param_groups:
+    #         new_group_params = []
+    #         batched_state = None
+    #         expanded_batched_state = None
 
-            for p in group["params"]:
-                if len(p.shape) and p.shape[0] == old_len:
-                    new_p = next(params_iter)
-                    new_group_params.append(new_p)
-                    if batched_state is None:
-                        batched_state = self._optimizer.state.get(p, {})
-                        expanded_batched_state = {}
-                        for k, v in batched_state.items():
-                            if (
-                                isinstance(v, torch.Tensor)
-                                and len(v.shape) > 0
-                                and v.shape[0] == old_len
-                            ):
-                                expanded_batched_state[k] = torch.cat(
-                                    [v, v[split_indices]], dim=0
-                                )
-                            else:
-                                expanded_batched_state[k] = v
-                        new_state[new_p] = expanded_batched_state
-                    else:
-                        new_state[new_p] = expanded_batched_state
-                else:
-                    new_p = next(params_iter)
-                    new_group_params.append(new_p)
-                    new_state[new_p] = self._optimizer.state.get(p, {})
+    #         for p in group["params"]:
+    #             if len(p.shape) and p.shape[0] == old_len:
+    #                 new_p = next(params_iter)
+    #                 new_group_params.append(new_p)
+    #                 if batched_state is None:
+    #                     batched_state = self._optimizer.state.get(p, {})
+    #                     expanded_batched_state = {}
+    #                     for k, v in batched_state.items():
+    #                         if (
+    #                             isinstance(v, torch.Tensor)
+    #                             and len(v.shape) > 0
+    #                             and v.shape[0] == old_len
+    #                         ):
+    #                             expanded_batched_state[k] = torch.cat(
+    #                                 [v, v[split_indices]], dim=0
+    #                             )
+    #                         else:
+    #                             expanded_batched_state[k] = v
+    #                     new_state[new_p] = expanded_batched_state
+    #                 else:
+    #                     new_state[new_p] = expanded_batched_state
+    #             else:
+    #                 new_p = next(params_iter)
+    #                 new_group_params.append(new_p)
+    #                 new_state[new_p] = self._optimizer.state.get(p, {})
 
-            group["params"] = new_group_params
+    #         group["params"] = new_group_params
 
-        self._optimizer.state.clear()
-        self._optimizer.state.update(new_state)
+    #     self._optimizer.state.clear()
+    #     self._optimizer.state.update(new_state)

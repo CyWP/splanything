@@ -5,13 +5,44 @@ import logging
 import copy
 
 from contextlib import contextmanager
-from typing import Dict, Optional, Any, Sequence, ItemsView, Set
+from typing import Dict, Optional, Any, List, ItemsView, Set
 from jaxtyping import Float, Bool, Shaped, Integer
 from torch import Tensor
 from splanything.utils.pytorch import TensorIndex1D
 from splanything.rasterizers import Rasterizer, SampleOutput
 
 _logger = logging.getLogger(__name__)
+
+
+class cached_property:
+    """Descriptor for context-aware cached properties.
+
+    Behaves like a normal @property outside a cache_properties() context
+    (recomputed on every access). Inside an active cache_properties()
+    context on the owning Primitive instance, the value is computed once
+    and returned from _property_cache on subsequent accesses.
+
+    Uses object.__getattribute__ internally to avoid recursion with
+    Primitive.__getattribute__.
+    """
+
+    def __init__(self, func):
+        self.func = func
+        self.name = func.__name__
+        self.__doc__ = func.__doc__
+
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+        inst_dict = object.__getattribute__(instance, "__dict__")
+        cache = inst_dict.get("_property_cache")
+        active = inst_dict.get("_cache_active", False)
+        if active and cache is not None and self.name in cache:
+            return cache[self.name]
+        value = self.func(instance)
+        if active and cache is not None:
+            cache[self.name] = value
+        return value
 
 
 class Primitive(nn.Module):
@@ -38,6 +69,8 @@ class Primitive(nn.Module):
         self._batched_params: Set[str] = set()
         self._stable_params: Set[str] = set()
         self._context_mask: Optional[Bool[Tensor, "N"]] = None
+        self._property_cache: Dict[str, Any] = {}
+        self._cache_active: bool = False
 
     @property
     def device(self) -> torch.device:
@@ -85,6 +118,29 @@ class Primitive(nn.Module):
             yield
         finally:
             self._context_mask = old_mask
+
+    @contextmanager
+    def cache_properties(self):
+        """Context manager enabling cached_property caching.
+
+        While active, @cached_property-decorated properties compute once
+        and return cached values on subsequent accesses. The cache is
+        cleared on exit. Supports nesting (outermost exit clears).
+
+        Yields:
+            None.
+        """
+        old_active = self._cache_active
+        self._cache_active = True
+        try:
+            yield
+        finally:
+            self._cache_active = old_active
+            self._property_cache.clear()
+
+    def clear_cache(self):
+        """Manually clear the property cache."""
+        self._property_cache.clear()
 
     def __getattribute__(self, name: str) -> Any:
         if name in object.__getattribute__(self, "__dict__").get(
@@ -232,26 +288,6 @@ class Primitive(nn.Module):
         """
         raise NotImplementedError()
 
-    def sample(
-        cls,
-        co: Float[Tensor, "Nc 2"],
-        *args,
-        **kwargs,
-    ) -> SampleOutput:
-        """Implementation of sampling logic. Subclasses must implement this.
-
-        Args:
-            co: Coordinates to sample (Nc, 2).
-
-        Returns:
-            SampleOutput object.
-
-        Notes:
-            - Assumes non-empty batched parameters (len(self) > 0).
-            - Uses masked batched parameters if context is active.
-        """
-        raise NotImplementedError()
-
     @torch.no_grad()
     def filter(self, key: TensorIndex1D) -> Primitive:
         """In-place index selection of batched elements.
@@ -272,56 +308,33 @@ class Primitive(nn.Module):
         self.update_parameters(updates)
         return self
 
-    def split_params(
-        self, idx: TensorIndex1D
-    ) -> Dict[str, Float[Tensor, "N_new N_Split ..."]]:
-        """
-        Returns a dict of params for which the first index of the first dimension
-        are the parameters to update for the existing indices being split,
-        and subsequent ones are parameters for the newly created primitives.
-        """
-        raise NotImplementedError()
-
     @torch.no_grad()
-    def split(self, idx: TensorIndex1D) -> Primitive:
+    def split(self, idx: Bool[Tensor, "Ns"]) -> Primitive:
         """Split instances at given indices"""
         updates = dict()
-        for name, params in self.split_params(idx).items():
-            updates[name] = self.__getattr__(name)
-            updates[name][idx] = params[0]
-            updates[name] = torch.cat(
-                [updates[name], *[params[i] for i in range(1, params.shape[0])]], dim=0
-            )
+        idx_full = torch.cat([idx, torch.ones_like(idx)], dim=0)
+        for name, param in self.batched_parameetrs():
+            new_param = torch.cat([param, param[idx]])
+            new_param[idx_full] = new_param[
+                idx_full
+            ] + 0.1 * param.var() * torch.randn_like(new_param[idx_full])
+            updates[name] = new_param
         self.update_parameters(updates)
         return self
 
-    def combined_params(
-        self, collections: Integer[Tensor, "N_collections N_combined"]
-    ) -> Dict[str, Float[Tensor, "N ..."]]:
-        """
-        Returns dict of edited params, which will be attributed at the indices of the first column of the collections.
-        Indices of other columns will be filtered out afterwards.
-        """
-        raise NotImplementedError
+    def sample_rgb(
+        self,
+        co: Float[Tensor, "Nc 2"],
+        **kwargs,
+    ) -> Float[Tensor, "Nc Np 3"]:
+        raise NotImplementedError()
 
-    @torch.no_grad()
-    def combine(
-        self, collections: Integer[Tensor, "N_collections N_combined"]
-    ) -> Primitive:
-        collection_size = collections.shape[1]
-        if collection_size <= 1:
-            raise ValueError(
-                "Must at least provide pairs of indices for primitive combination"
-            )
-        updates = dict()
-        for name, param in self.combined_params(collections).items():
-            updates[name] = self.__getattr__(name)
-            updates[name][collections[:, 0]] = param
-        self.update_parameters(updates)
-        filter_mask = torch.ones((len(self),), device=self.device, dtype=torch.bool)
-        for i in range(1, collection_size):
-            filter_mask[collections[:, i]] = False
-        return self.filter(filter_mask)
+    def sample_weights(
+        self,
+        co: Float[Tensor, "Nc 2"],
+        **kwargs,
+    ) -> Float[Tensor, "Nc N"]:
+        raise NotImplementedError()
 
     def forward(
         self, co: Float[Tensor, "Nc 2"], rasterizer: Rasterizer
@@ -341,10 +354,18 @@ class Primitive(nn.Module):
         """
         if len(self) == 0:
             return torch.zeros(co.shape[0], 4, device=self.device, dtype=self.dtype)
-        return rasterizer(self._sample(co))
+        with self.cache_properties():
+            rgb = self.sample_rgb(co)
+            weights = self.sample_weights(co)
+        return rasterizer(
+            SampleOutput(
+                rgb=rgb,
+                weights=weights,
+            )
+        )
 
     @torch.no_grad()
-    def cat(self, other: Primitive, weight: float = 0.0):
+    def append(self, other: Primitive, weight: float = 0.0):
         """Concatenate another primitive in-place.
 
         Appends batched parameters from other to self.
@@ -365,27 +386,11 @@ class Primitive(nn.Module):
             self.__setattr__(name, weight * np2[name] + (1 - weight) * param)
 
     @classmethod
-    @torch.no_grad()
-    def combine(cls, primitives: Sequence[Primitive]) -> Primitive:
-        """Combine multiple primitives into one.
-
-        Concatenates all primitives in sequence into first primitive.
-
-        Args:
-            primitives: Sequence of primitives to combine.
-
-        Returns:
-            Combined primitive (first element with others concatenated).
-
-        Raises:
-            Exception: If primitives is empty.
-        """
-        if not primitives:
-            raise Exception("Primitives empty or None.")
-        p = primitives[0]
-        for other in primitives[1:]:
-            p.cat(other)
-        return p
+    def cat(cls, primitives: List[Primitive]) -> Primitive:
+        prim = cls()
+        for p in primitives:
+            prim.append(p)
+        return prim
 
     def batched_parameters(self) -> ItemsView[str, Float[Tensor, "N ..."]]:
         """Get parameters with batch dimension.

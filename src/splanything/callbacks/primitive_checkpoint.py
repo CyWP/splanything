@@ -4,7 +4,7 @@ from typing import List, Optional
 
 from splanything.training import Trainer, EPOCH_END
 
-from .generic import Callback
+from .base import Callback
 
 _logger = logging.getLogger(__name__)
 

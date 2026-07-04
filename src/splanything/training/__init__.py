@@ -1,10 +1,4 @@
-"""Training loop orchestration.
-
-Exposes:
-- STAGES: List of training lifecycle stages
-- Trainer: Main training loop class
-- TrainSampler: Patch sampler for training
-"""
+"""Training loop orchestration."""
 
 from .trainer import (
     Trainer,
@@ -15,7 +9,7 @@ from .trainer import (
     EPOCH_END,
     PRE_STEP,
 )
-from .train_sampler import TrainSampler
+from ..samplers.train_sampler import TrainSampler
 
 __all__ = [
     "Trainer",

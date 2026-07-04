@@ -3,7 +3,7 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
-from .generic import Rasterizer
+from .base import Rasterizer
 from .sample_out import SampleOutput
 
 from splanything.utils.math import soft_clamp
@@ -35,19 +35,14 @@ class ProbabilisticRasterizer(Rasterizer):
         """
         self.clamp_soft = clamp_soft
 
-    def __call__(self, sample: SampleOutput, **kwargs) -> Float[Tensor, "N 4"]:
+    def rasterize(self, sample: SampleOutput, **kwargs) -> Float[Tensor, "N 4"]:
         """Aggregate via probabilistic selection.
 
         Args:
-            sample: SampleOutput with rgb (Nc, N, 3), alpha (N,), weights (Nc, N).
+            sample: SampleOutput with rgb (Nc, N, 3), weights (Nc, N).
 
         Returns:
             RGBA tensor (N, 4): RGB from sampled primitive, soft-clamped alpha.
-
-        Shape:
-            - selected: (Nc, 1) indices from multinomial
-            - rgb: gather along N -> (Nc, 3)
-            - alpha: soft_clamp(sum(w * a)) -> (N,)
         """
         # (Nc, N) -> (Nc, 1) via multinomial selection
         selected = torch.multinomial(sample.weights, 1)  # (Nc, 1)
@@ -59,7 +54,7 @@ class ProbabilisticRasterizer(Rasterizer):
 
         # Soft-clamped alpha
         a = soft_clamp(
-            (sample.weights * sample.alpha[None, :]).sum(dim=1),
+            sample.weights.sum(dim=1),
             min_val=0.0,
             max_val=1.0,
             softness=self.clamp_soft,

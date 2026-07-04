@@ -3,7 +3,7 @@ import torch
 from splanything.training import Trainer
 from jaxtyping import Float
 from torch import Tensor
-from .generic import Loss
+from .base import Loss
 
 
 class L1Loss(Loss):

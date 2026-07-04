@@ -1,14 +1,6 @@
-"""Callbacks for training monitoring and control.
+"""Callbacks for training monitoring and control."""
 
-Exposes:
-- Callback: Base class for training callbacks
-- LoopControl: Epoch counting and progress bar (tqdm)
-- PreviewWindow: Preview window with optional target side-by-side
-- PrimitiveCheckpoint: Save primitive checkpoint at interval
-- LossLogger: Logs loss values per epoch
-"""
-
-from .generic import Callback
+from .base import Callback
 from .loop_control import LoopControl
 from .preview_window import PreviewWindow
 from .primitive_checkpoint import PrimitiveCheckpoint

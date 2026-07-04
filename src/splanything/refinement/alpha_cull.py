@@ -1,9 +1,11 @@
+from typing import Optional
+
 from jaxtyping import Bool
 from torch import Tensor
 
-from splanything.training import Trainer
+from splanything.primitives import Primitive
 
-from .generic import FilterRule
+from .base import FilterRule
 
 
 class AlphaCull(FilterRule):
@@ -16,9 +18,6 @@ class AlphaCull(FilterRule):
     Attributes:
         threshold: Alpha threshold for culling.
         interval: Apply every N epochs.
-
-    Required Behaviours:
-        - HasAlphas: Primitive must have alphas attribute/property.
     """
 
     def __init__(self, threshold: float = 0.05, interval: int = 10):
@@ -28,21 +27,18 @@ class AlphaCull(FilterRule):
             threshold: Alpha threshold below which primitives are culled.
             interval: Apply every N epochs.
         """
+        super().__init__(interval=interval)
         self.threshold = threshold
-        self.interval = interval
 
-    def apply(self, trainer: Trainer) -> Bool[Tensor, "N"]:
+    def apply(self, primitive: Primitive, **kwargs) -> Optional[Bool[Tensor, "N"]]:
         """Return which primitives to keep.
 
         Args:
-            trainer: Optional trainer for epoch checking.
+            primitive: Primitive to evaluate.
 
         Returns:
             keep: Boolean tensor. True = keep, False = cull.
         """
-        if trainer.epoch % self.interval != 0:
-            return None
-        p = trainer.primitive
-        keep: Bool[Tensor, "N"] = p.alphas >= self.threshold
+        keep: Bool[Tensor, "N"] = primitive.alphas >= self.threshold
         print("Cull: ", (~keep).sum().item())
         return keep

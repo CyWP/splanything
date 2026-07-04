@@ -3,7 +3,7 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
-from .generic import Rasterizer
+from .base import Rasterizer
 from .sample_out import SampleOutput
 
 
@@ -22,19 +22,14 @@ class WeightedRasterizer(Rasterizer):
         - RGB normalized independently of alpha.
     """
 
-    def __call__(self, sample: SampleOutput, **kwargs) -> Float[Tensor, "N 4"]:
+    def rasterize(self, sample: SampleOutput, **kwargs) -> Float[Tensor, "N 4"]:
         """Aggregate via weight-normalized weighted average.
 
         Args:
-            sample: SampleOutput with rgb (Nc, N, 3), alpha (N,), weights (Nc, N).
+            sample: SampleOutput with rgb (Nc, N, 3), weights (Nc, N).
 
         Returns:
             RGBA tensor (N, 4): RGB normalized by weight sum, alpha = sum(w * a).
-
-        Shape:
-            - rgb: (Nc, N, 3) -> (N, 3) via weighted average
-            - weights: (Nc, N) -> (N,) via weighted sum
-            - alpha: (N,) unchanged
         """
         # (Nc, N) -> (Nc, N, 1) for broadcasting
         weight_sum = sample.weights.sum(dim=1, keepdim=True).clamp(min=1e-6)  # (Nc, 1)
@@ -43,7 +38,5 @@ class WeightedRasterizer(Rasterizer):
         ) / weight_sum  # (Nc, N, 3) -> (N, 3)
         rgb = rgb.clamp(0, 1)
 
-        a = (
-            (sample.weights * sample.alpha[None, :]).sum(dim=1).clamp(0, 1)
-        )  # (Nc, N) @ (N,) -> (N,)
+        a = sample.weights.sum(dim=1).clamp(0, 1)  # (Nc, N) -> (N,)
         return torch.cat([rgb, a[:, None]], dim=1)  # (N, 3) + (N, 1) -> (N, 4)

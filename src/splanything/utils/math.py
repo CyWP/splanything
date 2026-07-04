@@ -1,9 +1,3 @@
-"""Math utilities for tensor operations.
-
-Exposes:
-- soft_clamp: Soft clamping function with smooth boundaries
-"""
-
 import torch
 
 from jaxtyping import Float
@@ -29,10 +23,6 @@ def soft_clamp(
 
     Returns:
         Tensor of same shape as input with values clamped to [min_val, max_val].
-
-    Notes:
-        - Uses smooth sigmoid transitions in soft regions.
-        - Hard clamp applied outside soft boundaries.
     """
     i, a, s = min_val, max_val, softness
 

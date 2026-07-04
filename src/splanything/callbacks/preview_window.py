@@ -7,10 +7,11 @@ from pathlib import Path
 from PIL import Image
 from typing import List, Optional, Dict
 
+from splanything.samplers import Sampler
 from splanything.training import Trainer, EPOCH_END
 from splanything.utils.img import ImgUtils
 
-from .generic import Callback
+from .base import Callback
 
 _logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class PreviewWindow(Callback):
         frequency: int = 1,
         show_target: bool = True,
         window_title: str = "Training Preview",
+        sampler: Optional[Sampler] = None,
         H: Optional[int] = None,
         W: Optional[int] = None,
         max_batch: Optional[int] = None,
@@ -43,11 +45,19 @@ class PreviewWindow(Callback):
             frequency: Update window every N epochs (default: 1).
             show_target: If True, show target side-by-side with output.
             window_title: Title for the preview window.
+            sampler: Optional Sampler used to rasterize the preview image.
+                If None, the trainer's sampler is used.
+            H: Optional height to resize the preview image to.
+            W: Optional width to resize the preview image to.
+            max_batch: Max batch size passed to the sampler's rasterize.
+            low_vram: Low-VRAM flag passed to the sampler's rasterize.
+            save_folder: Optional folder to save preview PNGs to.
         """
         super().__init__()
         self.frequency = max(frequency, 1)
         self.show_target = show_target
         self.window_title = window_title
+        self.sampler = sampler
         self.H = H
         self.W = W
         self.max_batch = max_batch
@@ -65,17 +75,22 @@ class PreviewWindow(Callback):
         """
         if trainer.epoch % self.frequency != 0:
             return
-        H = trainer.sampler.H if self.H is None else self.H
-        W = trainer.sampler.W if self.W is None else self.W
         with torch.no_grad():
             img = trainer.last_image(
-                H, W, max_batch=self.max_batch, low_vram=self.low_vram
+                max_batch=self.max_batch,
+                low_vram=self.low_vram,
+                sampler=self.sampler,
             )
+        if self.H is not None and self.W is not None:
+            cur_H, cur_W = img.shape[-2:]
+            if cur_H != self.H or cur_W != self.W:
+                img = ImgUtils.resize(img, self.H, self.W)
         if self.show_target:
             tgt_img = trainer.sampler.target_img
             t_H, t_W = tgt_img.shape[-2:]
-            if t_H != H or t_W != W:
-                tgt_img = ImgUtils.resize(tgt_img, H, W)
+            i_H, i_W = img.shape[-2:]
+            if t_H != i_H or t_W != i_W:
+                tgt_img = ImgUtils.resize(tgt_img, i_H, i_W)
             img = torch.cat([img, tgt_img], dim=3)
         window = get_window(self.window_title)
         pil_img = ImgUtils.tensor2pil(img, normalized=False)

@@ -2,7 +2,7 @@ from typing import List
 
 from splanything.training import Trainer, EPOCH_END
 
-from .generic import Callback
+from .base import Callback
 
 
 class LossLogger(Callback):

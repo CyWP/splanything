@@ -7,7 +7,6 @@ from typing import Optional, Iterator, Tuple
 from splanything.primitives import Primitive
 from splanything.rasterizers import Rasterizer, WeightedRasterizer
 from splanything.utils.img import ImgUtils
-from splanything.vars import LOW_VRAM
 
 from .sampler import Sampler
 
@@ -20,9 +19,11 @@ class TrainSampler(Sampler):
         max_batch: Optional[int] = None,
         sampling_map: Optional[Float[Tensor, "B 1 H W"]] = None,
         rasterizer: Optional[Rasterizer] = None,
+        low_vram: bool = False,
     ):
         self.sampling_map = sampling_map
         self.max_batch = max_batch
+        self.low_vram = low_vram
         self.rasterizer = WeightedRasterizer() if rasterizer is None else rasterizer
         self.set_target(target, patch_size=patch_size)
         if sampling_map is not None:
@@ -88,14 +89,3 @@ class TrainSampler(Sampler):
             t_i += s_l
             yield sample, target
         self.co_patches = tmp_co_patches
-
-    def rasterize(self, p, max_batch=None, low_vram=None):
-        low_vram = LOW_VRAM if low_vram is None else low_vram
-        P, S, C = self.co.patches.shape
-        gen = []
-        for patch in super().samples(p, max_batch):
-            if low_vram:
-                patch = patch.cpu()
-            gen.append(patch)
-        patch_gen = torch.cat(gen, dim=0).reshape(P, S, 4)
-        return ImgUtils.assemble_patches(patch_gen, self.H, self.W)

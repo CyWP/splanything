@@ -1,12 +1,11 @@
 import torch
 
-from typing import Optional
 from jaxtyping import Bool
 from torch import Tensor
 
-from splanything.training import Trainer
+from splanything.primitives import Primitive
 
-from .generic import SplitRule
+from .base import SplitRule
 
 
 class IsoSplit(SplitRule):
@@ -26,26 +25,21 @@ class IsoSplit(SplitRule):
         """Initialize IsoSplit rule.
 
         Args:
-            primitive: The primitive to refine.
             threshold: Anisotropy ratio threshold for splitting.
             interval: Apply every N epochs.
         """
+        super().__init__(interval=interval)
         self.threshold = threshold
-        self.interval = interval
 
-    def apply(self, trainer: Optional[Trainer] = None) -> Bool[Tensor, "N"]:
+    def apply(self, primitive: Primitive, **kwargs) -> Bool[Tensor, "N"]:
         """Return which primitives to split.
 
         Args:
-            trainer: Optional trainer for epoch checking.
+            primitive: Primitive to evaluate.
 
         Returns:
             split: Boolean tensor. True = split, False = ignore.
         """
-        if trainer.epoch % self.interval != 0 and :
-            return None
-        p = trainer.primitive
-
-        scale_1, scale_2 = p.scales
+        scale_1, scale_2 = primitive.scales
         ratio = scale_1 / (scale_2 + 1e-8)
         return (ratio > self.threshold) | (ratio < 1.0 / self.threshold)
