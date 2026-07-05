@@ -1,15 +1,18 @@
 from __future__ import annotations
+
+import copy
+import logging
+from contextlib import contextmanager
+from typing import Any, Dict, ItemsView, List, Optional, Set
+
 import torch
 import torch.nn as nn
-import logging
-import copy
-
-from contextlib import contextmanager
-from typing import Dict, Optional, Any, List, ItemsView, Set
-from jaxtyping import Float, Bool, Shaped, Integer
+from jaxtyping import Bool, Float, Integer, Shaped
 from torch import Tensor
-from splanything.utils.pytorch import TensorIndex1D
-from splanything.rasterizers import Rasterizer, SampleOutput
+
+from ..rendering import SampleOutput
+from ..rendering.rasterizers import Rasterizer
+from ..utils.pytorch import TensorIndex1D
 
 _logger = logging.getLogger(__name__)
 
@@ -357,12 +360,7 @@ class Primitive(nn.Module):
         with self.cache_properties():
             rgb = self.sample_rgb(co)
             weights = self.sample_weights(co)
-        return rasterizer(
-            SampleOutput(
-                rgb=rgb,
-                weights=weights,
-            )
-        )
+        return rasterizer(SampleOutput(rgb=rgb, weights=weights, co=co))
 
     @torch.no_grad()
     def append(self, other: Primitive, weight: float = 0.0):

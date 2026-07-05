@@ -1,10 +1,8 @@
 import torch
-
 from jaxtyping import Bool
 from torch import Tensor
 
-from splanything.primitives import Primitive
-
+from ...primitives import Primitive
 from .base import SplitRule
 
 

@@ -1,10 +1,9 @@
 import torch
-
 from jaxtyping import Float
 from torch import Tensor
 
+from ..sample_output import SampleOutput
 from .base import Rasterizer
-from .sample_out import SampleOutput
 
 
 class WeightedRasterizer(Rasterizer):

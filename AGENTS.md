@@ -63,7 +63,7 @@ splanything/
 ## Scope
 
 - **Core Framework**: `Trainer` class managing optimization loops with callbacks
-- **Primitives**: Geometric image representations (`CubicGrad`, `Gaussian`) as trainable modules
+- **Primitives**: Geometric image representations (`CubicFanPrimitive`, `Gaussian`) as trainable modules
 - **Rasterizers**: Strategies for aggregating per-primitive samples into RGBA output
 - **Loss Functions**: L1 and L2 losses for image comparison
 - **Callbacks**: Loop management, checkpoints, previews, logging
@@ -89,7 +89,7 @@ splanything/
 - No factory functions or class registries
 - Users import classes directly and compose them explicitly:
   ```python
-  from splanything import CubicGrad, WeightedRasterizer
+  from splanything import CubicFanPrimitive, WeightedRasterizer
   from splanything.training import Trainer, TrainSampler
   from splanything.losses import L2Loss
   ```
@@ -108,7 +108,6 @@ splanything/
 
 ### Callbacks
 - Base `Callback` class with `run(trainer, stage)` method
-- `LoopControl` uses tqdm for progress display
 - `PrimitiveCheckpoint` saves at interval using `trainer.save_checkpoint(epoch)`
 
 ### Refinement Rules

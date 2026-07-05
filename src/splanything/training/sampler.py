@@ -1,13 +1,12 @@
-import torch
+from typing import Iterator, Optional, Tuple
 
+import torch
 from jaxtyping import Float
 from torch import Tensor
-from typing import Optional, Iterator, Tuple
 
-from splanything.primitives import Primitive
-from splanything.rasterizers import Rasterizer, WeightedRasterizer
-from splanything.utils.img import ImgUtils
-
+from ..primitives import Primitive
+from ..rendering.rasterizers import Rasterizer, WeightedRasterizer
+from ..utils.img import ImgUtils
 from .sampler import Sampler
 
 
@@ -71,7 +70,9 @@ class TrainSampler(Sampler):
 
     def samples(
         self, p: Primitive
-    ) -> Iterator[Tuple[Float[Tensor, "S C"], Float[Tensor, "S C"]]]:
+    ) -> Iterator[
+        Tuple[Float[Tensor, "S C"], Float[Tensor, "S C"], Float[Tensor, "S 2"]]
+    ]:
         sample_patches = []
         targets = []
         with torch.no_grad():
@@ -83,9 +84,9 @@ class TrainSampler(Sampler):
         self.co_patches = sample_patches
         targets = torch.cat(targets, dim=0)
         t_i = 0
-        for sample in super().samples(p):
+        for sample, batch_co in super().samples(p):
             s_l = sample.shape[0]
             target = targets[t_i : t_i + s_l]
             t_i += s_l
-            yield sample, target
+            yield sample, target, batch_co
         self.co_patches = tmp_co_patches

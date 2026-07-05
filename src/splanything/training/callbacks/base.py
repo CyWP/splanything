@@ -1,9 +1,7 @@
-import torch
-
 from abc import ABC, abstractmethod
 from typing import List
 
-from splanything.training import STAGES, Trainer
+from ..trainer import STAGES, Trainer
 
 
 class Callback(ABC):

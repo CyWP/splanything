@@ -1,9 +1,7 @@
 import logging
+from typing import List
 
-from typing import List, Optional
-
-from splanything.training import Trainer, EPOCH_END
-
+from ..trainer import EPOCH_END, Trainer
 from .base import Callback
 
 _logger = logging.getLogger(__name__)

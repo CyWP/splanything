@@ -14,7 +14,7 @@ pip install splanything
 
 ```python
 import torch
-from splanything import CubicGrad, WeightedRasterizer
+from splanything import CubicFanPrimitive, WeightedRasterizer
 from splanything.training import Trainer
 from splanything.training.train_sampler import TrainSampler
 from splanything.losses import L2Loss
@@ -25,7 +25,7 @@ H, W = 128, 128
 target = torch.rand(1, 3, H, W)
 
 # Primitive and rasterizer
-primitive = CubicGrad(size=64)
+primitive = CubicFanPrimitive(size=64)
 rasterizer = WeightedRasterizer()
 
 # Sampler feeds patches to the trainer
@@ -53,7 +53,7 @@ for state in trainer.train():
 
 ## Modules
 
-- `splanything.primitives` — `CubicGrad`, `Gaussian`, `Primitive` base class
+- `splanything.primitives` — `CubicFanPrimitive`, `Gaussian`, `Primitive` base class
 - `splanything.rasterizers` — aggregation strategies such as `WeightedRasterizer`, `ProbabilisticRasterizer`
 - `splanything.losses` — `L1Loss`, `L2Loss`
 - `splanything.callbacks` — training callbacks like `LoopControl`

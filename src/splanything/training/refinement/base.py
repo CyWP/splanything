@@ -1,13 +1,13 @@
 from abc import ABC, abstractmethod
 from typing import Any, Optional
-from jaxtyping import Bool, Integer
+
+from jaxtyping import Bool
 from torch import Tensor
 
-from splanything.primitives import Primitive
+from ...primitives import Primitive
 
 
 class RefinementRule(ABC):
-
     def __init__(self, interval: int = 1, **kwargs):
         self.interval = interval
         self.calls = 0
@@ -31,7 +31,6 @@ class RefinementRule(ABC):
 
 
 class FineTuneRule(RefinementRule, ABC):
-
     @abstractmethod
     def apply(self, primitive, **kwargs) -> Primitive:
         """
@@ -41,7 +40,6 @@ class FineTuneRule(RefinementRule, ABC):
 
 
 class FilterRule(RefinementRule, ABC):
-
     @abstractmethod
     def apply(self, primitive: Primitive, **kwargs) -> Optional[Bool[Tensor, "N"]]:
         """Define which primitives to keep.
@@ -56,7 +54,6 @@ class FilterRule(RefinementRule, ABC):
 
 
 class SplitRule(RefinementRule, ABC):
-
     @abstractmethod
     def apply(self, primitive: Primitive, **kwargs) -> Bool[Tensor, "N"]:
         """Define which primitives to split.

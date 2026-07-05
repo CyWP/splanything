@@ -1,6 +1,6 @@
 from typing import List
 
-from splanything.training import Trainer, EPOCH_END
+from splanything.training import EPOCH_END, Trainer
 
 from .base import Callback
 

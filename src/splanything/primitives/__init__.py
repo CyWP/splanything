@@ -1,7 +1,7 @@
 """Primitive classes for splatting."""
 
 from .base import Primitive
-from .cubic_grad import CubicGrad
-from .gaussian import Gaussian
+from .cubic_grad import CubicFanPrimitive
+from .gaussian import GaussianPrimitive
 
-__all__ = ["Primitive", "CubicGrad", "Gaussian"]
+__all__ = ["Primitive", "CubicFanPrimitive", "GaussianPrimitive"]

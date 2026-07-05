@@ -1,9 +1,11 @@
-import torch
-import torch.nn as nn
+from typing import Optional
 
-from splanything.training import Trainer
+import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
+
+from splanything.training import Trainer
+from splanything.utils.img import ImgUtils
 
 
 class Loss(nn.Module):
@@ -14,13 +16,19 @@ class Loss(nn.Module):
 
     Attributes:
         weight: Multiplier for the loss value in combined loss computation.
+        weight_map: Spatial multiplier for the loss value in combined loss computation.
 
     Notes:
         - Subclasses must implement `compute(trainer) -> Float[Tensor, ""]`.
         - The `forward` method applies the weight multiplier.
     """
 
-    def __init__(self, weight: float, **kwargs):
+    def __init__(
+        self,
+        weight: float = 1,
+        weight_map: Optional[Float[Tensor, "B 1 H W"]] = None,
+        **kwargs,
+    ):
         """Initialize loss.
 
         Args:
@@ -28,6 +36,7 @@ class Loss(nn.Module):
         """
         super().__init__()
         self.weight = weight
+        self.weight_map = None if weight_map is None else weight * weight_map
 
     def compute(self, trainer: Trainer) -> Float[Tensor, ""]:
         """Compute unweighted loss value.
@@ -40,7 +49,9 @@ class Loss(nn.Module):
         """
         raise NotImplementedError()
 
-    def forward(self, trainer: Trainer) -> Float[Tensor, ""]:
+    def forward(
+        self, trainer: Trainer, co: Optional[Float[Tensor, "N 2"]] = None
+    ) -> Float[Tensor, ""]:
         """Compute weighted loss.
 
         Args:
@@ -49,4 +60,8 @@ class Loss(nn.Module):
         Returns:
             Weighted loss scalar.
         """
-        return self.compute(trainer) * self.weight
+        if co is not None and self.weight_map is not None:
+            weight = ImgUtils.uv_sample(self.weight_map, co)[0].squeeze(-1)
+        else:
+            weight = self.weight
+        return self.compute(trainer) * weight

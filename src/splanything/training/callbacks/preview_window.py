@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 import logging
-import torch
-
 from pathlib import Path
+from typing import Dict, List, Optional
+
+import torch
 from PIL import Image
-from typing import List, Optional, Dict
 
-from splanything.samplers import Sampler
-from splanything.training import Trainer, EPOCH_END
-from splanything.utils.img import ImgUtils
-
+from ...rendering import Sampler
+from ...utils.img import ImgUtils
+from ..trainer import EPOCH_END, Trainer
 from .base import Callback
 
 _logger = logging.getLogger(__name__)
@@ -159,6 +158,7 @@ class TkImageWindow:
                 while preserving aspect ratio.
         """
         import tkinter as tk
+
         from PIL import ImageTk
 
         W, H = img.size

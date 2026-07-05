@@ -2,9 +2,10 @@
 
 from .base import Callback
 from .loop_control import LoopControl
+from .losses_log import LossLogger
 from .preview_window import PreviewWindow
 from .primitive_checkpoint import PrimitiveCheckpoint
-from .losses_log import LossLogger
+from .primitive_save import PrimitiveSave
 
 __all__ = [
     "Callback",
@@ -12,4 +13,5 @@ __all__ = [
     "PreviewWindow",
     "PrimitiveCheckpoint",
     "LossLogger",
+    "PrimitiveSave",
 ]

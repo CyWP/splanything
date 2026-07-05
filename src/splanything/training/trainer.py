@@ -1,15 +1,16 @@
 import json
 import logging
-import torch
-
-from typing import Sequence, Callable, Dict, Any, Optional, List
-from jaxtyping import Float, Tensor
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
-from splanything.primitives import Primitive
-from splanything.refinement import SplitRule, FilterRule, FineTuneRule
-from splanything.samplers import Sampler, TrainSampler
+import torch
+from jaxtyping import Float, Tensor
+
+from ..primitives import Primitive
+from ..rendering import Sampler
 from .optimizer import OptimizerWrapper
+from .refinement import FilterRule, FineTuneRule, SplitRule
+from .sampler import TrainSampler
 
 _logger = logging.getLogger(__name__)
 
@@ -170,10 +171,10 @@ class Trainer:
         self.call_back(EPOCH_START)
         self._zero_grad()
         patch_count = 0
-        for gen, target in self.sampler:
+        for gen, target, batch_co in self.sampler.samples(self.primitive):
             self.last_output = gen
             self.last_target = target
-            self._update_losses()
+            self._update_losses(co=batch_co)
             self.last_loss.backward()
             patch_count += 1
             step = self.batch_size is None or patch_count % self.batch_size == 0
@@ -226,8 +227,10 @@ class Trainer:
         self.last_epoch_image = img
         return img
 
-    def _update_losses(self):
-        last_losses = {name: l(self) for name, l in self.losses.items()}
+    def _update_losses(self, co: Float[Tensor, "B 2"]):
+        last_losses = {
+            name: loss_fn(self, co=co) for name, loss_fn in self.losses.items()
+        }
         last_loss = sum(last_losses.values())
         for name, loss in last_losses.items():
             self.last_losses[name] = self.last_losses[name] + loss

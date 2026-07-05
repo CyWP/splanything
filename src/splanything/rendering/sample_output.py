@@ -1,9 +1,10 @@
 from __future__ import annotations
-import torch
 
+from typing import Union
+
+import torch
 from jaxtyping import Float
 from torch import Tensor
-from typing import Union
 
 
 class SampleOutput:
@@ -12,15 +13,18 @@ class SampleOutput:
     Attributes:
         rgb: RGB values per coordinate per primitive (Nc, N, 3).
         weights: Weights per coordinate per primitive (Nc, N).
+        co: Coordinates used to sample.
     """
 
     def __init__(
         self,
         rgb: Float[Tensor, "Nc N 3"],
         weights: Float[Tensor, "Nc N"],
+        co: Float[Tensor, "Nc 2"],
     ):
         self.rgb = rgb
         self.weights = weights
+        self.co = co
 
     def to(self, val: Union[torch.device, torch.dtype]) -> SampleOutput:
         """Move tensors to device/dtype.
@@ -32,8 +36,7 @@ class SampleOutput:
             New SampleOutput with moved tensors.
         """
         return SampleOutput(
-            rgb=self.rgb.to(val),
-            weights=self.weights.to(val),
+            rgb=self.rgb.to(val), weights=self.weights.to(val), co=self.co.to(val)
         )
 
     @staticmethod
@@ -52,4 +55,5 @@ class SampleOutput:
         """
         rgb = torch.cat([s.rgb for s in samples], dim=0)  # (Nc_sum, N, 3)
         weights = torch.cat([s.weights for s in samples], dim=0)  # (Nc_sum, N_sum)
-        return SampleOutput(rgb, weights)
+        co = torch.cat([s.co for s in samples], dim=0)  # (Nc_sum, 2)
+        return SampleOutput(rgb, weights, co)

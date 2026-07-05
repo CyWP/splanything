@@ -1,12 +1,11 @@
 import torch
-
 from jaxtyping import Float
 from torch import Tensor
 
-from .base import Rasterizer
-from .sample_out import SampleOutput
-
 from splanything.utils.math import soft_clamp
+
+from ..sample_output import SampleOutput
+from .base import Rasterizer
 
 
 class ProbabilisticRasterizer(Rasterizer):

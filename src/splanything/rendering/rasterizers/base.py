@@ -1,9 +1,23 @@
 from abc import ABC, abstractmethod
+from typing import Callable, List, Optional
+
 from jaxtyping import Float
 from torch import Tensor
-from typing import Callable, Optional, List
 
-from .sample_out import SampleOutput
+from ..sample_output import SampleOutput
+
+
+class RasterizerProcessor(ABC):
+    """
+    Callback function for processing SampleOutputs before rasterization.
+    """
+
+    @abstractmethod
+    def process(self, sample: SampleOutput, **kwargs) -> SampleOutput:
+        pass
+
+    def __call__(self, *args, **kwargs):
+        return self.process(*args, **kwargs)
 
 
 class Rasterizer(ABC):
@@ -21,10 +35,10 @@ class Rasterizer(ABC):
         - Processor functions must both accept as an argument and return a SampleOutput instance.
     """
 
-    def __init__(self, processors: Optional[Callable] = None):
+    def __init__(self, processors: Optional[List[RasterizerProcessor]] = None):
         self.processors = [] if processors is None else processors
 
-    def add_processor(self, processor: Callable):
+    def add_processor(self, processor: RasterizerProcessor):
         self.processors.append(processor)
 
     def __call__(

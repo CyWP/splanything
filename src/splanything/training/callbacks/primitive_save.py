@@ -1,10 +1,9 @@
 import logging
-import torch
-
 from typing import List
 
-from splanything.training import Trainer, TRAIN_END
+import torch
 
+from ..trainer import TRAIN_END, Trainer
 from .base import Callback
 
 _logger = logging.getLogger(__name__)

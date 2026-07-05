@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import math
+from typing import List, Optional, Sequence, Tuple, Union
+
 import numpy as np
 import torch
 import torch.nn.functional as F
-
-from typing import Optional, Tuple, Union, Sequence, List
 from jaxtyping import Float
 from PIL import Image
 from torch import Tensor
@@ -621,3 +621,51 @@ class ImgUtils:
             if i.shape[-2:] != ref:
                 return False
         return True
+
+    @staticmethod
+    def uv_sample(
+        img: Float[Tensor, "B C H W"],
+        uv_co: Float[Tensor, "N 2"],
+    ) -> Float[Tensor, "B N C"]:
+        """
+        Vertex-based bilinear texture sampling and aggregation.
+
+        self   : (B, C, H, W) BCHW texture
+        uv_idx : (N,)  vertex index for each UV sample
+        uv_co  : (N, 2) UV coordinates in [0,1]
+
+        Returns:
+            sampled : (B, nV, C) per-vertex averaged values
+        """
+        B, C, H, W = img.shape
+        N = uv_co.shape[0]
+
+        # Convert UVs to pixel coordinates
+        x = uv_co[:, 0] * (W - 1)
+        y = uv_co[:, 1] * (H - 1)
+
+        x0 = x.floor().long().clamp(0, W - 1)
+        y0 = y.floor().long().clamp(0, H - 1)
+        x1 = (x0 + 1).clamp(0, W - 1)
+        y1 = (y0 + 1).clamp(0, H - 1)
+
+        # Fractional part for bilinear interpolation
+        fx = (x - x0.float()).view(1, 1, N)
+        fy = (y - y0.float()).view(1, 1, N)
+        inv_fx = 1 - fx
+        inv_fy = 1 - fy
+
+        # Sample corners (B, C, N)
+        tl = img[:, :, y0, x0]
+        tr = img[:, :, y0, x1]
+        bl = img[:, :, y1, x0]
+        br = img[:, :, y1, x1]
+
+        # Bilinear interpolation
+        vals = (
+            tl * (inv_fx * inv_fy)
+            + tr * (fx * inv_fy)
+            + bl * (inv_fx * fy)
+            + br * (fx * fy)
+        )
+        return vals.permute(0, 2, 1)  # (B, N, C)

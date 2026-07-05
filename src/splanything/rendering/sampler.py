@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-import torch
+from typing import Iterator, Optional, Tuple
 
-from jaxtyping import Float, Bool
+import torch
+from jaxtyping import Bool, Float
 from torch import Tensor
-from typing import Optional, Iterator, Tuple
-from splanything.primitives import Primitive
-from splanything.rasterizers import Rasterizer, WeightedRasterizer
-from splanything.utils.img import ImgUtils
+
+from ..primitives import Primitive
+from ..utils.img import ImgUtils
+from .rasterizers import Rasterizer, WeightedRasterizer
 
 
 class Sampler:
@@ -56,7 +57,7 @@ class Sampler:
     def samples(
         self,
         p: Primitive,
-    ) -> Iterator[Float[Tensor, "S C"]]:
+    ) -> Iterator[Tuple[Float[Tensor, "S C"], Float[Tensor, "S 2"]]]:
         if p.device != self.device:
             raise ValueError(
                 f"Sampler and primitive must be on same device. Currently: {self.device}, {p.device}."
@@ -73,7 +74,7 @@ class Sampler:
         W = torch.full((P,), self.W, dtype=torch.long, device=patches.device)
         patch_masks = p.patch_mask(centers, patch_sizes, H, W)  # [P, N]
 
-        def _compute_patch(batch: Float[Tensor, "B C"], mask: Bool[Tensor, "N_splats"]):
+        def _compute_patch(batch: Float[Tensor, "S 2"], mask: Bool[Tensor, "N"]):
             nonlocal p
             nonlocal rasterizer
             with p.masked(mask):
@@ -116,7 +117,8 @@ class Sampler:
                         yield _compute_patch(b, mask)
                     i += 1
                 else:
-                    yield _compute_patch(torch.cat(acc_patches, dim=0), mask)
+                    batch_co = torch.cat(acc_patches, dim=0)
+                    yield _compute_patch(batch_co, mask), batch_co
 
     def rasterize(
         self,

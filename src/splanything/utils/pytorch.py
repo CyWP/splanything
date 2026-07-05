@@ -1,8 +1,7 @@
-import torch
+from typing import Sequence, Union
 
 from jaxtyping import Bool, Integer
 from torch import Tensor
-from typing import Union, Sequence
 
 # Useful type
 TensorIndex1D = Union[

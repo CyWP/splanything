@@ -1,15 +1,15 @@
-import torch
-
 from typing import Tuple
-from jaxtyping import Float, Bool, Integer
+
+import torch
+from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
 from splanything.utils.pytorch import TensorIndex1D
-from .base import Primitive
-from splanything.rasterizers import SampleOutput
+
+from .base import Primitive, cached_property
 
 
-class Gaussian(Primitive):
+class GaussianPrimitive(Primitive):
     """2D anisotropic Gaussian primitive for image reconstruction."""
 
     _ref_axis = [-1.0, 0.0]
@@ -36,23 +36,22 @@ class Gaussian(Primitive):
         self.add_parameter("color", torch.rand((size, 3)), batched=True, trainable=True)
         self.add_parameter("alphas", torch.rand((size,)), batched=True, trainable=True)
 
-    @property
+    @cached_property
     def scales(self) -> Tuple[Float[Tensor, "N"], Float[Tensor, "N"]]:
         return (self.sigma_1, self.sigma_2)
 
-    @property
+    @cached_property
     def ref_axis(self) -> Float[Tensor, "N 2"]:
         """Reference axis for rotations.
 
         Returns:
             Reference axis (N, 2)
         """
-        N = len(self)
         return torch.tensor(
             self.__class__._ref_axis, device=self.thetas.device, dtype=self.thetas.dtype
         )
 
-    @property
+    @cached_property
     def R(self) -> Float[Tensor, "N 2 2"]:
         """Rotation matrices for all primitives.
 
@@ -66,7 +65,7 @@ class Gaussian(Primitive):
         out = torch.stack([cos, -sin, sin, cos], dim=1).reshape(-1, 2, 2)
         return out
 
-    @property
+    @cached_property
     def axes(self) -> Tuple[Float[Tensor, "N 2"], Float[Tensor, "N 2"]]:
         """Compute gradient axes from rotation matrices.
 
@@ -80,7 +79,7 @@ class Gaussian(Primitive):
         ax_2 = torch.stack([ax_1[:, 1], -ax_1[:, 0]], dim=1)
         return ax_1, ax_2
 
-    @property
+    @cached_property
     def areas(self) -> Float[Tensor, "N"]:
         return self.sigma_1 * self.sigma_2 * 3.14159
 

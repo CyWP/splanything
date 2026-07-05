@@ -1,15 +1,14 @@
-import torch
-
 from typing import Tuple
-from jaxtyping import Float, Bool, Integer
+
+import torch
+from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
-from splanything.utils.pytorch import TensorIndex1D
+from ..utils.pytorch import TensorIndex1D
 from .base import Primitive, cached_property
-from splanything.rasterizers import SampleOutput
 
 
-class CubicGrad(Primitive):
+class CubicFanPrimitive(Primitive):
     """Cubic gradient primitive for image reconstruction.
 
     Represents an image as a collection of cubic gradients with position,
@@ -26,13 +25,8 @@ class CubicGrad(Primitive):
         alphas: Opacity values (N,).
 
     Construction:
-        CubicGrad(size: int):
+        CubicFanPrimitive(size: int):
             Create primitive with specified number of elements.
-
-    Notes:
-        - Uses exponential falloff for smooth gradient transitions.
-        - Colors interpolate based on position relative to gradient axis.
-        - Uses @lazy_tree for caching computed properties.
     """
 
     _ref_axis = [-1.0, 0.0]
@@ -84,7 +78,9 @@ class CubicGrad(Primitive):
     @cached_property
     def ref_axis(self) -> Float[Tensor, "N 2"]:
         return (
-            torch.tensor(CubicGrad._ref_axis, device=self.device, dtype=self.dtype)
+            torch.tensor(
+                CubicFanPrimitive._ref_axis, device=self.device, dtype=self.dtype
+            )
             .unsqueeze(0)
             .expand(len(self), 2)
         )

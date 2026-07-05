@@ -1,10 +1,10 @@
+from logging import getLogger
+from typing import Any, Dict
+
 import torch
 import torch.optim as optim
-
 from jaxtyping import Bool
-from logging import getLogger
 from torch import Tensor
-from typing import Dict, Any
 
 _logger = getLogger(__name__)
 
@@ -60,7 +60,7 @@ class OptimizerWrapper:
                 if p.grad is not None:
                     nan_mask = torch.isnan(p.grad)
                     if nan_mask.any():
-                        _logger.warning(f"Nan found in gradients")
+                        _logger.warning("Nan found in gradients")
                         p.grad[nan_mask] = 0.0
 
     def step(self) -> None:
@@ -94,8 +94,6 @@ class OptimizerWrapper:
                     if p in self._optimizer.state:
                         old_state = self._optimizer.state[p]
                         new_state_for_p = {}
-                        old_shape = p.shape[0]
-                        new_shape = new_p.shape[0]
                         for k, v in old_state.items():
                             if (
                                 isinstance(v, torch.Tensor)
