@@ -45,4 +45,4 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 
 [tool.ruff.lint]
-ignore = ["F722", "F821"]
+ignore = ["F722", "F821", "E741"]
