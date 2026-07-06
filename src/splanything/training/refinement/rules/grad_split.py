@@ -1,9 +1,9 @@
 import torch
-from jaxtyping import Bool
+from jaxtyping import Bool, Float
 from torch import Tensor
 
-from ...primitives import Primitive
-from .base import SplitRule
+from ....primitives import Primitive
+from ..base import RefinementRule, SplitRule
 
 
 class GradSplit(SplitRule):
@@ -14,7 +14,7 @@ class GradSplit(SplitRule):
     better reconstruction fidelity.
 
     Attributes:
-        threshold: Ratio threshold for splitting (grad_mag / area).
+        threshold: Ratio threshold for splitting (grad_mag * alphas).
         interval: Apply every N epochs.
     """
 
@@ -28,14 +28,14 @@ class GradSplit(SplitRule):
         super().__init__(interval=interval)
         self.threshold = threshold
 
-    def apply(self, primitive: Primitive, **kwargs) -> Bool[Tensor, "N"]:
-        """Return which primitives to split.
+    def criterion(self, primitive: Primitive, **kwargs) -> Float[Tensor, "N"]:
+        """Compute per-primitive gradient-to-area ratios.
 
         Args:
             primitive: Primitive to evaluate.
 
         Returns:
-            split: Boolean tensor. True = split, False = ignore.
+            Ratios tensor (N,).
         """
         areas = (
             primitive.areas
@@ -52,5 +52,17 @@ class GradSplit(SplitRule):
             if len(g.shape) > 1:
                 g = g.sum(dim=tuple(range(1, len(g.shape))))
             grad_mag += g
-        ratios = grad_mag * primitive.alphas
-        return ratios > self.threshold
+        return grad_mag * primitive.alphas
+
+    def judge(self, criterion: Float[Tensor, "N"]) -> Bool[Tensor, "N"]:
+        """Threshold ratios into a split mask.
+
+        Args:
+            criterion: Per-primitive ratios (N,).
+
+        Returns:
+            split: Boolean tensor. True = split, False = ignore.
+        """
+        return criterion > self.threshold
+
+    apply = RefinementRule.apply

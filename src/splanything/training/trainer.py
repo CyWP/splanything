@@ -1,7 +1,7 @@
 import json
 import logging
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, Optional, Sequence
 
 import torch
 from jaxtyping import Float, Tensor
@@ -9,7 +9,6 @@ from jaxtyping import Float, Tensor
 from ..primitives import Primitive
 from ..rendering import Sampler
 from .optimizer import OptimizerWrapper
-from .refinement import FilterRule, FineTuneRule, SplitRule
 from .sampler import TrainSampler
 
 _logger = logging.getLogger(__name__)
@@ -55,9 +54,6 @@ class Trainer:
         batch_size: Optional[int] = None,
         base_folder: Optional[Path] = None,
         scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
-        split_rules: Optional[List[SplitRule]] = None,
-        filter_rules: Optional[List[FilterRule]] = None,
-        finetune_rules: Optional[List[FineTuneRule]] = None,
         low_vram: bool = False,
     ):
 
@@ -73,9 +69,6 @@ class Trainer:
         self.batch_size = batch_size
         self.losses = losses
         self.callbacks = callbacks
-        self.split_rules = [] if split_rules is None else split_rules
-        self.filter_rules = [] if filter_rules is None else filter_rules
-        self.finetune_rules = [] if finetune_rules is None else finetune_rules
         self.scheduler = scheduler
         self.logs: Dict[int, Dict[str, Any]] = dict()
         self.low_vram = low_vram
@@ -238,38 +231,23 @@ class Trainer:
 
     @torch.no_grad()
     def _apply_refinements(self):
-        """Aggregate and apply filter and split rules.
-
-        Collects all FilterRule, SplitRule from self.refinements,
-        aggregates their masks, and applies the combined filter/split to the primitive.
-
-        Filter rules are applied first, then split rules are computed on the
+        """Filter rules are applied first, then split rules are computed on the
         filtered primitive and applied after.
+        Returned masks are sued to update optimizer.
         """
         p = self.primitive
 
-        # Apply filter/cull first
-        combined_keep = torch.ones(len(p), dtype=torch.bool, device=p.thetas.device)
-        for rule in self.filter_rules:
-            mask = rule(p)
-            if mask is not None:
-                combined_keep &= mask
-        if (~combined_keep).any():
-            p.filter(combined_keep)
-            self.optimizer.filter(p.parameters(), combined_keep)
+        keep = p.check_filter()
+        if keep is not None:
+            self.optimizer.filter(p.param_groups(), keep)
 
         # Compute and apply split on the filtered primitive
-        combined_split = torch.zeros(len(p), dtype=torch.bool, device=p.thetas.device)
-        for rule in self.split_rules:
-            mask = rule(p)
-            if mask is not None:
-                combined_split |= mask
-        if combined_split.any():
-            p.split(combined_split)
-            self.optimizer.reinit(p.parameters())  # ToDo: combine op for optimizer
+        split = p.check_split()
 
-        for rule in self.finetune_rules:
-            rule(p)
+        finetuned = p.check_finetune()
+
+        if finetuned or split is not None:
+            self.optimizer.reinit(p.param_groups())  # ToDo: split op for optimizer
 
     def log_stat(self, key: str, val: Any):
         """Log a scalar value for current epoch.

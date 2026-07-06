@@ -1,8 +1,8 @@
-from jaxtyping import Bool
+from jaxtyping import Bool, Float
 from torch import Tensor
 
-from ...primitives import Primitive
-from .base import SplitRule
+from ....primitives import Primitive
+from ..base import RefinementRule, SplitRule
 
 
 class IsoSplit(SplitRule):
@@ -28,15 +28,27 @@ class IsoSplit(SplitRule):
         super().__init__(interval=interval)
         self.threshold = threshold
 
-    def apply(self, primitive: Primitive, **kwargs) -> Bool[Tensor, "N"]:
-        """Return which primitives to split.
+    def criterion(self, primitive: Primitive, **kwargs) -> Float[Tensor, "N"]:
+        """Compute per-primitive anisotropy ratios.
 
         Args:
             primitive: Primitive to evaluate.
 
         Returns:
-            split: Boolean tensor. True = split, False = ignore.
+            scale_1 / scale_2 ratios (N,).
         """
         scale_1, scale_2 = primitive.scales
-        ratio = scale_1 / (scale_2 + 1e-8)
-        return (ratio > self.threshold) | (ratio < 1.0 / self.threshold)
+        return scale_1 / (scale_2 + 1e-8)
+
+    def judge(self, criterion: Float[Tensor, "N"]) -> Bool[Tensor, "N"]:
+        """Threshold anisotropy ratios into a split mask.
+
+        Args:
+            criterion: Per-primitive ratios (N,).
+
+        Returns:
+            split: Boolean tensor. True = split, False = ignore.
+        """
+        return (criterion > self.threshold) | (criterion < 1.0 / self.threshold)
+
+    apply = RefinementRule.apply

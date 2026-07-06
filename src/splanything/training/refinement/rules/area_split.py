@@ -1,8 +1,8 @@
-from jaxtyping import Bool
+from jaxtyping import Bool, Float
 from torch import Tensor
 
-from ...primitives import Primitive
-from .base import SplitRule
+from ....primitives import Primitive
+from ..base import RefinementRule, SplitRule
 
 
 class AreaSplit(SplitRule):
@@ -26,14 +26,26 @@ class AreaSplit(SplitRule):
         super().__init__(interval=interval)
         self.threshold = threshold
 
-    def apply(self, primitive: Primitive, **kwargs) -> Bool[Tensor, "N"]:
-        """Return which primitives to split.
+    def criterion(self, primitive: Primitive, **kwargs) -> Float[Tensor, "N"]:
+        """Compute per-primitive areas.
 
         Args:
             primitive: Primitive to evaluate.
 
         Returns:
+            Areas tensor (N,).
+        """
+        return primitive.areas
+
+    def judge(self, criterion: Float[Tensor, "N"]) -> Bool[Tensor, "N"]:
+        """Threshold areas into a split mask.
+
+        Args:
+            criterion: Per-primitive areas (N,).
+
+        Returns:
             split: Boolean tensor. True = split, False = ignore.
         """
-        areas = primitive.areas
-        return areas > self.threshold
+        return criterion > self.threshold
+
+    apply = RefinementRule.apply

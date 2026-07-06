@@ -7,7 +7,7 @@ from torch import Tensor
 from ..sample_output import SampleOutput
 
 
-class RasterizerProcessor(ABC):
+class SampleProcessor(ABC):
     """
     Callback function for processing SampleOutputs before rasterization.
     """
@@ -35,10 +35,10 @@ class Rasterizer(ABC):
         - Processor functions must both accept as an argument and return a SampleOutput instance.
     """
 
-    def __init__(self, processors: Optional[List[RasterizerProcessor]] = None):
+    def __init__(self, processors: Optional[List[SampleProcessor]] = None):
         self.processors = [] if processors is None else processors
 
-    def add_processor(self, processor: RasterizerProcessor):
+    def add_processor(self, processor: SampleProcessor):
         self.processors.append(processor)
 
     def __call__(

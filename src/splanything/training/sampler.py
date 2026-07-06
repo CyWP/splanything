@@ -19,9 +19,11 @@ class TrainSampler(Sampler):
         sampling_map: Optional[Float[Tensor, "B 1 H W"]] = None,
         rasterizer: Optional[Rasterizer] = None,
         low_vram: bool = False,
+        epoch_size: Optional[int] = None,
     ):
         self.sampling_map = sampling_map
         self.max_batch = max_batch
+        self.epoch_size = epoch_size
         self.low_vram = low_vram
         self.rasterizer = WeightedRasterizer() if rasterizer is None else rasterizer
         self.set_target(target, patch_size=patch_size)
@@ -45,10 +47,14 @@ class TrainSampler(Sampler):
             self.set_sampling_map(self.sampling_map, patch_size=patch_size)
 
     def set_sampling_map(
-        self, sampling_map: Float[Tensor, "B 1 H W"], patch_size: Optional[int] = None
+        self,
+        sampling_map: Float[Tensor, "B 1 H W"],
+        patch_size: Optional[int] = None,
+        epoch_size: Optional[int] = None,
     ):
         if not ImgUtils.same_size(sampling_map, self.target_img):
             sampling_map = ImgUtils.resize(sampling_map, self.H, self.W)
+        e_size = self.epoch_size if epoch_size is None else epoch_size
         self.sampling_map = sampling_map
         self.sampling_patches = (
             ImgUtils.extract_image_patches(
@@ -57,6 +63,10 @@ class TrainSampler(Sampler):
             .squeeze(-1)
             .squeeze(0)
         )
+        if e_size is not None:
+            self.sampling_patches = (
+                self.sampling_patches / self.sampling_patches.sum() * e_size
+            )
 
     def set_patch_size(self, patch_size: int):
         if self.target_img is not None:

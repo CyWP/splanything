@@ -47,7 +47,7 @@ class CubicFanPrimitive(Primitive):
             - Colors are initialized near 0.5 (gray) with small variance.
             - Alphas use squared random for bias toward higher opacity.
         """
-        super().__init__(size=size)
+        super().__init__()
         area_factor = 2 / size**0.5
         self.add_parameter("thetas", torch.rand((size,)), batched=True, trainable=True)
         self.add_parameter(

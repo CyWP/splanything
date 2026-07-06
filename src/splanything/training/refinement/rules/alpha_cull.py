@@ -1,10 +1,10 @@
 from typing import Optional
 
-from jaxtyping import Bool
+from jaxtyping import Bool, Float
 from torch import Tensor
 
-from ...primitives import Primitive
-from .base import FilterRule
+from ....primitives import Primitive
+from ..base import FilterRule, RefinementRule
 
 
 class AlphaCull(FilterRule):
@@ -29,15 +29,28 @@ class AlphaCull(FilterRule):
         super().__init__(interval=interval)
         self.threshold = threshold
 
-    def apply(self, primitive: Primitive, **kwargs) -> Optional[Bool[Tensor, "N"]]:
-        """Return which primitives to keep.
+    def criterion(self, primitive: Primitive, **kwargs) -> Float[Tensor, "N"]:
+        """Compute per-primitive alphas.
 
         Args:
             primitive: Primitive to evaluate.
 
         Returns:
+            Alphas tensor (N,).
+        """
+        return primitive.alphas
+
+    def judge(self, criterion: Float[Tensor, "N"]) -> Optional[Bool[Tensor, "N"]]:
+        """Threshold alphas into a keep mask.
+
+        Args:
+            criterion: Per-primitive alphas (N,).
+
+        Returns:
             keep: Boolean tensor. True = keep, False = cull.
         """
-        keep: Bool[Tensor, "N"] = primitive.alphas >= self.threshold
+        keep: Bool[Tensor, "N"] = criterion >= self.threshold
         print("Cull: ", (~keep).sum().item())
         return keep
+
+    apply = RefinementRule.apply

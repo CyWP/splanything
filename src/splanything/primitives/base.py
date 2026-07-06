@@ -74,6 +74,9 @@ class Primitive(nn.Module):
         self._context_mask: Optional[Bool[Tensor, "N"]] = None
         self._property_cache: Dict[str, Any] = {}
         self._cache_active: bool = False
+        self.split_rules = []
+        self.filter_rules = []
+        self.finetune_rules = []
 
     @property
     def device(self) -> torch.device:
@@ -312,7 +315,7 @@ class Primitive(nn.Module):
         return self
 
     @torch.no_grad()
-    def split(self, idx: Bool[Tensor, "Ns"]) -> Primitive:
+    def split(self, idx: Bool[Tensor, "N"]) -> Primitive:
         """Split instances at given indices"""
         updates = dict()
         idx_full = torch.cat([idx, torch.ones_like(idx)], dim=0)
@@ -336,7 +339,7 @@ class Primitive(nn.Module):
         self,
         co: Float[Tensor, "Nc 2"],
         **kwargs,
-    ) -> Float[Tensor, "Nc N"]:
+    ) -> Float[Tensor, "Nc Np"]:
         raise NotImplementedError()
 
     def forward(
@@ -363,7 +366,7 @@ class Primitive(nn.Module):
         return rasterizer(SampleOutput(rgb=rgb, weights=weights, co=co))
 
     @torch.no_grad()
-    def append(self, other: Primitive, weight: float = 0.0):
+    def append(self, other: Primitive, weight: float = 0.0) -> Primitive:
         """Concatenate another primitive in-place.
 
         Appends batched parameters from other to self.
@@ -382,6 +385,7 @@ class Primitive(nn.Module):
         np2 = dict(other.stable_parameters())
         for name, param in self.stable_parameters():
             self.__setattr__(name, weight * np2[name] + (1 - weight) * param)
+        return self
 
     @classmethod
     def cat(cls, primitives: List[Primitive]) -> Primitive:
@@ -389,6 +393,9 @@ class Primitive(nn.Module):
         for p in primitives:
             prim.append(p)
         return prim
+
+    def param_groups(self) -> List[Dict[str, nn.Parameter]]:
+        return [{"params": self.parameters()}]
 
     def batched_parameters(self) -> ItemsView[str, Float[Tensor, "N ..."]]:
         """Get parameters with batch dimension.
@@ -456,3 +463,47 @@ class Primitive(nn.Module):
             if param.grad is not None
         }
         return grads.items()
+
+    def add_split_rule(self, rule: "SplitRule"):
+        self.split_rules.append(rule)
+
+    def add_filter_rule(self, rule: "FilterRule"):
+        self.filter_rules.append(rule)
+
+    def add_finetune_rule(self, rule: "FinetuneRule"):
+        self.finetune_rules.append(rule)
+
+    @torch.no_grad()
+    def check_filter(self) -> Optional[Bool[Tensor, "N"]]:
+        if len(self.filter_rules) == 0:
+            return None
+        combined_filter = torch.ones(len(self), dtype=torch.bool, device=self.device)
+        for rule in self.filter_rules:
+            mask = rule(self)
+            if mask is not None:
+                combined_filter &= mask
+        if (~combined_filter).any():
+            self.filter(combined_filter)
+            return combined_filter
+        return None
+
+    @torch.no_grad()
+    def check_split(self) -> Optional[Bool[Tensor, "N"]]:
+        if len(self.split_rules) == 0:
+            return None
+        combined_split = torch.ones(len(self), dtype=torch.bool, device=self.device)
+        for rule in self.split_rules:
+            split = rule(self)
+            if split is not None:
+                combined_split |= split
+        if combined_split.any():
+            self.split(combined_split)
+            return combined_split
+        return None
+
+    @torch.no_grad()
+    def check_finetune(self) -> bool:
+        has_changes = False
+        for rule in self.finetune_rules:
+            has_changes |= rule(self)
+        return has_changes
