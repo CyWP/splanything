@@ -1,5 +1,6 @@
 import torch
 from torch.optim import AdamW
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 
 from PIL import Image, ImageFilter
 from splanything.training import Trainer, TrainSampler, OptimizerWrapper
@@ -23,19 +24,26 @@ from splanything.utils import ImgUtils
 
 
 def run():
+    # primitives
     device = torch.device("cuda:0")
-    radial = RadialFreqSplat(size=10000).to(device)
-    # prim = MetaPrimitive(
-    #     primitive=MultiPrimitive(
-    #         {
-    #             "radial": RadialFreqSplat(size=3),
-    #             "fan": CubicFanPrimitive(size=3),
-    #             "sine": GaussianSinePrimitive(size=3),
-    #         }
-    #     ),
-    #     size=20,
-    #     primitive_trainable=True,
-    # )
+    radial = RadialFreqSplat(size=5, init_scale=0.002).to(device)
+    cubic = CubicFanPrimitive(size=5, init_scale=0.002).to(device)
+    multi = MultiPrimitive({"radial": radial, "cubic": cubic})
+    prim = MetaPrimitive(
+        primitive=multi,
+        size=250,
+        primitive_trainable=True,
+    ).to(device)
+    # rules
+    alpha_cull = AlphaCull(threshold=0.1, interval=17)
+    grad_split = GradSplit(threshold=0.5, interval=31)
+    # radial.add_filter_rule(alpha_cull)
+    # radial.add_split_rule(grad_split)
+    # cubic.add_filter_rule(alpha_cull)
+    # cubic.add_split_rule(grad_split)
+    prim.add_filter_rule(alpha_cull)
+    prim.add_split_rule(grad_split)
+
     tgt = ImgUtils.pil2tensor(
         Image.open("../assets/bra_nor_offside.png").convert("RGBA")
     ).to(device)
@@ -45,21 +53,22 @@ def run():
         ),
         mode="A",
     ).to(device)
-    prim = radial
     sampler = TrainSampler(
         target=tgt,
         patch_size=128,
-        max_batch=1000000,
+        max_batch=100000,
         sampling_map=tgt_mask * 0.2 + 0.05,
         low_vram=True,
     )
     train_callbacks = [PreviewWindow(frequency=3, show_target=True)]
-    optimizer = OptimizerWrapper(prim, AdamW, lr=0.0002)
+    optimizer = OptimizerWrapper(prim, AdamW, lr=0.0001)
+    # scheduler = CosineAnnealingWarmRestarts(optimizer.optimizer, T_0=50)
     trainer = Trainer(
         "NorVBra",
         prim,
         sampler=sampler,
         optimizer=optimizer,
+        scheduler=None,  # scheduler,
         losses={"L2": L2Loss()},
         callbacks=train_callbacks,
     )
