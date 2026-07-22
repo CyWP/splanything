@@ -9,7 +9,6 @@ from splanything.primitives import (
     MetaPrimitive,
     RadialFreqSplat,
     CubicFanPrimitive,
-    GaussianSinePrimitive,
 )
 from splanything.training.callbacks import PreviewWindow, PrimitiveCheckpoint
 from splanything.training.refinement.rules import (
@@ -20,29 +19,30 @@ from splanything.training.refinement.rules import (
 )
 from splanything.training.losses import L2Loss
 from splanything.training.refinement.processors import MapCriterionProcessor
-from splanything.utils import ImgUtils
+from splanything.utils.img import ImgUtils
 
 
 def run():
     # primitives
     device = torch.device("cuda:0")
-    radial = RadialFreqSplat(size=5, init_scale=0.002).to(device)
-    cubic = CubicFanPrimitive(size=5, init_scale=0.002).to(device)
-    multi = MultiPrimitive({"radial": radial, "cubic": cubic})
-    prim = MetaPrimitive(
-        primitive=multi,
-        size=250,
-        primitive_trainable=True,
-    ).to(device)
+    radial = RadialFreqSplat(size=100).to(device)
+    cubic = CubicFanPrimitive(size=100).to(device)
+    # multi = MultiPrimitive({"radial": radial, "cubic": cubic})
+    # prim = MetaPrimitive(
+    #     primitive=multi,
+    #     size=250,
+    #     primitive_trainable=True,
+    # ).to(device)
     # rules
+    prim = radial
     alpha_cull = AlphaCull(threshold=0.1, interval=17)
     grad_split = GradSplit(threshold=0.5, interval=31)
-    # radial.add_filter_rule(alpha_cull)
-    # radial.add_split_rule(grad_split)
-    # cubic.add_filter_rule(alpha_cull)
-    # cubic.add_split_rule(grad_split)
-    prim.add_filter_rule(alpha_cull)
-    prim.add_split_rule(grad_split)
+    radial.add_filter_rule(alpha_cull)
+    radial.add_split_rule(grad_split)
+    cubic.add_filter_rule(alpha_cull)
+    cubic.add_split_rule(grad_split)
+    # prim.add_filter_rule(alpha_cull)
+    # prim.add_split_rule(grad_split)
 
     tgt = ImgUtils.pil2tensor(
         Image.open("../assets/bra_nor_offside.png").convert("RGBA")
