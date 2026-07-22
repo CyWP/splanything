@@ -25,24 +25,22 @@ from splanything.utils.img import ImgUtils
 def run():
     # primitives
     device = torch.device("cuda:0")
-    radial = RadialFreqSplat(size=80).to(device)
-    cubic = CubicFanPrimitive(size=80).to(device)
-    # multi = MultiPrimitive({"radial": radial, "cubic": cubic})
-    # prim = MetaPrimitive(
-    #     primitive=multi,
-    #     size=250,
-    #     primitive_trainable=True,
-    # ).to(device)
+    radial = RadialFreqSplat(size=5, scale_factor=0.05).to(device)
+    cubic = CubicFanPrimitive(size=3, scale_factor=0.05).to(device)
+    multi = MultiPrimitive({"radial": radial, "cubic": cubic})
+    prim = MetaPrimitive(
+        primitive=multi, size=20, primitive_trainable=False, scale_factor=10
+    ).to(device)
     # rules
-    prim = cubic
+    # prim = multi
     alpha_cull = AlphaCull(threshold=0.1, interval=17)
-    grad_split = GradSplit(threshold=0.01, interval=31)
-    radial.add_filter_rule(alpha_cull)
-    radial.add_split_rule(grad_split)
-    cubic.add_filter_rule(alpha_cull)
-    cubic.add_split_rule(grad_split)
-    # prim.add_filter_rule(alpha_cull)
-    # prim.add_split_rule(grad_split)
+    grad_split = GradSplit(threshold=0.005, interval=31)
+    # radial.add_filter_rule(alpha_cull)
+    # radial.add_split_rule(grad_split)
+    # cubic.add_filter_rule(alpha_cull)
+    # cubic.add_split_rule(grad_split)
+    prim.add_filter_rule(alpha_cull)
+    prim.add_split_rule(grad_split)
 
     tgt = ImgUtils.pil2tensor(
         Image.open("../assets/bra_nor_offside.png").convert("RGBA")
@@ -53,17 +51,17 @@ def run():
         ),
         mode="A",
     ).to(device)
-    map_proc = MapCriterionProcessor(tgt_mask, lambda x, y: x * y)
+    map_proc = MapCriterionProcessor(tgt_mask)
     grad_split.add_processor(map_proc)
     sampler = TrainSampler(
         target=tgt,
         patch_size=128,
-        max_batch=100000,
+        max_batch=1000000,
         sampling_map=tgt_mask * 0.2 + 0.05,
         low_vram=True,
     )
     train_callbacks = [PreviewWindow(frequency=3, show_target=True)]
-    optimizer = OptimizerWrapper(prim, AdamW, lr=0.0001)
+    optimizer = OptimizerWrapper(prim, AdamW, lr=0.0005)
     # scheduler = CosineAnnealingWarmRestarts(optimizer.optimizer, T_0=50)
     trainer = Trainer(
         "NorVBra",
