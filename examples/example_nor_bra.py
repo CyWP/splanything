@@ -25,8 +25,8 @@ from splanything.utils.img import ImgUtils
 def run():
     # primitives
     device = torch.device("cuda:0")
-    radial = RadialFreqSplat(size=100).to(device)
-    cubic = CubicFanPrimitive(size=100).to(device)
+    radial = RadialFreqSplat(size=80).to(device)
+    cubic = CubicFanPrimitive(size=80).to(device)
     # multi = MultiPrimitive({"radial": radial, "cubic": cubic})
     # prim = MetaPrimitive(
     #     primitive=multi,
@@ -34,9 +34,9 @@ def run():
     #     primitive_trainable=True,
     # ).to(device)
     # rules
-    prim = radial
+    prim = cubic
     alpha_cull = AlphaCull(threshold=0.1, interval=17)
-    grad_split = GradSplit(threshold=0.5, interval=31)
+    grad_split = GradSplit(threshold=0.01, interval=31)
     radial.add_filter_rule(alpha_cull)
     radial.add_split_rule(grad_split)
     cubic.add_filter_rule(alpha_cull)
@@ -53,6 +53,8 @@ def run():
         ),
         mode="A",
     ).to(device)
+    map_proc = MapCriterionProcessor(tgt_mask, lambda x, y: x * y)
+    grad_split.add_processor(map_proc)
     sampler = TrainSampler(
         target=tgt,
         patch_size=128,
