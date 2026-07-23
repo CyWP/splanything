@@ -10,7 +10,12 @@ from splanything.primitives import (
     RadialFreqSplat,
     CubicFanPrimitive,
 )
-from splanything.training.callbacks import PreviewWindow, PrimitiveCheckpoint
+from splanything.training.callbacks import (
+    PreviewWindow,
+    PrimitiveCheckpoint,
+    PrimitiveSave,
+    StatsPanel,
+)
 from splanything.training.refinement.rules import (
     AlphaCull,
     GradSplit,
@@ -25,16 +30,16 @@ from splanything.utils.img import ImgUtils
 def run():
     # primitives
     device = torch.device("cuda:0")
-    radial = RadialFreqSplat(size=5, scale_factor=0.05).to(device)
-    cubic = CubicFanPrimitive(size=3, scale_factor=0.05).to(device)
+    radial = RadialFreqSplat(size=5, scale_factor=1.0).to(device)
+    cubic = CubicFanPrimitive(size=3, scale_factor=1.0).to(device)
     multi = MultiPrimitive({"radial": radial, "cubic": cubic})
     prim = MetaPrimitive(
-        primitive=multi, size=20, primitive_trainable=False, scale_factor=10
+        primitive=multi, size=200, primitive_trainable=False, scale_factor=1.0
     ).to(device)
     # rules
     # prim = multi
-    alpha_cull = AlphaCull(threshold=0.1, interval=17)
-    grad_split = GradSplit(threshold=0.005, interval=31)
+    alpha_cull = AlphaCull(threshold=0.1, interval=242)
+    grad_split = GradSplit(threshold=0.2, interval=407)
     # radial.add_filter_rule(alpha_cull)
     # radial.add_split_rule(grad_split)
     # cubic.add_filter_rule(alpha_cull)
@@ -60,22 +65,25 @@ def run():
         sampling_map=tgt_mask * 0.2 + 0.05,
         low_vram=True,
     )
-    train_callbacks = [PreviewWindow(frequency=3, show_target=True)]
-    optimizer = OptimizerWrapper(prim, AdamW, lr=0.0005)
-    # scheduler = CosineAnnealingWarmRestarts(optimizer.optimizer, T_0=50)
+    train_callbacks = [
+        PreviewWindow(frequency=5, show_target=True),
+        StatsPanel(),
+        PrimitiveSave("./prim.pth"),
+    ]
+    optimizer = OptimizerWrapper(prim, AdamW, lr=0.001)
+    scheduler = CosineAnnealingWarmRestarts(optimizer._optimizer, T_0=200)
     trainer = Trainer(
         "NorVBra",
         prim,
         sampler=sampler,
         optimizer=optimizer,
-        scheduler=None,  # scheduler,
+        scheduler=scheduler,
         losses={"L2": L2Loss()},
         callbacks=train_callbacks,
+        base_folder="../test_runs",
     )
-    print("train")
     for _ in trainer.train():
-        print(trainer.epoch)
-    print("stop")
+        pass
 
 
 if __name__ == "__main__":
