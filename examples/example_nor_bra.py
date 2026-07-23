@@ -22,7 +22,7 @@ from splanything.training.refinement.rules import (
     AreaSplit,
     IsoSplit,
 )
-from splanything.training.losses import L2Loss
+from splanything.training.losses import L2Loss, Anisotropy
 from splanything.training.refinement.processors import MapCriterionProcessor
 from splanything.utils.img import ImgUtils
 
@@ -38,8 +38,8 @@ def run():
     ).to(device)
     # rules
     # prim = multi
-    alpha_cull = AlphaCull(threshold=0.1, interval=242)
-    grad_split = GradSplit(threshold=0.2, interval=407)
+    alpha_cull = AlphaCull(threshold=0.9, interval=223)
+    grad_split = GradSplit(threshold=0.6, interval=407)
     # radial.add_filter_rule(alpha_cull)
     # radial.add_split_rule(grad_split)
     # cubic.add_filter_rule(alpha_cull)
@@ -70,15 +70,17 @@ def run():
         StatsPanel(),
         PrimitiveSave("./prim.pth"),
     ]
-    optimizer = OptimizerWrapper(prim, AdamW, lr=0.001)
-    scheduler = CosineAnnealingWarmRestarts(optimizer._optimizer, T_0=200)
+    optimizer = OptimizerWrapper(prim, AdamW, lr=0.01)
+    scheduler = CosineAnnealingWarmRestarts(
+        optimizer._optimizer, T_0=400, eta_min=0.00025
+    )
     trainer = Trainer(
         "NorVBra",
         prim,
         sampler=sampler,
         optimizer=optimizer,
         scheduler=scheduler,
-        losses={"L2": L2Loss()},
+        losses={"L2": L2Loss(), "Anisotropy": Anisotropy(weight=0.5)},
         callbacks=train_callbacks,
         base_folder="../test_runs",
     )
