@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-from typing import Iterator, Optional, Tuple
+from typing import Iterator, Optional, Tuple, TYPE_CHECKING
 
 import torch
 from jaxtyping import Bool, Float
 from torch import Tensor
 
-from ..primitives import Primitive
+if TYPE_CHECKING:
+    from ..primitives import Primitive
 from ..utils.img import ImgUtils
-from .rasterizers import Rasterizer, WeightedRasterizer
+from .rasterizers.base import Rasterizer
+from .rasterizers.weighted import WeightedRasterizer
 
 
 class Sampler:
@@ -23,6 +25,7 @@ class Sampler:
         low_vram: bool = False,
         device: torch.device = torch.device("cpu"),
     ):
+        self.device = device
         self.H = H
         self.W = W
         self.max_batch = max_batch
@@ -30,7 +33,6 @@ class Sampler:
         self.set_patch_size(patch_size, padding)
         self.rasterizer = WeightedRasterizer() if rasterizer is None else rasterizer
         self.padding = padding
-        self.device = device
 
     def set_patch_size(
         self, patch_size: int, padding: Tuple[int, int, int, int] = (0, 0, 0, 0)
@@ -49,14 +51,18 @@ class Sampler:
         self.co_centers = self.co_centers.to(device)
 
     @property
+    def padded_dims(self) -> Tuple[int, int]:
+        t, b, l, r = self.padding
+        return self.H + t + b, self.W + l + r
+
+    @property
     def num_patches(self) -> int:
         if self.patch_size is None:
             return 1
         return self.co_patches.shape[0]
 
     def samples(
-        self,
-        p: Primitive,
+        self, p: Primitive, verbose: bool = False
     ) -> Iterator[Tuple[Float[Tensor, "S C"], Float[Tensor, "S 2"]]]:
         if p.device != self.device:
             raise ValueError(
@@ -78,64 +84,85 @@ class Sampler:
             nonlocal p
             nonlocal rasterizer
             with p.masked(mask):
-                return p(batch, rasterizer)
+                return rasterizer(p(batch))
+
+        if verbose:
+            from rich.progress import Progress
+
+            progress = Progress()
+            task = progress.add_task("[green]Sampling...", total=P)
+            progress.start()
 
         # If there is no max batch size, just compute per patch.
         if max_batch is None:
             for i in range(P):
-                yield _compute_patch(patches[i], patch_masks[i])
-        else:
-            patch_mask_sums = patch_masks.sum(dim=1)  # [P,]
-            i = 0
-            mask = torch.empty((len(p),), dtype=torch.bool, device=patches.device)
-            while i < P:
-                acc_patches = []
-                mask_size = 0
-                co_size = 0
-                batch_size = 0
-                mask.zero_()
-                while (
-                    i < P
-                    and batch_size + patches[i].shape[0] * patch_mask_sums[i]
-                    < max_batch
-                ):
-                    mask = mask | patch_masks[i]
-                    mask_size = mask.sum()
-                    co_size += patches[i].shape[0]
-                    batch_size = mask_size * co_size
-                    acc_patches.append(patches[i])
-                    i += 1
-                # Only True if a single patch must be done in multiple passes
-                if len(acc_patches) == 0:
-                    b_patches = torch.chunk(
-                        patches[i],
-                        patch_mask_sums[i] * patches[i].shape[0] // max_batch,
-                        dim=0,
-                    )
-                    mask = patch_masks[i]
-                    for b in b_patches:
-                        yield _compute_patch(b, mask)
-                    i += 1
-                else:
-                    batch_co = torch.cat(acc_patches, dim=0)
-                    yield _compute_patch(batch_co, mask), batch_co
+                if verbose:
+                    progress.update(task, completed=i)
+                yield _compute_patch(patches[i], patch_masks[i]), patches[i]
+            if verbose:
+                progress.stop()
+            return
+        patch_mask_sums = patch_masks.sum(dim=1)  # [P,]
+        i = 0
+        mask = torch.empty((len(p),), dtype=torch.bool, device=patches.device)
+        while i < P:
+            if verbose:
+                progress.update(task, completed=i)
+            acc_patches = []
+            co_size = 0
+            mask.zero_()
+            while (
+                i < P
+                and (mask.sum() + patch_mask_sums[i]).item() * (co_size + S) < max_batch
+            ):
+                mask = mask | patch_masks[i]
+                co_size += S
+                acc_patches.append(patches[i])
+                i += 1
+            if len(acc_patches) == 0:
+                # Single patch too large: chunk its pixels.
+                chunk = max(1, max_batch // max(patch_mask_sums[i].item(), 1))
+                mask = patch_masks[i]
+                s = 0
+                N = patches[i].shape[0]
+                while s < N:
+                    e = min(s + chunk, N)
+                    yield _compute_patch(patches[i][s:e], mask), patches[i][s:e]
+                    s = e
+                i += 1
+            else:
+                batch_co = torch.cat(acc_patches, dim=0)
+                yield _compute_patch(batch_co, mask), batch_co
+        if verbose:
+            progress.stop()
 
     def rasterize(
         self,
         p: Primitive,
         max_batch: Optional[int] = None,
         low_vram: Optional[bool] = None,
+        verbose: bool = False,
     ) -> Float[Tensor, "B C H W"]:
         if p.device != self.device:
             raise ValueError(
                 f"Sampler and primitive must be on same device. Currently: {self.device}, {p.device}."
             )
-        low_vram = self.low_vram if low_vram is None else low_vram
-        P, S, C = self.co.patches.shape
-        gen = []
-        for patch in self.samples(p, max_batch):
-            if low_vram:
-                patch = patch.cpu()
-            gen.append(patch)
-        patch_gen = torch.cat(gen, dim=0).reshape(P, S, 4)
-        return ImgUtils.assemble_patches(patch_gen, self.H, self.W)
+        lv = self.low_vram if low_vram is None else low_vram
+        if max_batch is not None:
+            saved = self.max_batch
+            self.max_batch = max_batch
+        else:
+            saved = None
+        try:
+            P, S, _ = self.co_patches.shape
+            gen = []
+            for sample, _ in self.samples(p, verbose=verbose):
+                if lv:
+                    sample = sample.cpu()
+                gen.append(sample)
+            patch_gen = torch.cat(gen, dim=0).reshape(P, S, 4)
+            H, W = self.padded_dims
+            return ImgUtils.assemble_patches(patch_gen, H, W)
+        finally:
+            if saved is not None:
+                self.max_batch = saved

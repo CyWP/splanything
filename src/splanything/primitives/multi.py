@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import ExitStack, contextmanager
-from typing import Dict, ItemsView, List, Optional, Union
+from typing import Dict, ItemsView, List, Optional, Union, Any, TYPE_CHECKING
 
 import torch
 import torch.nn as nn
@@ -12,15 +12,20 @@ from torch import Tensor
 from ..utils.pytorch import TensorIndex1D
 from .base import Primitive
 
+if TYPE_CHECKING:
+    from ..training.regularizers.base import Regularizer
+    from ..training.refinement.base import SplitRule, FilterRule
+
 _logger = logging.getLogger(__name__)
 
 
 class MultiPrimitive(Primitive):
     def __init__(self, primitives: Dict[str, Primitive] = {}):
+        super().__init__()
         self.primitives = nn.ModuleDict(primitives)
 
     @contextmanager
-    def masked(self, masks: Dict[Bool[Tensor, "N"]]):
+    def masked(self, mask: Bool[Tensor, "N"]):
         """Context manager for implicit masking of batched parameters.
 
         When active, accessing batched parameters returns masked versions.
@@ -33,10 +38,12 @@ class MultiPrimitive(Primitive):
             None.
         """
         with ExitStack() as stack:
-            _ = [
-                stack.enter_context(self.primitives[key].masked(masks[key]))
-                for key in masks.keys()
-            ]
+            tmp = []
+            si = 0
+            for prim in self.primitives.values():
+                ei = si + len(prim)
+                tmp.append(stack.enter_context(prim.masked(mask[si:ei])))
+                si = ei
             yield
 
     @contextmanager
@@ -52,7 +59,7 @@ class MultiPrimitive(Primitive):
         """
         with ExitStack() as stack:
             _ = [
-                stack.enter_context(prim.cache_properties)
+                stack.enter_context(prim.cache_properties())
                 for prim in self.primitives.values()
             ]
         yield
@@ -85,7 +92,7 @@ class MultiPrimitive(Primitive):
             prim._property_cache.clear()
 
     def __getattribute__(self, name):
-        return object.__getattribute__(name)
+        return object.__getattribute__(self, name)
 
     def __len__(self) -> int:
         """Number of primitives in this object."""
@@ -106,22 +113,14 @@ class MultiPrimitive(Primitive):
         patch_sizes: Integer[Tensor, "P"],
         H: Integer[Tensor, "P"],
         W: Integer[Tensor, "P"],
-    ) -> Dict[str, Bool[Tensor, "P N"]]:
-        """Compute mask for valid patches at given centers.
-
-        Args:
-            centers: Patch center coordinates (P, 2).
-            patch_sizes: Size of patches (P,).
-            H: Image heights (P,).
-            W: Image widths (P,).
-
-        Returns:
-            Dict[str, Bool tensor (P, N)] indicating which primitives are valid for a given patch.
-        """
-        return {
-            name: prim.patch_mask(centers, patch_sizes, H, W)
-            for name, prim in self.primitives.items()
-        }
+    ) -> Bool[Tensor, "P N"]:
+        return torch.cat(
+            [
+                prim.patch_mask(centers, patch_sizes, H, W)
+                for prim in self.primitives.values()
+            ],
+            dim=1,
+        )
 
     @torch.no_grad()
     def filter(self, keys: Dict[str, TensorIndex1D]) -> MultiPrimitive:
@@ -197,11 +196,16 @@ class MultiPrimitive(Primitive):
                 self.primitives[key] = prim
         return self
 
-    def param_groups(self) -> List[Dict[str, Union[nn.Parameter, str]]]:
-        return [
-            {"params": prim.parameters(), "name": name}
-            for name, prim in self.primitives.items()
-        ]
+    def param_groups(self) -> List[Dict[str, Union[nn.Parameter, Any]]]:
+        groups = []
+        for name, prim in self.primitives.items():
+            pg = prim.param_groups()
+            for g in pg:
+                g["name"] = (
+                    f"{name}$${g['name']}"  # Do not change '$$', needed for OptimizerWrapper
+                )
+            groups.extend(pg)
+        return groups
 
     def batched_parameters(self) -> ItemsView[str, Float[Tensor, "N ..."]]:
         raise NotImplementedError(
@@ -228,20 +232,28 @@ class MultiPrimitive(Primitive):
             f"This class ('{self.__class__}') is meant as a container for primitives only. Access parameters directly in the contained primitives."
         )
 
-    def add_split_rule(self, rule: "SplitRule"):
-        raise NotImplementedError(
-            f"This class ('{self.__class__}') is meant as a container for primitives only. Edit rules directly in the contained primitives."
-        )
+    def add_split_rule(self, rule: SplitRule):
+        for prim in self.primitives.values():
+            prim.add_split_rule(rule)
 
-    def add_filter_rule(self, rule: "FilterRule"):
-        raise NotImplementedError(
-            f"This class ('{self.__class__}') is meant as a container for primitives only. Edit rules directly in the contained primitives."
-        )
+    def add_filter_rule(self, rule: FilterRule):
+        for prim in self.primitives.values():
+            prim.add_filter_rule(rule)
 
-    def add_finetune_rule(self, rule: "FinetuneRule"):
-        raise NotImplementedError(
-            f"This class ('{self.__class__}') is meant as a container for primitives only. Edit rules directly in the contained primitives."
-        )
+    def add_sample_processor(self, proc: SampleProcessor):
+        for prim in self.primitives.values():
+            prim.add_sample_processor(proc)
+
+    def add_regularizer(self, name: str, reg: Regularizer, weight: float = 0.1):
+        for prim in self.primitives.values():
+            prim.add_regularizer(name, reg, weight)
+
+    def compute_regularization(self) -> Dict[str, Float[Tensor, ""]]:
+        regs = {}
+        for p_name, prim in self.primitives.items():
+            for r_name, r in prim.compute_regularization().items():
+                regs[f"{p_name}_{r_name}"] = r
+        return regs
 
     @torch.no_grad()
     def check_filter(self) -> Optional[Dict[str, Bool[Tensor, "N"]]]:
@@ -264,7 +276,3 @@ class MultiPrimitive(Primitive):
         if len(split) == 0:
             return None
         return split
-
-    @torch.no_grad()
-    def check_finetune(self) -> bool:
-        return any([prim.check_finetune() for prim in self.primitives.values()])

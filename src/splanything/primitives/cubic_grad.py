@@ -31,7 +31,7 @@ class CubicFanPrimitive(Primitive):
 
     _ref_axis = [-1.0, 0.0]
 
-    def __init__(self, size: int = 1):
+    def __init__(self, size: int = 1, scale_factor: float = 1.0):
         """Initialize primitive parameters.
 
         Initializes thetas, centroids, ranges, colors, and alphas as
@@ -43,12 +43,11 @@ class CubicFanPrimitive(Primitive):
 
         Notes:
             - Areas scale with 1/sqrt(size) for balanced initial coverage.
-            - Ranges are initialized as squared random values for positive magnitudes.
             - Colors are initialized near 0.5 (gray) with small variance.
             - Alphas use squared random for bias toward higher opacity.
         """
         super().__init__()
-        area_factor = 2 / size**0.5
+        area_factor = scale_factor / size**0.5
         self.add_parameter("thetas", torch.rand((size,)), batched=True, trainable=True)
         self.add_parameter(
             "centroids", torch.rand((size, 2)), batched=True, trainable=True

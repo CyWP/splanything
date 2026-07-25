@@ -29,12 +29,16 @@ from splanything.training.refinement.rules import (
     PrimitiveCeiling,
     PrimitiveFloor,
 )
-from splanything.training.losses import L2Loss, AttributeProximity, AttributeRange
+from splanything.training.losses import L2Loss
+from splanything.training.regularizers import AttributeProximity, AttributeRange
 from splanything.training.refinement.processors import MapCriterionProcessor
 from splanything.utils.img import ImgUtils
 from splanything.rendering import Sampler, SampleOutput
 from splanything.rendering.processors import FlexibleSampleProcessor
-from splanything.rendering.rasterizers import ProbabilisticRasterizer
+from splanything.rendering.rasterizers import (
+    ProbabilisticRasterizer,
+    WeightedRasterizer,
+)
 
 device = torch.device("cuda:0")
 run_name = "NorVBra"
@@ -43,9 +47,10 @@ run_folder = base_folder / run_name
 
 
 def get_primitive():
-    return CubicFanPrimitive(size=200).to(device)
-    radial = RadialFreqPrimitive(size=500, scale_factor=1.0).to(device)
-    return radial
+    cubic = CubicFanPrimitive(size=100).to(device)
+    radial = RadialFreqPrimitive(size=200, scale_factor=1.0).to(device)
+    multi = MultiPrimitive({"cubic": cubic, "radial": radial})
+    return multi
 
 
 def train():
@@ -68,13 +73,13 @@ def train():
     # area_split = AreaSplit(threshold=0.1, interval=87)
     # map_split = MapSplit(msk_tensor_blur10 * 0.6 + 0.05, interval=333)
     ceiling = PrimitiveCeiling(10000)
-    bounds_cull = BoundsFilter(interval=200, margin=0.0, use_areas=False)
+    # bounds_cull = BoundsFilter(interval=200, margin=0.0, use_areas=False)
     prim.add_filter_rule(alpha_cull)
     prim.add_split_rule(grad_split)
     # prim.add_split_rule(map_split)
     # prim.add_split_rule(area_split)
     prim.add_filter_rule(ceiling)
-    prim.add_filter_rule(bounds_cull)
+    # prim.add_filter_rule(bounds_cull)
 
     # Rule processors
     map_proc = MapCriterionProcessor(msk_tensor_blur10 * 0.6 + 0.4)
@@ -98,13 +103,23 @@ def train():
         optimizer._optimizer, T_0=1000, eta_min=0.001
     )
     losses = {
-        "L2": L2Loss(weight=1.0),
-        "Color Push": AttributeProximity(
-            ["color_1", "color_2"], mode="PUSH", weight=0.25
-        ),
-        "Area Range": AttributeRange("areas", min=0.1, max=0.25, weight=12.0),
-        "Alpha Target": AttributeRange("alphas", min=0.95, weight=12.0),
+        "L2": (L2Loss(), 1.0),
     }
+    # Regularizers
+    # cubic = prim.primitives["cubic"]
+    # radial = prim.primitives["radial"]
+    prim.add_regularizer(
+        "Color Push",
+        AttributeProximity(["color_1", "color_2"], mode="PUSH"),
+        weight=0.25,
+    )
+    prim.add_regularizer(
+        "Area Range", AttributeRange("areas", min=0.1, max=0.25), weight=12.0
+    )
+    prim.add_regularizer(
+        "Alpha Target", AttributeRange("alphas", min=0.95), weight=12.0
+    )
+    prim.add_regularizer("Verticality", AttributeRange("thetas", target=0), weight=50.0)
 
     # Trainer
     trainer = Trainer(
@@ -147,9 +162,9 @@ def generate():
     sampler = Sampler(
         3072,
         1024,
-        patch_size=96,
+        patch_size=32,
         max_batch=10000000,
-        rasterizer=ProbabilisticRasterizer(top_k=100),
+        rasterizer=None,  # ProbabilisticRasterizer(top_k=100),
         padding=(1536, 1536, 1024, 1024),
         device=device,
         low_vram=False,

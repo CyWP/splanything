@@ -4,8 +4,8 @@ import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
 
-from splanything.training import Trainer
-from splanything.utils.img import ImgUtils
+from ..trainer import Trainer
+from ...utils.img import ImgUtils
 
 
 class Loss(nn.Module):
@@ -14,29 +14,28 @@ class Loss(nn.Module):
     A Loss computes a scalar value measuring the difference between
     the target image and the primitive's current output.
 
-    Attributes:
-        weight: Multiplier for the loss value in combined loss computation.
-        weight_map: Spatial multiplier for the loss value in combined loss computation.
-
     Notes:
-        - Subclasses must implement `compute(trainer) -> Float[Tensor, ""]`.
-        - The `forward` method applies the weight multiplier.
+        - Subclasses must implement ``compute(trainer) -> Float[Tensor, ""]``.
+        - Optional spatial weighting via ``weight_map``: when set and a
+          coordinate tensor is supplied to ``forward``, the map is
+          sampled at those coordinates and multiplied into the result.
+        - Loss weighting (scalar) is the responsibility of the caller;
+          subclasses carry no scalar ``weight`` argument or attribute.
     """
 
     def __init__(
         self,
-        weight: float = 1,
         weight_map: Optional[Float[Tensor, "B 1 H W"]] = None,
-        **kwargs,
     ):
-        """Initialize loss.
+        """Initialize the loss.
 
         Args:
-            weight: Weight multiplier for this loss term.
+            weight_map: Optional spatial map (B, 1, H, W) sampled at
+                coordinates in ``forward`` to spatially weight the
+                loss. Not premultiplied by any scalar weight.
         """
         super().__init__()
-        self.weight = weight
-        self.weight_map = None if weight_map is None else weight * weight_map
+        self.weight_map = weight_map
 
     def compute(self, trainer: Trainer) -> Float[Tensor, ""]:
         """Compute unweighted loss value.
@@ -50,18 +49,27 @@ class Loss(nn.Module):
         raise NotImplementedError()
 
     def forward(
-        self, trainer: Trainer, co: Optional[Float[Tensor, "N 2"]] = None
+        self,
+        trainer: Trainer,
+        co: Optional[Float[Tensor, "N 2"]] = None,
+        **kwargs,
     ) -> Float[Tensor, ""]:
-        """Compute weighted loss.
+        """Compute the loss, optionally weighted by ``weight_map`` at ``co``.
 
         Args:
             trainer: Current trainer state.
+            co: Optional coordinates used to sample ``weight_map``. When
+                both ``co`` and ``weight_map`` are provided the sampled
+                map multiplies the result.
+            **kwargs: Accepted for call-site compatibility; unused by
+                the base implementation.
 
         Returns:
-            Weighted loss scalar.
+            Loss value (scalar when ``weight_map`` is unused; otherwise
+            broadcasted against the sampled weight tensor).
         """
+        out = self.compute(trainer)
         if co is not None and self.weight_map is not None:
             weight = ImgUtils.uv_sample(self.weight_map, co)[0].squeeze(-1)
-        else:
-            weight = self.weight
-        return self.compute(trainer) * weight
+            return out * weight
+        return out

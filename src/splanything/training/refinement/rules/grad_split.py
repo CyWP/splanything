@@ -2,7 +2,7 @@ import torch
 from jaxtyping import Bool, Float
 from torch import Tensor
 
-from ....primitives import Primitive
+from ....primitives.base import Primitive
 from ..base import RefinementRule, SplitRule
 
 
@@ -43,7 +43,7 @@ class GradSplit(SplitRule):
             else torch.ones(
                 (len(primitive),), device=primitive.device, dtype=primitive.dtype
             )
-        )
+        ) ** 0.5
         grad_mag = torch.zeros(
             (len(primitive),), device=areas.device, dtype=areas.dtype
         )
@@ -64,5 +64,3 @@ class GradSplit(SplitRule):
             split: Boolean tensor. True = split, False = ignore.
         """
         return criterion > self.threshold
-
-    apply = RefinementRule.apply

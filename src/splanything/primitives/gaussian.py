@@ -14,9 +14,9 @@ class GaussianPrimitive(Primitive):
 
     _ref_axis = [-1.0, 0.0]
 
-    def __init__(self, size: int = 1):
+    def __init__(self, size: int = 1, scale_factor: float = 1.0):
         super().__init__()
-        area_factor = 0.5 / size**0.5
+        area_factor = scale_factor / size**0.5
         self.add_parameter("thetas", torch.rand((size,)), batched=True, trainable=True)
         self.add_parameter(
             "centroids", torch.rand((size, 2)), batched=True, trainable=True

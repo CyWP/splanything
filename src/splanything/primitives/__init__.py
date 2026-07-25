@@ -3,6 +3,7 @@
 from .base import Primitive
 from .cubic_grad import CubicFanPrimitive
 from .gaussian import GaussianPrimitive
+from .radial_freq import RadialFreqPrimitive
 from .meta import MetaPrimitive
 from .multi import MultiPrimitive
 
@@ -12,4 +13,5 @@ __all__ = [
     "MetaPrimitive",
     "CubicFanPrimitive",
     "GaussianPrimitive",
+    "RadialFreqPrimitive",
 ]

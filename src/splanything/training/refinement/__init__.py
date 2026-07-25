@@ -1,6 +1,15 @@
-"Rules for refinement (filtering, splitting, geenral finetuning) during training."
+"""Rules for refinement (filtering, splitting, general finetuning) during training."""
 
 from . import processors, rules
-from .base import FilterRule, FineTuneRule, SplitRule
+from .base import FilterRule, SplitRule
+from .rules.map_filter import MapFilter
+from .rules.map_split import MapSplit
 
-__all__ = ["FilterRule", "SplitRule", "FineTuneRule", "rules", "processors"]
+__all__ = [
+    "FilterRule",
+    "SplitRule",
+    "MapFilter",
+    "MapSplit",
+    "rules",
+    "processors",
+]

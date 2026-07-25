@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import logging
-from typing import Tuple
+from typing import Tuple, Optional, TYPE_CHECKING
 
 import torch
 from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
-from ..rendering import SampleOutput
-from ..rendering.rasterizers import Rasterizer
+from ..rendering.sample_output import SampleOutput
 from .base import Primitive, cached_property
+
+if TYPE_CHECKING:
+    from ..training.regularizers.base import Regularizer
+    from ..training.refinement.base import SplitRule, FilterRule
 
 _logger = logging.getLogger(__name__)
 
@@ -19,21 +22,34 @@ class MetaPrimitive(Primitive):
         self,
         primitive: Primitive,
         size: int = 1,
-        init_scale: float = 0.1,
         color: bool = True,
         alpha: bool = True,
         primitive_trainable: bool = False,
+        scale_factor: float = 1.0,
     ):
         super().__init__()
         self.primitive = primitive
         self.primitive.requires_grad_(primitive_trainable)
         self.primitive_trainable = primitive_trainable
+        init_scale = scale_factor / size**0.5
         self.add_parameter(
             "centroids", torch.rand((size, 2)), batched=True, trainable=True
         )
         self.add_parameter(
-            "transforms",
-            torch.randn((size, 2, 2)) * init_scale,
+            "scales_1",
+            (torch.rand((size,)) * 2 * init_scale) + init_scale,
+            batched=True,
+            trainable=True,
+        )
+        self.add_parameter(
+            "scales_2",
+            (torch.randn((size,)) * 2 * init_scale) + init_scale,
+            batched=True,
+            trainable=True,
+        )
+        self.add_parameter(
+            "thetas",
+            torch.rand((size,)) * 2 * torch.pi,
             batched=True,
             trainable=True,
         )
@@ -50,8 +66,27 @@ class MetaPrimitive(Primitive):
                 batched=True,
                 trainable=True,
             )
+
+            self.add_parameter(
+                "rgb_axis",
+                torch.tensor([1 / 3**0.5] * 3),
+                batched=False,
+                trainable=False,
+            )
         if alpha:
-            self.add_parameter("alphas", 1.0 + torch.randn((size,)) * 0.1)
+            self.add_parameter("alphas", 1.0 - (torch.randn((size,)) * 0.25) ** 2)
+
+    @cached_property
+    def transforms(self) -> Float[Tensor, "N 2 2"]:
+        c = torch.cos(self.thetas)
+        s = torch.sin(self.thetas)
+        return torch.stack(
+            [
+                torch.stack([self.scales_1 * c, -self.scales_2 * s], dim=-1),
+                torch.stack([self.scales_1 * s, self.scales_2 * c], dim=-1),
+            ],
+            dim=-2,
+        )
 
     @cached_property
     def transforms_components(self) -> Tuple[Float[Tensor, "N"]]:
@@ -72,7 +107,17 @@ class MetaPrimitive(Primitive):
         a, b, c, d = self.transforms_components
         r1 = torch.stack([d, -b], dim=1)
         r2 = torch.stack([-c, a], dim=1)
-        return self.transforms_determinants_inverse * torch.stack([r1, r2], dim=1)
+        return self.transforms_determinants_inverse[:, None, None] * torch.stack(
+            [r1, r2], dim=1
+        )
+
+    @cached_property
+    def areas(self) -> Float[Tensor, "N"]:
+        return self.scales_1 * self.scales_2
+
+    @cached_property
+    def scales(self) -> Tuple[Float[Tensor, "N"], Float[Tensor, "N"]]:
+        return (self.scales_1, self.scales_2)
 
     @torch.no_grad()
     def patch_mask(
@@ -151,115 +196,146 @@ class MetaPrimitive(Primitive):
         return overlap
 
     @torch.no_grad()
-    def split(self, idx: Bool[Tensor, "N"]) -> Primitive:
-        """Split instances at given indices"""
-        updates = dict()
-        A = self.transforms  # (N,2,2)
-        axis_norms = (A**2).sum(dim=1)  # (N,2)
-        longest = axis_norms.argmax(dim=1)  # (N,)
-        eye = torch.eye(2, device=A.device, dtype=A.dtype)
-        dirs_local = eye[longest]  # (N,2)
-        dirs_world = torch.einsum(
-            "nij,nj->ni",
-            A,
-            dirs_local,
-        )
-        dirs_world = dirs_world / dirs_world.norm(dim=1, keepdim=True).clamp_min(1e-12)
+    def split(self, idx: Bool[Tensor, "N"]) -> MetaPrimitive:
+        """Split instances at given indices."""
+        updates = {}
+        # Determine split axis
+        scales = torch.stack([self.scales_1, self.scales_2], dim=-1)  # (N, 2)
+        longest = scales.argmax(dim=-1)  # (N,)
+        # World-space axis directions
+        c = torch.cos(self.thetas)
+        s = torch.sin(self.thetas)
+        axis_dirs = torch.stack(
+            [torch.stack([c, s], dim=-1), torch.stack([-s, c], dim=-1)], dim=1
+        )  # (N, 2, 2)
+        dirs_world = axis_dirs[
+            torch.arange(len(self), device=axis_dirs.device),
+            longest,
+        ]  # (N, 2)
+        dirs_world = dirs_world / dirs_world.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+        split_idx = idx.nonzero(as_tuple=False).squeeze(-1)
+        split_lengths = scales[split_idx, longest[split_idx]]
+        offsets = 0.1 * split_lengths[:, None] * dirs_world[split_idx]
+        # Parent gets shifted opposite, child gets shifted positive
+        centroids_parent_offset = -offsets
+        centroids_child_offset = offsets
         for name, param in self.batched_parameters():
-            new_param = torch.cat([param, param[idx]])
-            split_mask = torch.cat(
-                [torch.zeros_like(idx, dtype=torch.bool), idx], dim=0
-            )
-            if name == "transforms":
-                # halve along dominant axis
-                axis = longest[idx].repeat_interleave(1)
-                scale = torch.ones_like(new_param)
-                scale[split_mask, axis, axis] = 0.5
-                new_param = new_param @ scale
+            if name in ("scales_1", "scales_2"):
+                parent_update = param.clone()
+                child_update = param[idx].clone()
+                if name == "scales_1":
+                    mask = longest[split_idx] == 0
+                else:
+                    mask = longest[split_idx] == 1
+                # shrink the split axis for BOTH descendants
+                parent_update[split_idx[mask]] *= 0.5
+                child_update[mask] *= 0.5
+                new_param = torch.cat([parent_update, child_update], dim=0)
             elif name == "centroids":
-                offsets = 0.25 * dirs_world[idx]
-                offsets = torch.stack([offsets, -offsets], dim=1).reshape(-1, 2)
-                new_param[split_mask] = new_param[split_mask] + offsets
+                parent_update = param.clone()
+                child_update = param[idx].clone()
+
+                parent_update[split_idx] += centroids_parent_offset
+                child_update += centroids_child_offset
+                new_param = torch.cat([parent_update, child_update], dim=0)
+            else:
+                new_param = torch.cat([param, param[idx]], dim=0)
             updates[name] = new_param
+
         self.update_parameters(updates)
         return self
 
     def sample_rgb(
         self,
         co: Float[Tensor, "Nc 2"],
+        meta_idx: Optional[Integer[Tensor, "Nc"]] = None,
         **kwargs,
     ) -> Float[Tensor, "Nc Np 3"]:
-        rgb = self.primitive.sample_rgb(co, **kwargs)  # (Nc, Np, 3)
-        if not hasattr(self, "color_thetas"):
+        rgb = self.primitive.sample_rgb(co, **kwargs)  # (M, Npi, 3)
+        if meta_idx is None or not hasattr(self, "color_thetas"):
             return rgb
-        Np = rgb.shape[1]
-        device = rgb.device
-        dtype = rgb.dtype
-        theta = self.color_thetas.view(1, Np, 1)  # (1,Np,1)
-        scale = self.color_scales.view(1, Np, 1)  # (1,Np,1)
-        rgb_centered = rgb - 0.5
-        c = torch.cos(theta)
-        s = torch.sin(theta)
-        # Rodrigues rotation around axis (1,1,1)/sqrt(3)
-        axis = torch.tensor([1.0, 1.0, 1.0], device=device, dtype=dtype)
-        axis = axis / axis.norm()
-        x, y, z = axis
-        # cross-product matrix
-        K = torch.tensor(
+        theta = self.color_thetas[meta_idx]  # (M,)
+        scale = self.color_scales[meta_idx]  # (M,)
+        rgb_centered = rgb - 0.5  # (M, Npi, 3)
+        c = torch.cos(theta)[:, None, None]  # (M, 1, 1)
+        s = torch.sin(theta)[:, None, None]  # (M, 1, 1)
+        axis = self.rgb_axis.to(rgb.device, dtype=rgb.dtype)  # (3,)
+        x, y, z = axis.unbind(-1)
+        zero = torch.zeros((), device=rgb.device, dtype=rgb.dtype)
+        K = torch.stack(
             [
-                [0, -z, y],
-                [z, 0, -x],
-                [-y, x, 0],
-            ],
-            device=device,
-            dtype=dtype,
-        )
-        I = torch.eye(3, device=device, dtype=dtype)
+                torch.stack([zero, -z, y]),
+                torch.stack([z, zero, -x]),
+                torch.stack([-y, x, zero]),
+            ]
+        )  # (3, 3)
+        I = torch.eye(3, device=rgb.device, dtype=rgb.dtype)
         K2 = K @ K
-        R = I[None, None] + s[..., None] * K + (1 - c)[..., None] * K2  # (1,Np,3,3)
-        rgb_rot = torch.einsum("pnij,cnj->cni", R, rgb_centered)
-        rgb_out = rgb_rot * scale + 0.5
+        R = I[None] + s * K[None] + (1 - c) * K2[None]  # (M, 3, 3)
+        rgb_rot = torch.einsum("mij,mkj->mki", R, rgb_centered)  # (M, Npi, 3)
+        rgb_out = rgb_rot * scale[:, None, None] + 0.5
         return rgb_out
 
     def sample_weights(
         self,
         co: Float[Tensor, "Nc 2"],
+        meta_idx: Optional[Integer[Tensor, "Nc"]] = None,
         **kwargs,
     ) -> Float[Tensor, "Nc Np"]:
-        weights = self.primitive.sample_weights(co, **kwargs)
-        if not hasattr(self, "alphas"):
+        weights = self.primitive.sample_weights(co, **kwargs)  # (M, Npi)
+        if meta_idx is None or not hasattr(self, "alphas"):
             return weights
-        return self.alphas[:, None] * weights
+        return weights * self.alphas[meta_idx][:, None]  # (M, Npi)
 
-    def forward(self, co: Float[Tensor, "Nc 2"], rasterizer: Rasterizer):
+    def forward(self, co: Float[Tensor, "Nc 2"]) -> SampleOutput:
         if len(self) == 0:
-            return torch.zeros(co.shape[0], 4, device=co.device)
+            return SampleOutput(
+                rgb=torch.zeros((co.shape[0], 3), device=self.device, dtype=co.dtype),
+                weights=torch.zeros(
+                    (co.shape[0], 1), device=self.device, dtype=co.dtype
+                ),
+                co=co,
+            )
         with self.cache_properties():
             Nc = co.shape[0]
             N = len(self)
             Np = len(self.primitive)
             coords = (
                 torch.einsum(
-                    "nij,cj->cni",
-                    self.transforms,
-                    co - 0.5,
+                    "nij,cnj->cni",
+                    self.transforms_inverse,
+                    co[:, None, :] - self.centroids[None],
                 )
-                + self.centroids[None, :, :]
+                + 0.5
             )
-            flat_coords = coords.reshape(Nc * N, 2)
-            inside = ((flat_coords >= 0) & (flat_coords <= 1)).all(dim=-1)
-            inside_coords = flat_coords[inside]
-            rgb_flat = torch.zeros(
-                (flat_coords.shape[0], 3), device=co.device, dtype=co.dtype
-            )
-            w_flat = torch.zeros(
-                (flat_coords.shape[0],), device=co.device, dtype=co.dtype
-            )
-            rgb_flat[inside] = self.sample_rgb(inside_coords)
-            w_flat[inside] = self.sample_weights(inside_coords)
+            flat_coords = coords.reshape(Nc * N, 2)  # (Nc*N, 2)
+            inside = ((flat_coords >= 0) & (flat_coords <= 1)).all(dim=-1)  # (Nc*N,)
+            inside = torch.ones_like(inside)
+            meta_idx = torch.arange(N, device=co.device).repeat(Nc)  # (Nc*N,)
+            rgb_flat = torch.zeros((Nc * N, Np, 3), device=co.device, dtype=co.dtype)
+            w_flat = torch.zeros((Nc * N, Np), device=co.device, dtype=co.dtype)
+            if inside.any():
+                rgb_flat[inside] = self.sample_rgb(
+                    flat_coords[inside], meta_idx=meta_idx[inside]
+                )
+                w_flat[inside] = self.sample_weights(
+                    flat_coords[inside], meta_idx=meta_idx[inside]
+                )
             rgb = rgb_flat.view(Nc, N * Np, 3)
             weights = w_flat.view(Nc, N * Np)
-            return rasterizer(SampleOutput(rgb=rgb, weights=weights, co=co))
+            sample = SampleOutput(rgb=rgb, weights=weights, co=co)
+            for proc in self._sample_processors:
+                sample = proc(sample, self)
+            return sample
+
+    def compute_regularization(self) -> Dict[str, Float[Tensor, ""]]:
+        regs = super().compute_regularization()
+        if self.primitive_trainable:
+            regs = {
+                **{f"{name}(Meta)": r for name, r in regs.items()},
+                **self.primitive.compute_regularization(),
+            }
+        return regs
 
     def requires_grad_(self, mode: bool = True) -> MetaPrimitive:
         super().requires_grad_(mode)
@@ -270,3 +346,9 @@ class MetaPrimitive(Primitive):
         super().train(mode)
         self.primitive.train(mode and self.primitive_trainable)
         return self
+
+    def param_groups(self) -> List[Dict[str, nn.Parameter]]:
+        groups = super().param_groups()
+        if self.primitive_trainable:
+            groups.extend(self.primitive.param_groups())
+        return groups

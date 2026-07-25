@@ -3,11 +3,11 @@ from typing import Optional
 from jaxtyping import Bool, Float
 from torch import Tensor
 
-from ....primitives import Primitive
+from ....primitives.base import Primitive
 from ..base import FilterRule, RefinementRule
 
 
-class AlphaCull(FilterRule):
+class AlphaFilter(FilterRule):
     """Cull primitives with alpha values below threshold.
 
     Removes nearly-transparent primitives that contribute little to
@@ -20,7 +20,7 @@ class AlphaCull(FilterRule):
     """
 
     def __init__(self, threshold: float = 0.05, interval: int = 10):
-        """Initialize AlphaCull rule.
+        """Initialize AlphaFilter rule.
 
         Args:
             threshold: Alpha threshold below which primitives are culled.
@@ -50,7 +50,6 @@ class AlphaCull(FilterRule):
             keep: Boolean tensor. True = keep, False = cull.
         """
         keep: Bool[Tensor, "N"] = criterion >= self.threshold
-        print("Cull: ", (~keep).sum().item())
         return keep
 
     apply = RefinementRule.apply

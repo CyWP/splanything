@@ -1,7 +1,8 @@
 import logging
 from typing import List
 
-from ..trainer import EPOCH_END, Trainer
+from ..trainer import Trainer
+from ..stages import EPOCH_END
 from .base import Callback
 
 _logger = logging.getLogger(__name__)

@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import List
 
-from ..trainer import STAGES, Trainer
+from ..trainer import Trainer
+from ..stages import STAGES
 
 
 class Callback(ABC):

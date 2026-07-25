@@ -1,7 +1,7 @@
 from jaxtyping import Bool, Float
 from torch import Tensor
 
-from ....primitives import Primitive
+from ....primitives.base import Primitive
 from ..base import RefinementRule, SplitRule
 
 

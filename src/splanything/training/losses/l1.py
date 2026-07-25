@@ -12,8 +12,6 @@ class L1Loss(Loss):
     Computes the mean absolute difference between target and output pixels.
     """
 
-    _name = "L1"
-
     def compute(self, trainer: Trainer) -> Float[Tensor, ""]:
         """Compute L1 loss between current patch output and target.
 

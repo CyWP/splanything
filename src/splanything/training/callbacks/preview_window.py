@@ -7,9 +7,10 @@ from typing import Dict, List, Optional
 import torch
 from PIL import Image
 
-from ...rendering import Sampler
+from ...rendering.sampler import Sampler
 from ...utils.img import ImgUtils
-from ..trainer import EPOCH_END, Trainer
+from ..trainer import Trainer
+from ..stages import EPOCH_END
 from .base import Callback
 
 _logger = logging.getLogger(__name__)
@@ -92,7 +93,7 @@ class PreviewWindow(Callback):
                 tgt_img = ImgUtils.resize(tgt_img, i_H, i_W)
             img = torch.cat([img, tgt_img], dim=3)
         window = get_window(self.window_title)
-        pil_img = ImgUtils.tensor2pil(img, normalized=False)
+        pil_img = ImgUtils.tensor2pil(img)
         if self.save_folder is not None:
             pil_img.save(self.save_folder / f"{trainer.epoch:07}.png")
         try:
@@ -131,15 +132,24 @@ def _get_root():
 
 
 class TkImageWindow:
-    """A window that displays images using tkinter.
+    """A window that displays images using tkinter, resizing with the user.
 
-    Supports multiple windows via factory pattern. First call to
-    update_image() creates the window; subsequent calls update it.
+    The displayed image is re-fit to the current canvas size on every
+    ``update_image`` call and on every ``<Configure>`` window resize event,
+    preserving aspect ratio and centering within the window. Both upscaling
+    and downscaling are supported. The most recent PIL image is cached so
+    resize events can re-render without a new ``update_image`` call.
 
-    Args:
-        title: Window title (used as unique identifier).
-        width: Initial window width in pixels.
-        height: Initial window height in pixels.
+    Attributes:
+        title: Window title (unique identifier).
+        width: Fallback width used only until the canvas is realised.
+        height: Fallback height used only until the canvas is realised.
+
+    Notes:
+        - The canvas is packed with ``fill="both", expand=True`` so it
+          tracks the toplevel's size.
+        - ``<Configure>`` events are bound on the canvas; filtering by
+          ``widget`` avoids spurious redraws from child widgets.
     """
 
     def __init__(self, title: str = "Image", width: int = 640, height: int = 480):
@@ -149,19 +159,52 @@ class TkImageWindow:
         self._toplevel = None
         self._canvas = None
         self._photo = None
+        self._img: Optional[Image.Image] = None
+
+    def _canvas_size(self) -> tuple[int, int]:
+        """Return the current canvas (visible) size in pixels.
+
+        Falls back to ``self.width``/``self.height`` when tkinter reports
+        an unrealised widget (``winfo_width`` <= 1).
+        """
+        w = self._canvas.winfo_width() if self._canvas is not None else 0
+        h = self._canvas.winfo_height() if self._canvas is not None else 0
+        if w <= 1:
+            w = self.width
+        if h <= 1:
+            h = self.height
+        return max(w, 1), max(h, 1)
+
+    def _render(self) -> None:
+        """Fit and draw the cached image to the current canvas size."""
+        from PIL import ImageTk
+
+        if self._img is None or self._canvas is None:
+            return
+        cw, ch = self._canvas_size()
+        W, H = self._img.size
+        if W == 0 or H == 0:
+            return
+        scale = min(cw / W, ch / H)
+        new_W = max(1, int(W * scale))
+        new_H = max(1, int(H * scale))
+        resized = self._img.resize((new_W, new_H), Image.Resampling.LANCZOS)
+        self._photo = ImageTk.PhotoImage(resized)
+        self._canvas.delete("all")
+        offset_x = (cw - new_W) // 2
+        offset_y = (ch - new_H) // 2
+        self._canvas.create_image(offset_x, offset_y, anchor="nw", image=self._photo)
 
     def update_image(self, img: Image.Image) -> None:
-        """Update the displayed image.
+        """Update the displayed image, fitting it to the current window.
 
         Args:
-            img: PIL Image. Will be resized to fit within window bounds
-                while preserving aspect ratio.
+            img: PIL image to display. Resized to fit within the current
+                canvas bounds preserving aspect ratio, centered, and
+                re-rendered automatically on subsequent resize events.
         """
         import tkinter as tk
 
-        from PIL import ImageTk
-
-        W, H = img.size
         if self._toplevel is None:
             root = _get_root()
             self._toplevel = tk.Toplevel(root)
@@ -169,19 +212,29 @@ class TkImageWindow:
             self._canvas = tk.Canvas(
                 self._toplevel, width=self.width, height=self.height
             )
-            self._canvas.pack()
-
-        scale = min(self.width / W, self.height / H, 1.0)
-        if scale < 1.0:
-            new_W, new_H = int(W * scale), int(H * scale)
-            img = img.resize((new_W, new_H), Image.Resampling.LANCZOS)
-
-        self._photo = ImageTk.PhotoImage(img)
-        self._canvas.delete("all")
-        offset_x = (self.width - img.width) // 2
-        offset_y = (self.height - img.height) // 2
-        self._canvas.create_image(offset_x, offset_y, anchor="nw", image=self._photo)
+            self._canvas.pack(fill="both", expand=True)
+            self._canvas.bind(
+                "<Configure>",
+                lambda e: self._on_configure(e),
+            )
+        self._img = img
+        self._render()
+        self._toplevel.update_idletasks()
         self._toplevel.update()
+
+    def _on_configure(self, event) -> None:
+        """Re-render on canvas resize events.
+
+        Args:
+            event: tkinter ``<Configure>`` event. Only handled when it
+                comes from the canvas itself (not a child widget) to
+                avoid redundant redraws.
+        """
+        if event.widget is not self._canvas:
+            return
+        self.width = max(event.width, 1)
+        self.height = max(event.height, 1)
+        self._render()
 
     def close(self) -> None:
         """Close the window."""

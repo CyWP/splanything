@@ -2,60 +2,58 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
-from splanything.utils.math import soft_clamp
-
 from ..sample_output import SampleOutput
 from .base import Rasterizer
 
 
 class ProbabilisticRasterizer(Rasterizer):
-    """Probabilistic selection rasterizer.
+    """Probabilistic weighted aggregation rasterizer.
 
-    Selects one primitive per coordinate via weighted random sampling.
-    RGB comes from selected primitive; alpha is soft-clamped weighted sum.
+    Samples primitives according to their weights and averages their colors.
 
-    Attributes:
-        clamp_soft (float): Softness parameter for soft_clamp on alpha.
-
-    Construction:
-        ProbabilisticRasterizer(clamp_soft: float = 0.1):
-            Create with specified softness for alpha clamping.
+    Args:
+        top_k: Number of Monte Carlo samples per coordinate.
 
     Notes:
-        - Uses torch.multinomial for selection (replacement=False).
-        - Alpha uses soft_clamp instead of hard clamp.
+        - Uses torch.multinomial with replacement.
+        - Approaches WeightedRasterizer as top_k increases.
+        - Assumes weights already encode the desired selection distribution.
     """
 
-    def __init__(self, clamp_soft: float = 0.1):
-        """Initialize rasterizer.
-
-        Args:
-            clamp_soft: Softness for alpha soft_clamp (higher = softer transition).
-        """
-        self.clamp_soft = clamp_soft
+    def __init__(self, top_k: int = 1):
+        self.top_k = top_k
 
     def rasterize(self, sample: SampleOutput, **kwargs) -> Float[Tensor, "N 4"]:
-        """Aggregate via probabilistic selection.
-
-        Args:
-            sample: SampleOutput with rgb (Nc, N, 3), weights (Nc, N).
-
-        Returns:
-            RGBA tensor (N, 4): RGB from sampled primitive, soft-clamped alpha.
-        """
-        # (Nc, N) -> (Nc, 1) via multinomial selection
-        selected = torch.multinomial(sample.weights, 1)  # (Nc, 1)
-        Nc = selected.shape[0]
-
-        # Gather RGB using selected indices
-        rgb_idx = selected.squeeze(-1)  # (Nc,)
-        rgb = sample.rgb[torch.arange(Nc, device=sample.rgb.device), rgb_idx]  # (Nc, 3)
-
-        # Soft-clamped alpha
-        a = soft_clamp(
-            sample.weights.sum(dim=1),
-            min_val=0.0,
-            max_val=1.0,
-            softness=self.clamp_soft,
-        )  # (N,)
-        return torch.cat([rgb, a[:, None]], dim=1)  # (N, 3) + (N, 1) -> (N, 4)
+        w = sample.weights.clamp(min=0)
+        Nc, Np = w.shape
+        valid = w.sum(dim=1) > 0
+        rgb = torch.zeros(
+            Nc,
+            3,
+            device=sample.rgb.device,
+            dtype=sample.rgb.dtype,
+        )
+        if valid.any():
+            w_valid = w[valid]
+            # Convert weights into sampling probabilities
+            probs = w_valid / w_valid.sum(
+                dim=1,
+                keepdim=True,
+            ).clamp_min(1e-8)
+            k = min(self.top_k, Np)
+            # Sample primitives according to their weights
+            selected = torch.multinomial(
+                probs,
+                k,
+                replacement=True,
+            )  # (Nv, k)
+            # Gather sampled colors
+            rgb_selected = torch.gather(
+                sample.rgb[valid],
+                1,
+                selected[..., None].expand(-1, -1, 3),
+            )  # (Nv, k, 3)
+            # Monte Carlo estimate of expected color
+            rgb[valid] = rgb_selected.mean(dim=1).clamp(0, 1)
+        alpha = w.sum(dim=1).clamp(0, 1)
+        return torch.cat([rgb, alpha[:, None]], dim=1)

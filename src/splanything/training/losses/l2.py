@@ -11,8 +11,6 @@ class L2Loss(Loss):
     Computes the mean squared difference between target and output pixels.
     """
 
-    _name = "L2"
-
     def compute(self, trainer: Trainer) -> Float[Tensor, ""]:
         """Compute L2 loss between current patch output and target.
 

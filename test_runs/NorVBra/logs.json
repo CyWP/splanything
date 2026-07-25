@@ -1,0 +1,112 @@
+{
+  "87": {
+    "msg": [
+      "[INFO] [epoch 87] AlphaFilter: 20 primitives marked for filtering.",
+      "[INFO] [epoch 87] Combined filter: 20 marked for filtering.",
+      "[INFO] [epoch 87] AlphaFilter: 75 primitives marked for filtering.",
+      "[INFO] [epoch 87] Combined filter: 75 marked for filtering."
+    ]
+  },
+  "174": {
+    "msg": [
+      "[INFO] [epoch 174] AlphaFilter: 0 primitives marked for filtering.",
+      "[INFO] [epoch 174] AlphaFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "223": {
+    "msg": [
+      "[INFO] [epoch 223] GradSplit: 80 primitives marked for splitting.",
+      "[INFO] [epoch 223] Combined split: 80 marked for splitting.",
+      "[INFO] [epoch 223] GradSplit: 124 primitives marked for splitting.",
+      "[INFO] [epoch 223] Combined split: 124 marked for splitting."
+    ]
+  },
+  "261": {
+    "msg": [
+      "[INFO] [epoch 261] AlphaFilter: 0 primitives marked for filtering.",
+      "[INFO] [epoch 261] AlphaFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "348": {
+    "msg": [
+      "[INFO] [epoch 348] AlphaFilter: 0 primitives marked for filtering.",
+      "[INFO] [epoch 348] AlphaFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "435": {
+    "msg": [
+      "[INFO] [epoch 435] AlphaFilter: 0 primitives marked for filtering.",
+      "[INFO] [epoch 435] AlphaFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "446": {
+    "msg": [
+      "[INFO] [epoch 446] GradSplit: 160 primitives marked for splitting.",
+      "[INFO] [epoch 446] Combined split: 160 marked for splitting.",
+      "[INFO] [epoch 446] GradSplit: 243 primitives marked for splitting.",
+      "[INFO] [epoch 446] Combined split: 243 marked for splitting."
+    ]
+  },
+  "522": {
+    "msg": [
+      "[INFO] [epoch 522] AlphaFilter: 0 primitives marked for filtering.",
+      "[INFO] [epoch 522] AlphaFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "609": {
+    "msg": [
+      "[INFO] [epoch 609] AlphaFilter: 0 primitives marked for filtering.",
+      "[INFO] [epoch 609] AlphaFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "669": {
+    "msg": [
+      "[INFO] [epoch 669] GradSplit: 292 primitives marked for splitting.",
+      "[INFO] [epoch 669] Combined split: 292 marked for splitting.",
+      "[INFO] [epoch 669] GradSplit: 437 primitives marked for splitting.",
+      "[INFO] [epoch 669] Combined split: 437 marked for splitting."
+    ]
+  },
+  "696": {
+    "msg": [
+      "[INFO] [epoch 696] AlphaFilter: 0 primitives marked for filtering.",
+      "[INFO] [epoch 696] AlphaFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "783": {
+    "msg": [
+      "[INFO] [epoch 783] AlphaFilter: 0 primitives marked for filtering.",
+      "[INFO] [epoch 783] AlphaFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "870": {
+    "msg": [
+      "[INFO] [epoch 870] AlphaFilter: 0 primitives marked for filtering.",
+      "[INFO] [epoch 870] AlphaFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "892": {
+    "msg": [
+      "[INFO] [epoch 892] GradSplit: 404 primitives marked for splitting.",
+      "[INFO] [epoch 892] Combined split: 404 marked for splitting.",
+      "[INFO] [epoch 892] GradSplit: 679 primitives marked for splitting.",
+      "[INFO] [epoch 892] Combined split: 679 marked for splitting."
+    ]
+  },
+  "957": {
+    "msg": [
+      "[INFO] [epoch 957] AlphaFilter: 0 primitives marked for filtering.",
+      "[INFO] [epoch 957] AlphaFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1010": {
+    "msg": [
+      "[INFO] [epoch 1010] Preview closed, stopping training."
+    ]
+  },
+  "1011": {
+    "msg": [
+      "[INFO] [epoch 1011] Checkpoint saved to /home/cyvv/Repos/splanything/test_runs/NorVBra"
+    ]
+  }
+}

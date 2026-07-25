@@ -20,59 +20,52 @@ class ImgUtils:
 
     @staticmethod
     def img2tensor(
-        img: Float[Tensor, "B H W C"], normalized: bool = False
+        img: Float[Tensor, "B H W C"],
     ) -> Float[Tensor, "B C H W"]:
-        """Convert [0,1] HWC image to [-1,1] CHW tensor.
+        """Convert [0,1] HWC image to CHW tensor.
 
         Args:
             img: Image tensor (B, H, W, C) in [0, 1].
 
         Returns:
-            Tensor (B, C, H, W) in [-1, 1].
+            Tensor (B, C, H, W) in [0, 1].
         """
-        x = img.permute(0, 3, 1, 2)
-        if normalized:
-            return x * 2 - 1
-        return x
+        return img.permute(0, 3, 1, 2)
 
     @staticmethod
     def tensor2img(
         x: Float[Tensor, "B C H W"],
-        normalized: bool = False,
         clamp: bool = True,
         mode: str = "RGBA",
     ) -> Float[Tensor, "B H W C"]:
-        """Convert [-1,1] CHW tensor to [0,1] HWC image.
+        """Convert [0,1] CHW tensor to HWC image.
 
         Args:
-            x: Tensor (B, C, H, W) in [-1, 1].
+            x: Tensor (B, C, H, W) in [0, 1].
 
         Returns:
             Image (B, H, W, C) in [0, 1].
         """
-        B, C, H, W = x.shape
         img = x.permute(0, 2, 3, 1)
-        if normalized:
-            img = (img + 1) / 2
         if clamp:
             img = img.clamp(0, 1)
         return img
 
     @staticmethod
     def tensor2pil(
-        x: Float[Tensor, "B C H W"], normalized: bool = False
+        x: Float[Tensor, "B C H W"],
     ) -> Union[Image.Image, List[Image.Image]]:
         """Convert tensor to PIL Image.
 
         Args:
-            x: Tensor (B, C, H, W) in [-1, 1] or [0, 1].
+            x: Tensor (B, C, H, W) in [0, 1].
 
         Returns:
             PIL Image as uint8 [0, 255].
         """
         B, C, H, W = x.shape
         mode = "RGB" if C == 3 else "RGBA"
-        img = ImgUtils.tensor2img(x, normalized=normalized, clamp=True)
+        img = ImgUtils.tensor2img(x, clamp=True)
         img_np = (img.cpu().numpy() * 255).astype(np.uint8)
         imgs = []
         for i in range(B):
@@ -84,16 +77,14 @@ class ImgUtils:
     @staticmethod
     def pil2tensor(
         img: Union[Image.Image, List[Image.Image], Sequence[Image.Image]],
-        normalized: bool = False,
     ) -> Float[Tensor, "B C H W"]:
         """Convert PIL Image to tensor.
 
         Args:
             img: PIL Image or sequence of PIL Images as uint8 [0, 255].
-            normalized: If True, return tensor in [-1, 1]; else [0, 1].
 
         Returns:
-            Tensor (B, C, H, W) in [0, 1] or [-1, 1].
+            Tensor (B, C, H, W) in [0, 1].
         """
         if isinstance(img, Image.Image):
             imgs = [img]
@@ -101,10 +92,14 @@ class ImgUtils:
             imgs = list(img)
         arrs = [np.asarray(im.convert("RGBA")) for im in imgs]
         stacked = np.stack(arrs, axis=0)
-        tensor = torch.from_numpy(stacked).permute(0, 3, 1, 2).float() / 255.0
-        if normalized:
-            tensor = tensor * 2 - 1
-        return tensor
+        return torch.from_numpy(stacked).permute(0, 3, 1, 2).float() / 255.0
+
+    @staticmethod
+    def pil2map(
+        img: Union[Image.Image, List[Image.Image], Sequence[Image.Image]],
+        mode: str = "mean",
+    ) -> Float[Tensor, "B 1 H W"]:
+        return ImgUtils.tensor2map(ImgUtils.pil2tensor(img), mode=mode)
 
     @staticmethod
     def tensor2map(
@@ -245,8 +240,8 @@ class ImgUtils:
         p_top, p_bot, p_left, p_right = padding
         H_frame = H - p_top - p_bot
         W_frame = W - p_left - p_right
-        H_half = 0.5 / H_frame
-        W_half = 0.5 / W_frame
+        H_half = 0.5 / H_frame if H_frame != 0 else 0
+        W_half = 0.5 / W_frame if W_frame != 0 else 0
         co = torch.stack(
             torch.meshgrid(
                 torch.linspace(H_half, 1 - H_half, H, device=device),
@@ -284,7 +279,7 @@ class ImgUtils:
         S = patch_size**2
         pad_H = (patch_size - (H % patch_size)) % patch_size
         pad_W = (patch_size - (W % patch_size)) % patch_size
-        co = ImgUtils.coords_pad(co, padding=(pad_H, 0, pad_W, 0))
+        co = ImgUtils.coords_pad(co, padding=(0, pad_H, 0, pad_W))
         patches = (
             F.unfold(
                 co.unsqueeze(0),
@@ -450,6 +445,19 @@ class ImgUtils:
         """
         P, S, C = sampled_patches.shape
         patch_size = int(S**0.5)
+        # Single-patch fallback (extract_image_patches returns S = H*W when
+        # patch_size > H and > W; S is then not necessarily a perfect square,
+        # so F.fold cannot reconstruct it). Reshape directly.
+        if P == 1 and patch_size * patch_size != S:
+            if H is None or W is None:
+                raise Exception(
+                    "assemble_patches needs H, W for the single-patch fallback."
+                )
+            if S != H * W:
+                raise Exception(
+                    f"single-patch fallback expects S == H*W, got S={S}, H*W={H * W}."
+                )
+            return sampled_patches.permute(2, 1, 0).reshape(1, C, H, W)  # (1, C, H, W)
         patches_H = math.ceil(H / patch_size)
         patches_W = math.ceil(W / patch_size)
         output_H = patch_size * patches_H
@@ -579,26 +587,19 @@ class ImgUtils:
         )
 
     @staticmethod
-    def load_image(
-        path: str, mode: str = "RGBA", normalize: bool = False
-    ) -> Float[Tensor, "B C H W"]:
+    def load_image(path: str, mode: str = "RGBA") -> Float[Tensor, "B C H W"]:
         """Load image from path as tensor.
 
         Args:
             path: Path to image file (PNG, JPG, etc.).
             mode: Color mode for PIL Image ("RGBA", "RGB", "L", etc.).
-            normalize: If True, normalize to [-1, 1] instead of [0, 1].
 
         Returns:
-            Image tensor (B, C, H, W) with values in [0, 1] or [-1, 1].
+            Image tensor (B, C, H, W) with values in [0, 1].
         """
         img = Image.open(path).convert(mode)
         arr = np.array(img).astype(np.float32) / 255.0
-        tensor = torch.from_numpy(arr).unsqueeze(0)
-        tensor = tensor.permute(0, 3, 1, 2)
-        if normalize:
-            tensor = tensor * 2 - 1
-        return tensor
+        return torch.from_numpy(arr).unsqueeze(0).permute(0, 3, 1, 2)
 
     @staticmethod
     def img2map(
@@ -608,7 +609,7 @@ class ImgUtils:
 
     @staticmethod
     def load_map(path: str) -> Float[Tensor, "B 1 H W"]:
-        return ImgUtils.img2map(ImgUtils.load_image(path, mode="RGBA", normalize=False))
+        return ImgUtils.img2map(ImgUtils.load_image(path, mode="RGBA"))
 
     @staticmethod
     def same_size(*imgs: Float[Tensor, "B C H W"]) -> bool:
@@ -627,41 +628,49 @@ class ImgUtils:
         img: Float[Tensor, "B C H W"],
         uv_co: Float[Tensor, "N 2"],
     ) -> Float[Tensor, "B N C"]:
-        """
-        Vertex-based bilinear texture sampling and aggregation.
+        """Bilinearly sample an image at normalized pixel-center coordinates.
 
-        self   : (B, C, H, W) BCHW texture
-        uv_idx : (N,)  vertex index for each UV sample
-        uv_co  : (N, 2) UV coordinates in [0,1]
+        Uses the **pixel-center convention** matching :meth:`gen_px_coords`:
+        the center of pixel ``i`` along an axis of size ``D`` sits at UV
+        ``(i + 0.5) / D``. Equivalently, the pixel index for UV ``u`` is
+        ``u * D - 0.5``. UVs outside ``[0, 1]`` (e.g. centroids that have
+        drifted past the image frame after a split) are clamped to the
+        nearest edge pixel via the fractional weights, so they return a
+        valid sample rather than extrapolating.
+
+        Args:
+            img: Image tensor (B, C, H, W).
+            uv_co: Normalized coordinates (N, 2) in pixel-center convention,
+                typically produced by :meth:`gen_px_coords` or by
+                ``primitive.centroids``.
 
         Returns:
-            sampled : (B, nV, C) per-vertex averaged values
+            Sampled values (B, N, C).
         """
         B, C, H, W = img.shape
         N = uv_co.shape[0]
 
-        # Convert UVs to pixel coordinates
-        x = uv_co[:, 0] * (W - 1)
-        y = uv_co[:, 1] * (H - 1)
+        y = uv_co[:, 0] * H - 0.5
+        x = uv_co[:, 1] * W - 0.5
 
         x0 = x.floor().long().clamp(0, W - 1)
         y0 = y.floor().long().clamp(0, H - 1)
         x1 = (x0 + 1).clamp(0, W - 1)
         y1 = (y0 + 1).clamp(0, H - 1)
 
-        # Fractional part for bilinear interpolation
-        fx = (x - x0.float()).view(1, 1, N)
-        fy = (y - y0.float()).view(1, 1, N)
+        # Clamp fractional weights so out-of-frame UVs clamp cleanly to the
+        # nearest edge pixel instead of extrapolating with negative or >1
+        # weights.
+        fx = (x - x0.float()).clamp(0, 1).view(1, 1, N)
+        fy = (y - y0.float()).clamp(0, 1).view(1, 1, N)
         inv_fx = 1 - fx
         inv_fy = 1 - fy
 
-        # Sample corners (B, C, N)
         tl = img[:, :, y0, x0]
         tr = img[:, :, y0, x1]
         bl = img[:, :, y1, x0]
         br = img[:, :, y1, x1]
 
-        # Bilinear interpolation
         vals = (
             tl * (inv_fx * inv_fy)
             + tr * (fx * inv_fy)
@@ -669,3 +678,48 @@ class ImgUtils:
             + br * (fx * fy)
         )
         return vals.permute(0, 2, 1)  # (B, N, C)
+
+    @staticmethod
+    @torch.no_grad()
+    def sample_px_coords(
+        map: Float[Tensor, "B 1 H W"],
+        N: int,
+        noise: bool = False,
+    ) -> Float[Tensor, "N 2"]:
+        """Sample N pixel coordinates weighted by a map.
+
+        Args:
+            map: Weight map (B, 1, H, W) with non-negative values.
+            N: Number of coordinates to sample.
+            noise: If True, jitter each sampled coordinate uniformly within
+                half a pixel on either side of its pixel center.
+
+        Returns:
+            Sampled coordinates (N, 2) in pixel-center convention.
+
+        Notes:
+            - Sampling uses ``torch.multinomial`` with replacement, so
+              coordinates may repeat.
+            - Coordinates follow the pixel-center convention of
+              :meth:`gen_px_coords` (centered at ``(i + 0.5) / D``).
+            - With ``noise=True``, jitter is uniform in ``[-0.5/H, 0.5/H]`` for
+              y and ``[-0.5/W, 0.5/W]`` for x, i.e. exactly one pixel width
+              centered on each pixel.
+        """
+        B, _, H, W = map.shape
+        if B != 1:
+            raise ValueError(
+                f"sample_px_coords expects a single-map batch (B=1), got B={B}."
+            )
+        weights = map.reshape(-1)  # (H*W,)
+        if (weights < 0).any():
+            raise ValueError("sample_px_coords expects non-negative map values.")
+        indices = torch.multinomial(weights, N, replacement=True)  # (N,)
+        co = ImgUtils.gen_px_coords(H, W, map.device)  # (2, H, W)
+        co_flat = co.reshape(2, -1).T  # (H*W, 2)
+        sampled = co_flat[indices]  # (N, 2)
+        if noise:
+            sampled = sampled.clone()
+            sampled[:, 0].add_((torch.rand(N, device=map.device) - 0.5) / H)
+            sampled[:, 1].add_((torch.rand(N, device=map.device) - 0.5) / W)
+        return sampled

@@ -67,7 +67,7 @@ splanything/
 - **Rasterizers**: Strategies for aggregating per-primitive samples into RGBA output
 - **Loss Functions**: L1 and L2 losses for image comparison
 - **Callbacks**: Loop management, checkpoints, previews, logging
-- **Refinement Rules**: Adaptive optimization (`GradSplit`, `AreaSplit`, `AlphaCull`, `IsoSplit`)
+- **Refinement Rules**: Adaptive optimization (`GradSplit`, `AreaSplit`, `AlphaFilter`, `IsoSplit`)
 - **Generators**: Image generation from pretrained primitives at arbitrary resolutions
 - **Utilities**: Image processing, optimizer wrapper, optional lazy property evaluation (external/user preference)
 

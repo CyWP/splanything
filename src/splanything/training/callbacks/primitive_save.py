@@ -3,7 +3,8 @@ from typing import List
 
 import torch
 
-from ..trainer import TRAIN_END, Trainer
+from ..trainer import Trainer
+from ..stages import TRAIN_END
 from .base import Callback
 
 _logger = logging.getLogger(__name__)

@@ -1,24 +1,110 @@
 import json
 import logging
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Sequence
+from typing import Any, Callable, Dict, Optional, Sequence, Tuple
 
 import torch
-from jaxtyping import Float, Tensor
+from torch import Tensor
+from jaxtyping import Float
 
-from ..primitives import Primitive
-from ..rendering import Sampler
+from ..primitives.base import Primitive
+from ..rendering.sampler import Sampler
 from .optimizer import OptimizerWrapper
 from .sampler import TrainSampler
+from .stages import (
+    PRE_STEP,
+    TRAIN_END,
+    TRAIN_START,
+    EPOCH_END,
+    EPOCH_START,
+    BATCH_START,
+    BATCH_END,
+)
 
 _logger = logging.getLogger(__name__)
 
-TRAIN_START = "train_start"
-TRAIN_END = "train_end"
-EPOCH_START = "epoch_start"
-EPOCH_END = "epoch_end"
-PRE_STEP = "pre_step"
-STAGES = [TRAIN_START, TRAIN_END, EPOCH_START, EPOCH_END, PRE_STEP]
+
+class TrainerLogFormatter(logging.Formatter):
+    """``logging.Formatter`` that injects the trainer's current epoch.
+
+    The epoch is read at format time (not record-creation time), so it
+    always reflects the trainer's current ``self.epoch`` when the
+    handler processes the record. This means ``_logger.info(...)`` calls
+    scattered across the training loop do not need to thread the epoch
+    through ``extra={...}`` themselves — the formatter picks it up.
+
+    Args:
+        trainer: Trainer whose ``self.epoch`` is injected into each record.
+        fmt: Optional format string. Use ``%(epoch)s`` to reference the
+            injected value (e.g. ``"[%(levelname)s] [epoch %(epoch)s] %(message)s"``).
+    """
+
+    def __init__(self, trainer: "Trainer", fmt: Optional[str] = None):
+        super().__init__(fmt)
+        self.trainer = trainer
+
+    def format(self, record: logging.LogRecord) -> str:
+        if not hasattr(record, "epoch"):
+            record.epoch = self.trainer.epoch
+        return super().format(record)
+
+
+class TrainerLogHandler(logging.Handler):
+    """Logging handler that formats records and forwards them to ``Trainer.log``.
+
+    Each emitted ``LogRecord`` is run through the handler's ``Formatter``
+    (a :class:`TrainerLogFormatter` if a format string is provided, which
+    automatically injects the trainer's current epoch) and then appended
+    to the owning trainer's per-epoch log list via ``Trainer.log``.
+    Exceptions raised inside ``Trainer.log`` are caught and routed through
+    ``Handler.handleError`` so logging never crashes training.
+
+    Attributes:
+        trainer: Trainer whose ``log`` method receives each formatted record.
+
+    Args:
+        trainer: Trainer instance whose ``log`` method will receive messages.
+        level: Minimum level for records to be forwarded (default ``INFO``).
+        fmt: Optional format string passed to ``logging.Formatter``. When
+            ``None`` the raw message is forwarded. The token ``%(epoch)s``
+            is always populated by the handler's formatter with the
+            trainer's current ``self.epoch``.
+        filter: Optional ``logging.Filter`` (or callable) attached to the
+            handler so callers can drop records by logger name, level, or
+            any custom rule.
+    """
+
+    def __init__(
+        self,
+        trainer: "Trainer",
+        level: int = logging.INFO,
+        fmt: Optional[str] = None,
+        filter: Optional[logging.Filter] = None,
+    ):
+        super().__init__(level=level)
+        self.trainer = trainer
+        if fmt is not None:
+            self.setFormatter(TrainerLogFormatter(trainer, fmt))
+        if filter is not None:
+            self.addFilter(filter)
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            msg = self.format(record)
+            self.trainer.log(msg)
+        except Exception:
+            self.handleError(record)
+
+    def close(self) -> None:
+        """Detach from the trainer so ``Trainer.__dict__`` can be GC'd.
+
+        The handler holds a strong reference to the trainer, which in turn
+        holds the handler via ``self._log_handler``. Calling ``close``
+        breaks the cycle explicitly.
+        """
+        self.trainer = None
+        super().close()
 
 
 class Trainer:
@@ -49,16 +135,15 @@ class Trainer:
         primitive: Primitive,
         sampler: TrainSampler,
         optimizer: OptimizerWrapper,
-        losses: Dict[str, Callable],
+        losses: Dict[str, Tuple[Callable, float]],
         callbacks: Sequence[Callable],
-        batch_size: Optional[int] = None,
         base_folder: Optional[Path] = None,
         scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
         low_vram: bool = False,
     ):
 
         self.name = name
-        self.base_folder = base_folder or Path(".")
+        self.base_folder = Path(base_folder) or Path(".")
         self.run_folder = self.base_folder / name
         self.run_folder.mkdir(parents=True, exist_ok=True)
 
@@ -66,16 +151,26 @@ class Trainer:
         self.sampler = sampler
         self.target = sampler.target_img
         self.optimizer = optimizer
-        self.batch_size = batch_size
         self.losses = losses
         self.callbacks = callbacks
         self.scheduler = scheduler
         self.logs: Dict[int, Dict[str, Any]] = dict()
+        self.epoch: int = 0
         self.low_vram = low_vram
 
         self.trainer_path = self.run_folder / "trainer.pt"
         self.primitive_path = self.run_folder / "primitive.pt"
         self.logs_path = self.run_folder / "logs.json"
+
+        self.logger = _logger
+        self._pkg_logger = logging.getLogger("splanything")
+        self._pkg_logger.setLevel(logging.INFO)
+        self._log_handler = TrainerLogHandler(
+            self,
+            level=logging.INFO,
+            fmt="[%(levelname)s] [epoch %(epoch)s] %(message)s",
+        )
+        self._pkg_logger.addHandler(self._log_handler)
 
     def call_back(self, stage: str):
         """Trigger all callbacks for a given stage.
@@ -147,12 +242,14 @@ class Trainer:
             while self.should_continue:
                 self.exec_epoch()
                 self.epoch += 1
-                yield self.state_dict()
+                yield
         except KeyboardInterrupt:
             _logger.info("Training interrupted by user")
+        finally:
             self.stop()
-        self.call_back(TRAIN_END)
-        self._save_all()
+            self._save_all()
+            _logger.info(f"Training ended: name={self.name}, epochs={self.epoch - 1}")
+            self.call_back(TRAIN_END)
 
     def exec_epoch(self) -> Dict[str, Any]:
         """Execute one training epoch.
@@ -161,30 +258,43 @@ class Trainer:
         Triggers callbacks at EPOCH_START, PRE_STEP, EPOCH_END.
         """
         self.last_epoch_image = None
+        self.last_losses = {name: 0.0 for name in self.losses.keys()}
+        self.last_regularizers = {}
+        self.epoch_backward_passes = 0
         self.call_back(EPOCH_START)
-        self._zero_grad()
-        patch_count = 0
         for gen, target, batch_co in self.sampler.samples(self.primitive):
+            self.call_back(BATCH_START)
             self.last_output = gen
             self.last_target = target
-            self._update_losses(co=batch_co)
-            self.last_loss.backward()
-            patch_count += 1
-            step = self.batch_size is None or patch_count % self.batch_size == 0
-            if step:
-                self.call_back(PRE_STEP)
-                self.optimizer.step()
-                self._zero_grad()
+            self._compute_losses(co=batch_co)
+            self.call_back(BATCH_END)
+        self.call_back(PRE_STEP)
+        with self._apply_refinements():
+            self._compute_regularizers()
+            self.optimizer.step()
+            self.optimizer.zero_grad()
         if self.scheduler is not None:
             self.scheduler.step()
         with torch.no_grad():
             self.call_back(EPOCH_END)
-            self._apply_refinements()
 
-    def _zero_grad(self):
-        self.optimizer.zero_grad()
-        self.last_losses = {name: 0.0 for name in self.losses.keys()}
-        self.last_loss = torch.tensor(0.0)
+    def _compute_losses(self, co: Float[Tensor, "B 2"]):
+        last_losses = {
+            name: weight * loss_fn(self, co=co)
+            for name, (loss_fn, weight) in self.losses.items()
+        }
+        last_loss = sum(last_losses.values())
+        last_loss.backward()
+        for name, loss in last_losses.items():
+            self.last_losses[name] += loss.item()
+        self.epoch_backward_passes += 1
+
+    def _compute_regularizers(self):
+        regs = self.primitive.compute_regularization()
+        reg = sum(regs.values()) * float(self.epoch_backward_passes)
+        reg.backward()
+        for name, r in regs.items():
+            self.last_regularizers[name] = r.item()
 
     def last_image(
         self,
@@ -220,34 +330,26 @@ class Trainer:
         self.last_epoch_image = img
         return img
 
-    def _update_losses(self, co: Float[Tensor, "B 2"]):
-        last_losses = {
-            name: loss_fn(self, co=co) for name, loss_fn in self.losses.items()
-        }
-        last_loss = sum(last_losses.values())
-        for name, loss in last_losses.items():
-            self.last_losses[name] = self.last_losses[name] + loss
-        self.last_loss = self.last_loss + last_loss
-
-    @torch.no_grad()
+    @contextmanager
     def _apply_refinements(self):
         """Filter rules are applied first, then split rules are computed on the
         filtered primitive and applied after.
         Returned masks are sued to update optimizer.
         """
-        p = self.primitive
-
-        keep = p.check_filter()
-        if keep is not None:
-            self.optimizer.filter(p.param_groups(), keep)
-
-        # Compute and apply split on the filtered primitive
-        split = p.check_split()
-
-        finetuned = p.check_finetune()
-
-        if finetuned or split is not None:
-            self.optimizer.reinit(p.param_groups())  # ToDo: split op for optimizer
+        try:
+            p = self.primitive
+            keep = p.check_filter()
+            split = p.check_split()
+            yield
+        finally:
+            if keep is not None:
+                p.filter(keep)
+                self.optimizer.filter(p.param_groups(), keep)
+                if split is not None:
+                    split = split[keep]
+            if split is not None:
+                p.split(split)
+                self.optimizer.split(p.param_groups(), split)
 
     def log_stat(self, key: str, val: Any):
         """Log a scalar value for current epoch.
@@ -269,8 +371,8 @@ class Trainer:
         if self.epoch not in self.logs:
             self.logs[self.epoch] = {}
         if self.logs[self.epoch].get("msg", None) is None:
-            self.logs[self.epoch]["msg"] = ""
-        self.logs[self.epoch]["msg"] += f"\n{msg}"
+            self.logs[self.epoch]["msg"] = []
+        self.logs[self.epoch]["msg"].append(msg)
 
     def state_dict(self) -> Dict[str, Any]:
         """Current training state for inspection.
@@ -278,9 +380,13 @@ class Trainer:
         Returns:
             Dict with epoch, loss, output tensor, and logs.
         """
-        return {
-            "epoch": self.epoch,
-            "loss": self.last_loss,
-            "output": self.last_output,
-            "logs": self.logs,
+        stats = {
+            "Epoch": self.epoch,
+            "Primitives": len(self.primitive),
+            "Learning rate": self.optimizer.lr,
+            **{f"Loss({k})": v for k, v in self.last_losses.items()},
+            **{f"Reg({k})": v for k, v in self.last_regularizers.items()},
         }
+        if self.epoch in self.logs:
+            stats = {**stats, **self.logs[self.epoch]}
+        return stats
