@@ -2,13 +2,24 @@ import math
 
 import torch
 
-from typing import Tuple, Optional
+from typing import Tuple
 
 from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
-from ..utils.pytorch import TensorIndex1D
 from .base import Primitive, cached_property
+
+if TYPE_CHECKING:
+    from ...training.initializers import Initializer
+
+
+class RadialFreqInitializer(Initializer):
+    def init_param(
+        self, name: str, param_shape: Tuple[int], batched: bool
+    ) -> Float[Tensor, "N ..."]:
+        if name == "freq":
+            return (1.0 + torch.rand((size,)) * 12) * torch.pi
+        return super().init_param(name, param_shape, batched)
 
 
 class RadialFreqPrimitive(Primitive):
@@ -29,45 +40,32 @@ class RadialFreqPrimitive(Primitive):
         alphas: Per-primitive opacity (N,).
     """
 
-    def __init__(self, size: int = 1, scale_factor: float = 1.0):
-        """Initialize RadialFreqPrimitive parameters.
+    _sigma_cutoff = 2.5
 
-        Args:
-            size: Number of radial-frequency splats to create.
-        """
-        super().__init__()
-        area_factor = scale_factor / size**0.5
-        self.add_parameter("thetas", torch.rand((size,)), batched=True, trainable=True)
-        self.add_parameter(
-            "centroids", torch.rand((size, 2)), batched=True, trainable=True
+    @property
+    def default_params(self) -> Dict[str, ParamDef]:
+        return dict(
+            thetas=ParamDef(True, True, None),
+            centroids=ParamDef(True, True, (2,), 0.5),
+            sigma=ParamDef(True, True, None),
+            freq=ParamDef(True, True, None),
+            color_1=ParamDef(True, True, (3,)),
+            color_2=ParamDef(True, True, (3,)),
+            alphas=ParamDef(True, True, None),
         )
-        self.add_parameter(
-            "sigma",
-            (1 + torch.randn((size,)) * 0.2) * area_factor + 1e-3,
-            batched=True,
-            trainable=True,
-        )
-        self.add_parameter(
-            "freq",
-            1.0 + torch.rand((size,)) * 6.0,
-            batched=True,
-            trainable=True,
-        )
-        self.add_parameter(
-            "color_1", torch.rand((size, 3)), batched=True, trainable=True
-        )
-        self.add_parameter(
-            "color_2", torch.rand((size, 3)), batched=True, trainable=True
-        )
-        self.add_parameter("alphas", torch.rand((size,)), batched=True, trainable=True)
+
+    @property
+    def default_initializers(self) -> Dict[str, Initializer] | Initializer:
+        RadialFreqInitializer()
 
     @cached_property
     def scales(self) -> Tuple[Float[Tensor, "N"], Float[Tensor, "N"]]:
-        return (self.sigma, self.sigma)
+        s = self.sigma * self._sigma_cutoff
+        return (s, s)
 
     @cached_property
     def areas(self) -> Float[Tensor, "N"]:
-        return (self.sigma * 2.5) ** 2 * math.pi
+        return (self.sigma * self._sigma_cutoff) ** 2 * math.pi
 
     @cached_property
     def orientations(self) -> Float[Tensor, "N 2"]:
@@ -90,7 +88,7 @@ class RadialFreqPrimitive(Primitive):
     ) -> Bool[Tensor, "P N"]:
         unit_patches = patch_sizes / torch.minimum(H, W)
         dists = (centers[:, None, :] - self.centroids[None, :, :]).norm(dim=2)
-        return dists - unit_patches[:, None] < 2.5 * self.sigma[None, :]
+        return dists - unit_patches[:, None] < self._sigma_cutoff * self.sigma[None, :]
 
     def sample_rgb(
         self,
@@ -131,45 +129,3 @@ class RadialFreqPrimitive(Primitive):
         modulation = torch.sin(phase)
         gauss = torch.exp(-(dists**2) / (2 * sigma**2 + 1e-8))
         return gauss * modulation * alpha[None, :]
-
-    @torch.no_grad()
-    def split_params(self, mask: TensorIndex1D):
-        """Compute new parameters for splitting primitives at given indices.
-
-        Duplicates primitives at mask positions, halving ``sigma`` and
-        offsetting centroids symmetrically along the ray phase offset
-        direction. Other parameters (including ``freq`` and ``thetas``) are
-        copied unchanged to the new primitives.
-
-        Args:
-            mask: Boolean mask or integer indices selecting primitives to split.
-
-        Returns:
-            Dict mapping parameter names to new tensors.
-        """
-        sigma_mask = self.sigma[mask]
-        dirs = self.orientations[mask]
-        disp = 0.25 * sigma_mask[:, None] * dirs
-
-        centroids_copy = self.centroids
-        centroids_copy[mask] -= disp
-        new_centroids = torch.cat([centroids_copy, self.centroids[mask] + disp], dim=0)
-
-        sigma_split = sigma_mask / (2**0.5)
-        sigma_new = self.sigma.clone()
-        sigma_new[mask] = sigma_split
-        new_sigma = torch.cat([sigma_new, sigma_split], dim=0)
-
-        new_thetas = torch.cat([self.thetas, self.thetas[mask]], dim=0)
-        new_freq = torch.cat([self.freq, self.freq[mask]], dim=0)
-        new_color = torch.cat([self.color, self.color[mask]], dim=0)
-        new_alphas = torch.cat([self.alphas, self.alphas[mask]], dim=0)
-
-        return {
-            "thetas": new_thetas,
-            "centroids": new_centroids,
-            "sigma": new_sigma,
-            "freq": new_freq,
-            "color": new_color,
-            "alphas": new_alphas,
-        }

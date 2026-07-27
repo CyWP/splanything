@@ -8,13 +8,50 @@ from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
 from ..rendering.sample_output import SampleOutput
-from .base import Primitive, cached_property
+from .base import Primitive, cached_property, unmasked, ParamDef
 
 if TYPE_CHECKING:
     from ..training.regularizers.base import Regularizer
     from ..training.refinement.base import SplitRule, FilterRule
+    from ..training.initializers import Initializer
+    from ..training.splitters import Splitter
 
 _logger = logging.getLogger(__name__)
+
+
+class MetaSplitter(Splitter):
+    def split_vals(
+        self, name: str, primitive: Primitive, split_param: Float[Tensor, "N_split ..."]
+    ) -> Tuple[Float[Tensor, "N_split ..."], Float[Tensor, "N_split ..."]]:
+        if name not in ("centroids", "scales_1", "scales_2"):
+            return super().split_vals(name, primitive, split_param)
+        p = primitive
+        longest = p.scales_1 > p.scales_2
+        if name == "scales_1":
+            new_param = split_param.clone()
+            new_param[longest] *= 0.5
+            return new_param, new_param
+        if name == "scales_2":
+            new_param = split_param.clone()
+            new_param[~longest] *= 0.5
+            return new_param, new_param
+        if name == "centroids":
+            # World-space axis directions
+            c = torch.cos(p.thetas)
+            s = torch.sin(p.thetas)
+            axis_dirs = torch.stack(
+                [torch.stack([c, s], dim=-1), torch.stack([-s, c], dim=-1)], dim=1
+            )  # (N, 2, 2)
+            dirs_world = axis_dirs[
+                torch.arange(len(self), device=axis_dirs.device),
+                longest,
+            ]  # (N, 2)
+            dirs_world = dirs_world / dirs_world.norm(dim=-1, keepdim=True).clamp_min(
+                1e-12
+            )
+            split_lengths = scales[:, longest]
+            offset = 0.25 * split_lengths[:, None] * dirs_world
+            return split_param + offset, split_param - offset
 
 
 class MetaPrimitive(Primitive):
@@ -22,59 +59,50 @@ class MetaPrimitive(Primitive):
         self,
         primitive: Primitive,
         size: int = 1,
-        color: bool = True,
-        alpha: bool = True,
+        initializers: Optional[Dict[str, Initializer] | Initializer] = None,
+        splitters: Optional[Dict[str, Splitter] | Splitter] = None,
+        param_defs: Optional[Dict[str, ParamDef]] = None,
+        filter_rules: Optional[List[FilterRule]] = None,
+        split_rules: Optional[List[SplitRule]] = None,
+        sample_processors: Optional[List[SampleProcessor]] = None,
+        regularizers: Optional[Dict[str, Tuple[Regularizer, float]]] = None,
         primitive_trainable: bool = False,
-        scale_factor: float = 1.0,
     ):
-        super().__init__()
+        super().__init__(
+            size=size,
+            initializers=initializers,
+            splitters=splitters,
+            param_defs=param_defs,
+            filter_rules=filter_rules,
+            split_rules=split_rules,
+            sample_processors=sample_processors,
+            regularizers=regularizers,
+        )
         self.primitive = primitive
         self.primitive.requires_grad_(primitive_trainable)
         self.primitive_trainable = primitive_trainable
-        init_scale = scale_factor / size**0.5
         self.add_parameter(
-            "centroids", torch.rand((size, 2)), batched=True, trainable=True
+            "rgb_axis",
+            torch.tensor([1 / 3**0.5] * 3),
+            batched=False,
+            trainable=False,
         )
-        self.add_parameter(
-            "scales_1",
-            (torch.rand((size,)) * 2 * init_scale) + init_scale,
-            batched=True,
-            trainable=True,
-        )
-        self.add_parameter(
-            "scales_2",
-            (torch.randn((size,)) * 2 * init_scale) + init_scale,
-            batched=True,
-            trainable=True,
-        )
-        self.add_parameter(
-            "thetas",
-            torch.rand((size,)) * 2 * torch.pi,
-            batched=True,
-            trainable=True,
-        )
-        if color:
-            self.add_parameter(
-                "color_thetas",
-                torch.rand((size,)) * 2 * torch.pi,
-                batched=True,
-                trainable=True,
-            )
-            self.add_parameter(
-                "color_scales",
-                1.0 + torch.randn((size,)) * 0.1,
-                batched=True,
-                trainable=True,
-            )
 
-            self.add_parameter(
-                "rgb_axis",
-                torch.tensor([1 / 3**0.5] * 3),
-                batched=False,
-                trainable=False,
-            )
-        if alpha:
-            self.add_parameter("alphas", 1.0 - (torch.randn((size,)) * 0.25) ** 2)
+    @property
+    def default_params(self) -> Dict[str, ParamDef]:
+        return dict(
+            centroids=ParamDef(True, True, (2,), 0.5),
+            thetas=ParamDef(True, True, None),
+            scales_1=ParamDef(True, True, None),
+            scales_2=ParamDef(True, True, None),
+            color_thetas=ParamDef(True, True, None),
+            color_scales=ParamDef(True, True, None),
+            alphas=ParamDef(True, True, None),
+        )
+
+    @property
+    def default_splitters(self) -> Dict[str, Splitter]:
+        return MetaSplitter()
 
     @cached_property
     def transforms(self) -> Float[Tensor, "N 2 2"]:
@@ -195,56 +223,6 @@ class MetaPrimitive(Primitive):
             overlap &= (pmax >= smin) & (smax >= pmin)
         return overlap
 
-    @torch.no_grad()
-    def split(self, idx: Bool[Tensor, "N"]) -> MetaPrimitive:
-        """Split instances at given indices."""
-        updates = {}
-        # Determine split axis
-        scales = torch.stack([self.scales_1, self.scales_2], dim=-1)  # (N, 2)
-        longest = scales.argmax(dim=-1)  # (N,)
-        # World-space axis directions
-        c = torch.cos(self.thetas)
-        s = torch.sin(self.thetas)
-        axis_dirs = torch.stack(
-            [torch.stack([c, s], dim=-1), torch.stack([-s, c], dim=-1)], dim=1
-        )  # (N, 2, 2)
-        dirs_world = axis_dirs[
-            torch.arange(len(self), device=axis_dirs.device),
-            longest,
-        ]  # (N, 2)
-        dirs_world = dirs_world / dirs_world.norm(dim=-1, keepdim=True).clamp_min(1e-12)
-        split_idx = idx.nonzero(as_tuple=False).squeeze(-1)
-        split_lengths = scales[split_idx, longest[split_idx]]
-        offsets = 0.1 * split_lengths[:, None] * dirs_world[split_idx]
-        # Parent gets shifted opposite, child gets shifted positive
-        centroids_parent_offset = -offsets
-        centroids_child_offset = offsets
-        for name, param in self.batched_parameters():
-            if name in ("scales_1", "scales_2"):
-                parent_update = param.clone()
-                child_update = param[idx].clone()
-                if name == "scales_1":
-                    mask = longest[split_idx] == 0
-                else:
-                    mask = longest[split_idx] == 1
-                # shrink the split axis for BOTH descendants
-                parent_update[split_idx[mask]] *= 0.5
-                child_update[mask] *= 0.5
-                new_param = torch.cat([parent_update, child_update], dim=0)
-            elif name == "centroids":
-                parent_update = param.clone()
-                child_update = param[idx].clone()
-
-                parent_update[split_idx] += centroids_parent_offset
-                child_update += centroids_child_offset
-                new_param = torch.cat([parent_update, child_update], dim=0)
-            else:
-                new_param = torch.cat([param, param[idx]], dim=0)
-            updates[name] = new_param
-
-        self.update_parameters(updates)
-        return self
-
     def sample_rgb(
         self,
         co: Float[Tensor, "Nc 2"],
@@ -332,8 +310,11 @@ class MetaPrimitive(Primitive):
         regs = super().compute_regularization()
         if self.primitive_trainable:
             regs = {
-                **{f"{name}(Meta)": r for name, r in regs.items()},
-                **self.primitive.compute_regularization(),
+                **{f"{name}(Parent)": r for name, r in regs.items()},
+                **{
+                    f"{name}(Child)": r
+                    for name, r in self.primitive.compute_regularization().items()
+                },
             }
         return regs
 
@@ -347,6 +328,7 @@ class MetaPrimitive(Primitive):
         self.primitive.train(mode and self.primitive_trainable)
         return self
 
+    @unmasked
     def param_groups(self) -> List[Dict[str, nn.Parameter]]:
         groups = super().param_groups()
         if self.primitive_trainable:

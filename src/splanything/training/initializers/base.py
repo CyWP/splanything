@@ -7,8 +7,7 @@ from jaxtyping import Float
 class Initializer:
     def init_param(
         self, name: str, param_shape: Tuple[int], batched: bool
-    ) -> Float[Tensor, "Size ..."]:
-        area_factor = 1 / size**0.5
+    ) -> Float[Tensor, "N ..."]:
         if any([c in name for c in ("theta", "angle")]):
             return torch.rand(param_shape) * 2 * torch.pi
         if any([c in name for c in ("centroid",)]):
@@ -16,7 +15,17 @@ class Initializer:
         if any([c in name for c in ("alpha", "transparency")]):
             return 1 - (torch.rand(param_shape) * 2 / 3) ** 2
         if any([c in name for c in ("scale", "range", "sigma")]):
-            return (torch.randn(param_shape)) * area_factor
+            size = param_shape[0]
+            area_factor = 1 / size**0.5
+            rand = torch.randn(param_shape)
+            pos_mask = rand > 0
+            rand[pos_mask] += 0.25
+            rand[~pos_mask] -= 0.25
+            return rand * area_factor * 0.8
+        if any([c in name for c in ("ref_axis", "reference_axis")]) and param_shape == (
+            2,
+        ):
+            torch.tensor([-1.0, 0.0])
         if any([c in name for c in ("axis",)]):
             p = torch.rand(param_shape)
             return p / p.norm()

@@ -51,6 +51,8 @@ class MappedInitializer(Initializer):
         return ImgUtils.sample_px_coords(self.map, N, noise=True)
 
     def process_feats_cache(self):
+        # Reference to previously intialized tensors are kept,
+        # so we can update in place once coordinates are computed/sampled.
         sampled = self._sampled_cache
         with torch.no_grad():
             for name, feat in self._feats_cache.items():

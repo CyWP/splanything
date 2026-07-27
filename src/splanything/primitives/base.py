@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import functools
 import logging
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -19,6 +20,8 @@ from ..utils.pytorch import TensorIndex1D
 if TYPE_CHECKING:
     from ..training.regularizers.base import Regularizer
     from ..training.refinement.base import SplitRule, FilterRule
+    from ..training.initializers import Initializer
+    from ..training.splitters import Splitter
 
 _logger = logging.getLogger(__name__)
 
@@ -54,40 +57,51 @@ class cached_property:
         return value
 
 
+class unmasked:
+    """Descriptor decorator running a Primitive method inside an ``unmasked`` context.
+
+    Behaves like the wrapped method outside an ``unmasked()`` context.
+    When accessed on a Primitive instance, returns a bound wrapper that
+    enters ``instance.unmasked()`` before invoking the underlying method
+    and restores the prior mask stack afterward.
+    """
+
+    def __init__(self, method):
+        self.method = method
+        self.name = method.__name__
+        self.__doc__ = method.__doc__
+
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+        method = self.method
+
+        @functools.wraps(method)
+        def wrapper(*args, **kwargs):
+            with instance.unmasked():
+                return method(instance, *args, **kwargs)
+
+        return wrapper
+
+
 @dataclass
 class ParamDef:
     batched: bool
     trainable: bool
-    lr_mod: float = 1.0
     channels: Optional[Tuple[int]] = None
+    lr_mod: float = 1.0
 
 
 class Primitive(nn.Module):
-    """Base class for trainable geometric image primitives.
-
-    A Primitive represents a learnable geometric representation that can be
-    optimized to reconstruct a target image through gradient descent.
-
-    Attributes:
-        device: Computed device (torch.device).
-        dtype: Computed dtype (torch.dtype).
-
-    Notes:
-        - Subclasses must implement `_sample()`, `__len__`, and `parameters` properties.
-        - The instance method `sample()` calls `_sample()` with extracted parameters.
-        - Uses tensor shaping [B, C, H, W], but image range remains [0, 1].
-        - Supports refinement via `filter()`, `__getitem__()`, `cat()`, `combine()`.
-        - Supports implicit masking via `masked()` contextmanager.
-    """
-
     def __init__(
         self,
         size: int = 1,
-        initializers: Optional[Dict[str, Initializer]] = None,
-        splitters: Optional[Dict[str, Splitter]] = None,
+        initializers: Optional[Dict[str, Initializer] | Initializer] = None,
+        splitters: Optional[Dict[str, Splitter] | Splitter] = None,
         param_defs: Optional[Dict[str, ParamDef]] = None,
         filter_rules: Optional[List[FilterRule]] = None,
         split_rules: Optional[List[SplitRule]] = None,
+        sample_processors: Optional[List[SampleProcessor]] = None,
         regularizers: Optional[Dict[str, Tuple[Regularizer, float]]] = None,
     ):
         super().__init__()
@@ -110,31 +124,65 @@ class Primitive(nn.Module):
         if split_rules is not None:
             for s in split_rules:
                 self.add_split_rule(s)
+        if sample_processors is not None:
+            for s in sample_processors:
+                self.add_sample_processor(s)
         if regularizers is not None:
             for name, (r, weight) in regularizers.items():
                 self.add_regularizer(name, r, weight)
         self._register_initializers(initializers)
         self._register_params(self._initializers, param_defs)
+        self._register_splitters(splitters)
 
     @property
     def default_params(self) -> Dict[str, ParamDef]:
         raise NotImplementedError()
 
     @property
-    def default_initializers(self) -> Dict[str, Initializer]:
+    def default_initializers(self) -> Dict[str, Initializer] | Initializer:
+        return {}
+
+    @property
+    def default_splitters(self) -> Dict[str, Splitter] | Splitter:
         return {}
 
     def _register_initializers(
-        self, overrides: Optional[Dict[str, Initializer]] = None
+        self, overrides: Optional[Dict[str, Initializer] | Initializer] = None
     ):
-        i = Initializer()
-        inits = {i: name for name in self.default_params.keys()}
+        if isinstance(overrides, Initializer):
+            self._initializers = {
+                name: overrides for name in self.default_params.keys()
+            }
+            return
         o_i = {} if overrides is None else overrides
+        if isinstance(self.default_initializers, Initializer):
+            i = self.default_initializers
+            inits = {name: i for name in self.default_params.keys()}
+            self._initializers = {**inits, **o_i}
+            return
+        i = Initializer()
+        inits = {name: i for name in self.default_params.keys()}
         self._initializers = {
             **inits,
-            **self.base_initializers,
+            **self.default_initializers,
             **o_i,
         }
+
+    def _register_splitters(
+        self, overrides: Optional[Dict[str, Splitter] | Splitter] = None
+    ):
+        if isinstance(overrides, Splitter):
+            self._splitters = {name: overrides for name in self._default_params.keys()}
+            return
+        o_s = {} if overrides is None else overrides
+        if isinstance(self.default_splitters, Splitter):
+            s = self.default_splitters
+            splits = {name: s for name in self.default_params.keys()}
+            self._splitters = {**splits, **o_s}
+            return
+        s = Splitter()
+        splits = {name: s for name in self.default_params.keys()}
+        self._splitters = {**splits, **self.default_splitters, **o_s}
 
     def _register_params(
         self,
@@ -354,6 +402,7 @@ class Primitive(nn.Module):
 
         self._validate_batched_sizes()
 
+    @unmasked
     def state_dict(self, *args, **kwargs) -> Dict[str, Any]:
         """Return state dict with class name for serialization."""
         state = super().state_dict(*args, **kwargs)
@@ -376,6 +425,7 @@ class Primitive(nn.Module):
         name = next(iter(batched))
         return object.__getattribute__(self, "_batched_param")(name).shape[0]
 
+    @unmasked
     def _validate_batched_sizes(self):
         """Ensure all batched parameters have the same first-dimension size."""
         sizes = set()
@@ -439,6 +489,7 @@ class Primitive(nn.Module):
         """
         raise NotImplementedError()
 
+    @unmasked
     @torch.no_grad()
     def filter(self, idx: Bool[Tensor, "N"]) -> Primitive:
         """In-place index selection of batched elements.
@@ -473,34 +524,13 @@ class Primitive(nn.Module):
         self._context_masks = new_context
         return self
 
+    @unmasked
     @torch.no_grad()
     def split(self, idx: Bool[Tensor, "N"]) -> Primitive:
         """Split instances at given indices"""
         updates = dict()
-        idx_full = torch.cat(
-            [idx, torch.ones((idx.sum(),), device=idx.device, dtype=torch.bool)], dim=0
-        )
         for name, param in self.batched_parameters():
-            new_param = torch.cat([param, param[idx]])
-            npi = new_param[idx_full]
-            if "centroid" in name:
-                if hasattr(self, "areas"):
-                    new_param[idx_full] = (
-                        npi + torch.randn_like(npi) * self.areas[idx_full] / 2**0.5
-                    )
-                else:
-                    new_param[idx_full] = (
-                        npi + torch.randn_like(npi) / 2 * len(self) ** 0.5
-                    )
-            elif "theta" in name or "rotation" in name:
-                new_param[idx_full] = npi + torch.randn_like(npi) * 0.1
-            elif "scale" in name:
-                new_param[idx_full] = npi / 2**0.5
-            elif any([n in name for n in ("color", "rgb", "alpha")]):
-                pass
-            else:
-                pass
-            updates[name] = new_param
+            updates[name] = self._splitters[name](name, param, idx)
         self.update_parameters(updates)
         return self
 
@@ -549,6 +579,7 @@ class Primitive(nn.Module):
             sample = proc(sample, self)
         return sample
 
+    @unmasked
     @torch.no_grad()
     def append(self, other: Primitive, weight: float = 0.0) -> Primitive:
         """Concatenate another primitive in-place.
@@ -578,6 +609,7 @@ class Primitive(nn.Module):
             prim.append(p)
         return prim
 
+    @unmasked
     def param_groups(self) -> List[Dict[str, nn.Parameter]]:
         groups = []
         params_dict = {
@@ -691,6 +723,7 @@ class Primitive(nn.Module):
             regs[name] = weight * regularizer(self)
         return regs
 
+    @unmasked
     @torch.no_grad()
     def check_filter(self) -> Optional[Bool[Tensor, "N"]]:
         if len(self._filter_rules) == 0:
@@ -707,6 +740,7 @@ class Primitive(nn.Module):
             return combined_filter
         return None
 
+    @unmasked
     @torch.no_grad()
     def check_split(self) -> Optional[Bool[Tensor, "N"]]:
         if len(self._split_rules) == 0:
@@ -723,6 +757,7 @@ class Primitive(nn.Module):
             return combined_split
         return None
 
+    @unmasked
     def load(self, path: Union[str, Path]):
         self.load_state_dict(torch.load(path, weights_only=False), strict=False)
 

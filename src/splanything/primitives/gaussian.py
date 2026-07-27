@@ -4,37 +4,54 @@ import torch
 from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
-from splanything.utils.pytorch import TensorIndex1D
-
 from .base import Primitive, cached_property
+
+if TYPE_CHECKING:
+    from ..training.splitters import Splitter
+
+
+class GaussianSplitter(Splitter):
+    def split_vals(
+        self, name: str, primitive: Primitive, split_param: Float[Tensor, "N_split ..."]
+    ) -> Tuple[Float[Tensor, "N_split ..."], Float[Tensor, "N_split ..."]]:
+        if name not in ("sigma_1", "sigma_2", "centroids"):
+            return super().split_vals(name, primitive, split_param)
+        s_mask = p.sigma_1 > p.sigma_2
+        if name == "centroids":
+            p = primitive
+            ax_1, ax_2 = p.axes
+            ax_1 *= p.sigma_1[:, None]
+            ax_2 *= p.sigma_2[:, None]
+            disp = torch.where(s_mask, ax_1, ax_2) / 4
+            return split_param + disp, split_param - disp
+        if name == "sigma_1":
+            new_param = torch.where(s_mask, param_split / 2, param_split)
+            return new_param, new_param
+        if name == "sigma_2":
+            new_param = torch.where(s_mask, param_split, param_split / 2)
+            return new_param, new_param
 
 
 class GaussianPrimitive(Primitive):
     """2D anisotropic Gaussian primitive for image reconstruction."""
 
-    _ref_axis = [-1.0, 0.0]
+    _sigma_cutoff = 2.5
 
-    def __init__(self, size: int = 1, scale_factor: float = 1.0):
-        super().__init__()
-        area_factor = scale_factor / size**0.5
-        self.add_parameter("thetas", torch.rand((size,)), batched=True, trainable=True)
-        self.add_parameter(
-            "centroids", torch.rand((size, 2)), batched=True, trainable=True
+    @property
+    def default_params(self) -> Dict[str, ParamDef]:
+        return dict(
+            thetas=ParamDef(True, True, None),
+            centroids=ParamDef(True, True, (2,), 0.5),
+            sigma_1=ParamDef(True, True, None),
+            sigma_2=ParamDef(True, True, None),
+            color=ParamDef(True, True, (3,)),
+            alphas=ParamDef(True, True, None),
+            _ref_axis=ParamDef(False, False, (2,)),
         )
-        self.add_parameter(
-            "sigma_1",
-            (1 + torch.randn((size,)) * 0.2) * area_factor + 1e-3,
-            batched=True,
-            trainable=True,
-        )
-        self.add_parameter(
-            "sigma_2",
-            (1 + torch.randn((size,)) * 0.2) * area_factor + 1e-3,
-            batched=True,
-            trainable=True,
-        )
-        self.add_parameter("color", torch.rand((size, 3)), batched=True, trainable=True)
-        self.add_parameter("alphas", torch.rand((size,)), batched=True, trainable=True)
+
+    @property
+    def default_splitters(self) -> Dict[str, Splitter]:
+        return GaussianSplitter()
 
     @cached_property
     def scales(self) -> Tuple[Float[Tensor, "N"], Float[Tensor, "N"]]:
@@ -81,7 +98,7 @@ class GaussianPrimitive(Primitive):
 
     @cached_property
     def areas(self) -> Float[Tensor, "N"]:
-        return self.sigma_1 * self.sigma_2 * 3.14159
+        return self.sigma_1 * self.sigma_2 * self._sigma_cutoff**2 * torch.pi
 
     @torch.no_grad()
     def patch_mask(
@@ -94,7 +111,7 @@ class GaussianPrimitive(Primitive):
         sig = torch.maximum(self.sigma_1, self.sigma_2)
         unit_patches = patch_sizes / torch.minimum(H, W)
         dists = (centers[:, None, :] - self.centroids[None, :, :]).norm(dim=2)
-        return dists - unit_patches[:, None] < 2.5 * sig[None, :]
+        return dists - unit_patches[:, None] < self._sigma_cutoff * sig[None, :]
 
     def sample_rgb(
         self,
@@ -122,65 +139,3 @@ class GaussianPrimitive(Primitive):
             * alpha[None, :]
         )
         return weights
-
-    @torch.no_grad()
-    def split(self, mask: TensorIndex1D):
-        """Split selected primitives along their main axis.
-
-        Duplicates primitives at mask positions, splitting each into two
-        along the principal axis (larger sigma). Only the principal axis
-        variance is halved; the orthogonal axis is unchanged.
-
-        Args:
-            mask: Boolean mask or integer indices selecting primitives to split.
-
-        Notes:
-            - Only sigma_1 (principal axis) is divided by sqrt(2).
-            - Sigma_2 (orthogonal axis) is unchanged.
-            - Alphas are divided by sqrt(2) for split copies.
-            - Centroids are offset by 0.5 * sigma_1 along the principal axis only.
-        """
-        ax_1, ax_2 = self.axes
-        ax_1 = ax_1[mask] * self.sigma_1[mask, None]
-        ax_2 = ax_2[mask] * self.sigma_2[mask, None]
-        sigma_1_mask = self.sigma_1[mask]
-        sigma_2_mask = self.sigma_2[mask]
-        longest_is_1 = sigma_1_mask >= sigma_2_mask
-        disp = torch.where(longest_is_1.unsqueeze(-1), ax_1, ax_2) * 0.5
-        sq2 = 2**0.5
-
-        # Compute new values for all parameters
-        new_thetas = torch.cat([self.thetas, self.thetas[mask]], dim=0)
-
-        # Note: centroids are modified in-place first, then concatenated
-        centroids_copy = self.centroids
-        centroids_copy[mask] -= disp
-        new_centroids = torch.cat([centroids_copy, self.centroids[mask] + disp], dim=0)
-
-        # Note: sigma_1 and sigma_2 are modified in-place first, then concatenated
-        sigma_1_split = sigma_1_mask / sq2
-        sigma_2_split = sigma_2_mask / sq2
-        sigma_1_new = self.sigma_1
-        sigma_2_new = self.sigma_2
-        sigma_1_new[mask] = torch.where(
-            longest_is_1.squeeze(-1), sigma_1_split, self.sigma_1[mask]
-        )
-        sigma_2_new[mask] = torch.where(
-            longest_is_1.squeeze(-1), self.sigma_2[mask], sigma_2_split
-        )
-        new_sigma_1 = torch.cat([sigma_1_new, sigma_1_split], dim=0)
-        new_sigma_2 = torch.cat([sigma_2_new, sigma_2_split], dim=0)
-
-        new_color = torch.cat([self.color, self.color[mask]], dim=0)
-        new_alphas = torch.cat([self.alphas, self.alphas[mask]], dim=0)
-
-        self.update_parameters(
-            {
-                "thetas": new_thetas,
-                "centroids": new_centroids,
-                "sigma_1": new_sigma_1,
-                "sigma_2": new_sigma_2,
-                "color": new_color,
-                "alphas": new_alphas,
-            }
-        )

@@ -10,7 +10,7 @@ from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
 from ..utils.pytorch import TensorIndex1D
-from .base import Primitive
+from .base import Primitive, unmasked
 
 if TYPE_CHECKING:
     from ..training.regularizers.base import Regularizer
@@ -20,9 +20,29 @@ _logger = logging.getLogger(__name__)
 
 
 class MultiPrimitive(Primitive):
-    def __init__(self, primitives: Dict[str, Primitive] = {}):
-        super().__init__()
+    def __init__(
+        self,
+        primitives: Dict[str, Primitive],
+        filter_rules: Optional[List[FilterRule]] = None,
+        split_rules: Optional[List[SplitRule]] = None,
+        sample_processors: Optional[List[SampleProcessor]] = None,
+        regularizers: Optional[Dict[str, Tuple[Regularizer, float]]] = None,
+    ):
+        nn.Module.__init__(self)
+        self._context_masks: List[Bool[Tensor, "N"]] = []
         self.primitives = nn.ModuleDict(primitives)
+        if filter_rules is not None:
+            for f in filter_rules:
+                self.add_filter_rule(f)
+        if split_rules is not None:
+            for s in split_rules:
+                self.add_split_rule(s)
+        if sample_processors is not None:
+            for s in sample_processors:
+                self.add_sample_processor(s)
+        if regularizers is not None:
+            for name, (r, weight) in regularizers.items():
+                self.add_regularizer(name, r, weight)
 
     @contextmanager
     def masked(self, mask: Bool[Tensor, "N"]):
@@ -98,6 +118,7 @@ class MultiPrimitive(Primitive):
         """Number of primitives in this object."""
         return sum([len(prim) for prim in self.primitives.values()])
 
+    @unmasked
     def _validate_batched_sizes(self):
         """Ensure all batched parameters have the same first-dimension size."""
         for prim in self.primitives.values():
@@ -122,6 +143,7 @@ class MultiPrimitive(Primitive):
             dim=1,
         )
 
+    @unmasked
     @torch.no_grad()
     def filter(self, keys: Dict[str, TensorIndex1D]) -> MultiPrimitive:
         """In-place index selection of batched elements.
@@ -140,6 +162,7 @@ class MultiPrimitive(Primitive):
             self.primitives[name].filter(idx)
         return self
 
+    @unmasked
     @torch.no_grad()
     def split(self, idx: Dict[str, Bool[Tensor, "Ns"]]) -> MultiPrimitive:
         """Split instances at given indices"""
@@ -178,6 +201,7 @@ class MultiPrimitive(Primitive):
             dim=1,
         )
 
+    @unmasked
     @torch.no_grad()
     def append(
         self,
@@ -196,6 +220,7 @@ class MultiPrimitive(Primitive):
                 self.primitives[key] = prim
         return self
 
+    @unmasked
     def param_groups(self) -> List[Dict[str, Union[nn.Parameter, Any]]]:
         groups = []
         for name, prim in self.primitives.items():
@@ -255,6 +280,7 @@ class MultiPrimitive(Primitive):
                 regs[f"{p_name}_{r_name}"] = r
         return regs
 
+    @unmasked
     @torch.no_grad()
     def check_filter(self) -> Optional[Dict[str, Bool[Tensor, "N"]]]:
         filtered = {}
@@ -266,6 +292,7 @@ class MultiPrimitive(Primitive):
             return None
         return filtered
 
+    @unmasked
     @torch.no_grad()
     def check_split(self) -> Optional[Dict[Bool[Tensor, "N"]]]:
         split = {}

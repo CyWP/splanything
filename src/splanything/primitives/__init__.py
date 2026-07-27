@@ -1,7 +1,7 @@
 """Primitive classes for splatting."""
 
 from .base import Primitive
-from .cubic_grad import CubicFanPrimitive
+from .cubic_fan import CubicFanPrimitive
 from .gaussian import GaussianPrimitive
 from .radial_freq import RadialFreqPrimitive
 from .meta import MetaPrimitive
