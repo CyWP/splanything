@@ -4,7 +4,7 @@
 # Images
 *.png
 
-cubic_test/
+test_runs/
 
 # Pytorch saves
 *.pt

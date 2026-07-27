@@ -20,5 +20,9 @@ class SampleProcessor(ABC):
     ) -> SampleOutput:
         pass
 
-    def __call__(self, *args, **kwargs):
+    def __call__(
+        self,
+        sample: SampleOutput,
+        primitive: Primitive,
+    ) -> SampleOutput:
         return self.process(*args, **kwargs)
