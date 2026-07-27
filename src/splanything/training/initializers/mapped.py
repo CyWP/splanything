@@ -1,6 +1,6 @@
 import torch
 from torch import Tensor
-from typing import Tuple
+from typing import Tuple, Optional, Callable
 from jaxtyping import Float
 
 from .base import Initializer

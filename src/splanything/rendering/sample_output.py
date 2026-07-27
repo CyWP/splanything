@@ -1,12 +1,11 @@
 from __future__ import annotations
-
-from typing import Union
-
+from dataclasses import dataclass
 import torch
 from jaxtyping import Float
 from torch import Tensor
 
 
+@dataclass
 class SampleOutput:
     """Container for per-coordinate per-primitive sampling data.
 
@@ -16,17 +15,11 @@ class SampleOutput:
         co: Coordinates used to sample.
     """
 
-    def __init__(
-        self,
-        rgb: Float[Tensor, "Nc N 3"],
-        weights: Float[Tensor, "Nc N"],
-        co: Float[Tensor, "Nc 2"],
-    ):
-        self.rgb = rgb
-        self.weights = weights
-        self.co = co
+    rgb: Float[Tensor, "Nc N 3"]
+    weights: Float[Tensor, "Nc N"]
+    co: Float[Tensor, "Nc 2"]
 
-    def to(self, val: Union[torch.device, torch.dtype]) -> SampleOutput:
+    def to(self, val: torch.device | torch.dtype) -> SampleOutput:
         """Move tensors to device/dtype.
 
         Args:
@@ -53,7 +46,6 @@ class SampleOutput:
             - Concatenates along dim=0 (coordinate dimension).
             - All other dimensions (N, 3) must match.
         """
-        rgb = torch.cat([s.rgb for s in samples], dim=0)  # (Nc_sum, N, 3)
-        weights = torch.cat([s.weights for s in samples], dim=0)  # (Nc_sum, N_sum)
-        co = torch.cat([s.co for s in samples], dim=0)  # (Nc_sum, 2)
-        return SampleOutput(rgb, weights, co)
+        rgb = torch.cat([s.rgb for s in samples], dim=1)  # (Nc_sum, N, 3)
+        weights = torch.cat([s.weights for s in samples], dim=1)  # (Nc_sum, N_sum)
+        return SampleOutput(rgb, weights, samples[0].co)

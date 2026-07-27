@@ -1,9 +1,12 @@
+from __future__ import annotations
 from torch import Tensor
 from jaxtyping import Float
-from typing import Callable, Tuple
+from typing import Callable, Tuple, TYPE_CHECKING
 
-from ...primitives.base import Primitive
 from .base import Splitter
+
+if TYPE_CHECKING:
+    from ...primitives.base import Primitive
 
 
 class FlexibleSplitter(Splitter):

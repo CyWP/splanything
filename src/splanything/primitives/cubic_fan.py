@@ -1,13 +1,12 @@
-from typing import Tuple
+from __future__ import annotations
+from typing import Tuple, TYPE_CHECKING
 
 import torch
 from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
 from .base import Primitive, ParamDef, cached_property
-
-if TYPE_CHECKING:
-    from ..training.splitters import Splitter
+from ..training.splitters.base import Splitter
 
 
 class CubicFanSplitter(Splitter):
@@ -17,7 +16,7 @@ class CubicFanSplitter(Splitter):
         if name not in ("range_1", "range_2", "centroids"):
             return super().split_vals(name, primitive, split_param)
         p = primitive
-        r_mask = (p.range_1 > p.range_2)[:, None].expand(1, 2)
+        r_mask = p.range_1 > p.range_2
         if name == "range_1":
             new_param = torch.where(r_mask, split_param / 2, split_param)
             return new_param, new_param
@@ -26,9 +25,9 @@ class CubicFanSplitter(Splitter):
             return new_param, new_param
         if name == "centroids":
             ax_1, ax_2 = p.axes
-            ax_1 *= p.range_1
-            ax_2 *= p.range_2
-            disp = torch.where(r_mask, ax_1, ax_2) / 4
+            ax_1 *= p.range_1[:, None]
+            ax_2 *= p.range_2[:, None]
+            disp = torch.where(r_mask[:, None].repeat(1, 2), ax_1, ax_2) / 4
             return split_param + disp, split_param - disp
 
 
@@ -43,18 +42,12 @@ class CubicFanPrimitive(Primitive):
             color_1=ParamDef(True, True, (3,)),
             color_2=ParamDef(True, True, (3,)),
             alphas=ParamDef(True, True, None),
-            _ref_axis=ParamDef(False, False, (2,)),
+            ref_axis=ParamDef(False, False, (2,)),
         )
 
     @property
     def default_splitters(self) -> Dict[str, Splitter]:
         return CubicFanSplitter()
-
-    @cached_property
-    def ref_axis(self) -> Float[Tensor, "N 2"]:
-        return torch.tensor(self._ref_axis, device=self.device, dtype=self.dtype)[
-            None
-        ].expand(len(self), 2)
 
     @cached_property
     def axes(self) -> Tuple[Float[Tensor, "N 2"], Float[Tensor, "N 2"]]:
@@ -65,7 +58,7 @@ class CubicFanPrimitive(Primitive):
             two perpendicular axes of each gradient. ax_2 is ax_1 rotated
             90 degrees counterclockwise.
         """
-        ref = self.ref_axis
+        ref = self.ref_axis[None, :]
         ax_1 = (self.R @ ref.unsqueeze(-1)).squeeze(-1)
         ax_2 = torch.stack([ax_1[:, 1], -ax_1[:, 0]], dim=1)
         return ax_1, ax_2

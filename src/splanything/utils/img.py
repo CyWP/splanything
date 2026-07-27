@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import List, Optional, Sequence, Tuple, Union
+from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
@@ -54,7 +54,7 @@ class ImgUtils:
     @staticmethod
     def tensor2pil(
         x: Float[Tensor, "B C H W"],
-    ) -> Union[Image.Image, List[Image.Image]]:
+    ) -> Image.Image | List[Image.Image]:
         """Convert tensor to PIL Image.
 
         Args:
@@ -76,7 +76,7 @@ class ImgUtils:
 
     @staticmethod
     def pil2tensor(
-        img: Union[Image.Image, List[Image.Image], Sequence[Image.Image]],
+        img: Image.Image | Sequence[Image.Image],
     ) -> Float[Tensor, "B C H W"]:
         """Convert PIL Image to tensor.
 
@@ -96,7 +96,7 @@ class ImgUtils:
 
     @staticmethod
     def pil2map(
-        img: Union[Image.Image, List[Image.Image], Sequence[Image.Image]],
+        img: Image.Image | Sequence[Image.Image],
         mode: str = "mean",
     ) -> Float[Tensor, "B 1 H W"]:
         return ImgUtils.tensor2map(ImgUtils.pil2tensor(img), mode=mode)
@@ -475,8 +475,8 @@ class ImgUtils:
     @staticmethod
     @torch.no_grad()
     def gaussian_kernel(
-        kernel_size: Union[int, Sequence[int]],
-        sigma: Union[float, Sequence[float]],
+        kernel_size: int | Sequence[int],
+        sigma: float | Sequence[float],
     ) -> Float[Tensor, "1 1 KH KW"]:
         """Generate 2D Gaussian kernel.
 
@@ -526,7 +526,7 @@ class ImgUtils:
         img: Float[Tensor, "B C H W"],
         kernel: Float[Tensor, "C G KH KW"],
         match_channels: bool = False,
-        stride: Union[int, Tuple[int]] = 1,
+        stride: int | Tuple[int] = 1,
         padding: str = "same",
     ) -> Float[Tensor, "B C H W"]:
         """Convolve image with kernel.

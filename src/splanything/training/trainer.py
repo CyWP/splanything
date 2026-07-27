@@ -92,6 +92,8 @@ class TrainerLogHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         try:
             msg = self.format(record)
+            if hasattr(record, "epoch"):
+                msg = f"[Epoch {record.epoch}]{msg}"
             self.trainer.log(msg)
         except Exception:
             self.handleError(record)

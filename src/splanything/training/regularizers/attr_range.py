@@ -1,4 +1,4 @@
-from typing import Optional, Union
+from typing import Optional
 
 import torch
 from jaxtyping import Float
@@ -34,9 +34,9 @@ class AttributeRange(Regularizer):
     def __init__(
         self,
         attr_name: str,
-        min: Optional[Union[float, Float[Tensor, "..."]]] = None,
-        max: Optional[Union[float, Float[Tensor, "..."]]] = None,
-        target: Optional[Union[float, Float[Tensor, "..."]]] = None,
+        min: Optional[float | Float[Tensor, "..."]] = None,
+        max: Optional[float | Float[Tensor, "..."]] = None,
+        target: Optional[float | Float[Tensor, "..."]] = None,
         weight_map: Optional[Float[Tensor, "B 1 H W"]] = None,
     ):
         """Initialize the regularizer.

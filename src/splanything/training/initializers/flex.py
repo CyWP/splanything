@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, Tuple
 from torch import Tensor
 from jaxtyping import Float
 

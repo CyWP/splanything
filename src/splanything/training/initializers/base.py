@@ -1,6 +1,6 @@
 import torch
 from torch import Tensor
-from typing import Tuple
+from typing import Tuple, Optional
 from jaxtyping import Float
 
 
@@ -49,4 +49,4 @@ class Initializer:
             param_shape = () if channels is None else channels
         else:
             param_shape = (size,) if channels is None else (size, *channels)
-        return self.init_param(name, param_shape)
+        return self.init_param(name, param_shape, size == 0)

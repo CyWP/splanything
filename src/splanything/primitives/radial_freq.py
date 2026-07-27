@@ -2,15 +2,14 @@ import math
 
 import torch
 
-from typing import Tuple
+from typing import Tuple, Dict
 
 from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
-from .base import Primitive, cached_property
+from .base import Primitive, cached_property, ParamDef
 
-if TYPE_CHECKING:
-    from ...training.initializers import Initializer
+from ..training.initializers import Initializer
 
 
 class RadialFreqInitializer(Initializer):
@@ -18,7 +17,7 @@ class RadialFreqInitializer(Initializer):
         self, name: str, param_shape: Tuple[int], batched: bool
     ) -> Float[Tensor, "N ..."]:
         if name == "freq":
-            return (1.0 + torch.rand((size,)) * 12) * torch.pi
+            return (1.0 + torch.rand(param_shape) * 3) * torch.pi
         return super().init_param(name, param_shape, batched)
 
 
@@ -56,7 +55,7 @@ class RadialFreqPrimitive(Primitive):
 
     @property
     def default_initializers(self) -> Dict[str, Initializer] | Initializer:
-        RadialFreqInitializer()
+        return RadialFreqInitializer()
 
     @cached_property
     def scales(self) -> Tuple[Float[Tensor, "N"], Float[Tensor, "N"]]:

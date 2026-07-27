@@ -1,15 +1,15 @@
-from typing import Sequence, Union
+from typing import Sequence
 
 from jaxtyping import Bool, Integer
 from torch import Tensor
 
 # Useful type
-TensorIndex1D = Union[
-    int,
-    slice,
-    type(...),  # Ellipsis
-    None,
-    Bool[Tensor, "N"],
-    Integer[Tensor, "N"],
-    Sequence[int],
-]
+TensorIndex1D = (
+    int
+    | slice
+    | type(...)
+    | None
+    | Bool[Tensor, "N"]
+    | Integer[Tensor, "N"]
+    | Sequence[int]
+)

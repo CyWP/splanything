@@ -1,5 +1,5 @@
 from logging import getLogger
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List
 
 import torch
 import torch.optim as optim
@@ -14,6 +14,7 @@ _logger = getLogger(__name__)
 _REINIT_IGNORED_KWARGS = {"params"}
 
 SUBPARAM_SEP = "$$"
+CHILD_SEP = "^^"
 
 
 def _resolve_subparam_key(name: str, keep_mask) -> "str | None":
@@ -24,16 +25,102 @@ def _resolve_subparam_key(name: str, keep_mask) -> "str | None":
     separator). The separator is a non-Python-identifier character so it
     cannot collide with any batched-parameter name produced by
     ``Primitive.param_groups``.
+
+    If the group name is prefixed with ``^^`` (it was registered through
+    ``MetaPrimitive.param_groups`` as a child-primitive parameter) the
+    prefix is stripped before matching. ``^^``-prefixed mask keys are
+    ignored: they should not appear in practice and would otherwise mask
+    legitimate matches.
     """
     if not isinstance(keep_mask, dict):
         return None
-    if name in keep_mask:
-        return name
-    if SUBPARAM_SEP in name:
-        prefix = name.split(SUBPARAM_SEP, 1)[0]
-        if prefix in keep_mask:
+    bare_name = name[len(CHILD_SEP) :] if name.startswith(CHILD_SEP) else name
+    if bare_name in keep_mask and not bare_name.startswith(CHILD_SEP):
+        return bare_name
+    if SUBPARAM_SEP in bare_name:
+        prefix = bare_name.split(SUBPARAM_SEP, 1)[0]
+        if prefix in keep_mask and not prefix.startswith(CHILD_SEP):
             return prefix
     return None
+
+
+def _resolve_new_group_for_existing(
+    existing_name: str,
+    new_param_groups: "list[dict]",
+    existing_param_groups: "list[dict] | None" = None,
+) -> "tuple[dict | None, str]":
+    """Match an existing optimizer group to a ``new_param_groups`` entry.
+
+    Returns ``(new_group, action)`` where ``action`` is one of:
+
+    - ``"update"``: replace the existing group's params with ``new_group``'s
+      params and transfer optimizer state.
+    - ``"preserve"``: keep the existing group's params and state unchanged.
+
+    Matching rules respect two separators:
+
+    - ``^^`` (CHILD_SEP) marks child-primitive parameters that were
+      registered via ``MetaPrimitive.param_groups`` while leaving the
+      child in charge of its own refinement. When both the existing and
+      the new param group carry ``^^``, the match is ``preserve``: the
+      meta-level call must not touch the child's params (its refinement
+      rules run independently on the child primitive directly).
+    - ``$$`` (SUBPARAM_SEP) marks sub-parameters of a ``MultiPrimitive``
+      container (e.g. ``radial$$centroids``). It is used as a fallback
+      when an existing ``^^radial$$centroids`` group must be matched
+      against a child's bare ``centroids`` param group (when the user
+      fires a refinement rule directly on the child).
+
+    The cross-primitive guard is only active when the optimizer already
+    holds some ``^^``-prefixed groups: that means the top-level
+    primitive was a ``MetaPrimitive`` with ``primitive_trainable=True``
+    and could also carry bare names from its own parameters that might
+    collide with bare names coming from a child called directly. In
+    that case, bare-vs-bare exact matches are skipped to avoid
+    accidentally rewriting a meta-owned parameter with a child-owned
+    one. Without that ambiguity (top-level ``MultiPrimitive`` or simple
+    ``Primitive``), bare-vs-bare exact matches are honored as normal.
+    """
+    has_caret = existing_name.startswith(CHILD_SEP)
+    bare_existing = existing_name[len(CHILD_SEP) :] if has_caret else existing_name
+    last_component = None
+    if has_caret and SUBPARAM_SEP in bare_existing:
+        last_component = bare_existing.rsplit(SUBPARAM_SEP, 1)[1]
+
+    existing_has_caret_groups = bool(existing_param_groups) and any(
+        isinstance(g.get("name"), str) and g["name"].startswith(CHILD_SEP)
+        for g in existing_param_groups
+    )
+    cross_primitive_guard = (
+        existing_has_caret_groups
+        and not any(
+            isinstance(g.get("name"), str) and g["name"].startswith(CHILD_SEP)
+            for g in new_param_groups
+        )
+        and not has_caret
+    )
+
+    for g in new_param_groups:
+        g_name = g.get("name")
+        if not isinstance(g_name, str):
+            continue
+        g_has_caret = g_name.startswith(CHILD_SEP)
+
+        if has_caret and g_has_caret and g_name == existing_name:
+            return g, "preserve"
+
+        if has_caret and not g_has_caret:
+            if g_name == bare_existing:
+                return g, "update"
+            if last_component is not None and g_name == last_component:
+                return g, "update"
+
+        if not has_caret and not g_has_caret and g_name == existing_name:
+            if cross_primitive_guard:
+                continue
+            return g, "update"
+
+    return None, "preserve"
 
 
 class OptimizerWrapper:
@@ -114,8 +201,8 @@ class OptimizerWrapper:
 
     def filter(
         self,
-        new_param_groups: List[Dict[str, Union[nn.Parameter, Any]]],
-        keep_mask: Union[Bool[Tensor, "N"], Dict[str, Bool[Tensor, "N"]]],
+        new_param_groups: List[Dict[str, nn.Parameter | Any]],
+        keep_mask: Bool[Tensor, "N"] | Dict[str, Bool[Tensor, "N"]],
     ) -> None:
         """
         Filter optimizer state after parameter culling.
@@ -195,114 +282,34 @@ class OptimizerWrapper:
                 if isinstance(keep_mask, dict) and matched_key is not None
                 else keep_mask
             )
-            matched = False
 
-            for g in new_param_groups:
-                if g.get("name") == name:
-                    _filter_group(
-                        group,
-                        g["params"],
-                        current_mask,
-                    )
-                    matched = True
-                    break  # IMPORTANT FIX
+            new_group, action = _resolve_new_group_for_existing(
+                name,
+                new_param_groups,
+                existing_param_groups=self._optimizer.param_groups,
+            )
+            if action == "preserve":
+                for p in group["params"]:
+                    if p in self._optimizer.state:
+                        new_state[p] = self._optimizer.state[p]
+                continue
 
-            if not matched:
+            if new_group is None:
                 raise KeyError(f"No matching new_param_group for '{name}'")
+
+            _filter_group(
+                group,
+                new_group["params"],
+                current_mask,
+            )
 
         # --- state swap (safe version) ---
         self._optimizer.state = new_state
 
-    # def filter(
-    #     self,
-    #     new_param_groups: List[Dict[str, Union[nn.Parameter, Any]]],
-    #     keep_mask: Union[Bool[Tensor, "N"], Dict[str, Bool[Tensor, "N"]]],
-    # ) -> None:
-    #     """
-    #     Filter optimizer state after parameter culling.
-
-    #     Assumes:
-    #     - positional correspondence between old and new params
-    #     - first-dimension pruning only
-    #     """
-
-    #     new_state = {}
-
-    #     def _filter_group(group, new_params, mask):
-    #         old_params = group["params"]
-    #         new_params_list = list(new_params)
-
-    #         if len(old_params) != len(new_params_list):
-    #             raise ValueError(
-    #                 f"Parameter mismatch in group '{group.get('name')}': "
-    #                 f"{len(old_params)} -> {len(new_params_list)}"
-    #             )
-
-    #         param_iter = iter(new_params_list)
-    #         new_group_params = []
-
-    #         for old_p in old_params:
-    #             new_p = next(param_iter)
-    #             new_group_params.append(new_p)
-
-    #             # transfer optimizer state if it exists
-    #             if old_p in self._optimizer.state:
-    #                 old_state = self._optimizer.state[old_p]
-    #                 new_state_for_p = {}
-
-    #                 for k, v in old_state.items():
-    #                     if (
-    #                         isinstance(v, torch.Tensor)
-    #                         and v.ndim > 0
-    #                         and v.shape[0] == mask.shape[0]
-    #                     ):
-    #                         new_state_for_p[k] = v[mask]
-    #                     else:
-    #                         new_state_for_p[k] = v
-
-    #                 new_state[new_p] = new_state_for_p
-
-    #         group["params"] = new_group_params
-
-    #     # --- main loop over optimizer groups ---
-    #     for group in self._optimizer.param_groups:
-    #         name = group.get("name")
-
-    #         if name is None:
-    #             # fallback: assume first new group
-    #             _filter_group(
-    #                 group,
-    #                 new_param_groups[0]["params"],
-    #                 keep_mask,
-    #             )
-    #         elif name not in keep_mask:
-    #             for p in group["params"]:
-    #                 if p in self._optimizer.state:
-    #                     new_state[p] = self._optimizer.state[p]
-    #             continue
-    #         else:
-    #             matched = False
-
-    #             for g in new_param_groups:
-    #                 if g.get("name") == name:
-    #                     _filter_group(
-    #                         group,
-    #                         g["params"],
-    #                         keep_mask[name],
-    #                     )
-    #                     matched = True
-    #                     break  # IMPORTANT FIX
-
-    #             if not matched:
-    #                 raise KeyError(f"No matching new_param_group for '{name}'")
-
-    #     # --- state swap (safe version) ---
-    #     self._optimizer.state = new_state
-
     def split(
         self,
-        new_param_groups: List[Dict[str, Union[nn.Parameter, Any]]],
-        split_mask: Union[Bool[Tensor, "N"], Dict[str, Bool[Tensor, "N"]]],
+        new_param_groups: List[Dict[str, nn.Parameter | Any]],
+        split_mask: Bool[Tensor, "N"] | Dict[str, Bool[Tensor, "N"]],
     ) -> None:
         """Expand optimizer state after parameter splitting/cloning.
 
@@ -385,20 +392,26 @@ class OptimizerWrapper:
                 if isinstance(split_mask, dict) and matched_key is not None
                 else split_mask
             )
-            matched = False
 
-            for g in new_param_groups:
-                if g.get("name") == name:
-                    _split_group(
-                        group,
-                        g["params"],
-                        current_mask,
-                    )
-                    matched = True
-                    break
+            new_group, action = _resolve_new_group_for_existing(
+                name,
+                new_param_groups,
+                existing_param_groups=self._optimizer.param_groups,
+            )
+            if action == "preserve":
+                for p in group["params"]:
+                    if p in self._optimizer.state:
+                        new_state[p] = self._optimizer.state[p]
+                continue
 
-            if not matched:
+            if new_group is None:
                 raise KeyError(f"No matching new_param_group for '{name}'")
+
+            _split_group(
+                group,
+                new_group["params"],
+                current_mask,
+            )
 
         # --- state swap ---
         self._optimizer.state = new_state

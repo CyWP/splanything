@@ -1,9 +1,11 @@
+from __future__ import annotations
 import torch
 from torch import Tensor
 from jaxtyping import Float, Bool
-from typing import Tuple
+from typing import Tuple, TYPE_CHECKING
 
-from ...primitives.base import Primitive
+if TYPE_CHECKING:
+    from ...primitives.base import Primitive
 
 
 class Splitter:
@@ -13,8 +15,14 @@ class Splitter:
         if "centroid" in name:
             disp = torch.rand_like(split_param) * 2 - 1
             disp *= (
-                primitive.areas if hasattr(primitive, "areas") else (1 / len(primitive))
-            ) ** 0.5 / (4 * disp.norm)
+                (
+                    primitive.areas
+                    if hasattr(primitive, "areas")
+                    else torch.full_like(split_param[:, 0], (1 / len(primitive)))
+                )
+                ** 0.5
+                / (4 * disp.norm())
+            )[:, None]
             return split_param + disp, split_param - disp
         if any([n in name for n in ("scale", "range", "sigma")]):
             new = split_param / 2**0.5
@@ -32,6 +40,6 @@ class Splitter:
             split_vals_1, split_vals_2 = self.split_vals(
                 name, primitive, param[split_mask]
             )
-        return torch.cat(
-            [param.masked_fill(split_mask, split_vals_1), split_vals_2], dim=0
-        )
+        p = param.clone()
+        p[split_mask] = split_vals_1
+        return torch.cat([p, split_vals_2], dim=0)

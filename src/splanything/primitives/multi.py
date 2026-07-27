@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import ExitStack, contextmanager
-from typing import Dict, ItemsView, List, Optional, Union, Any, TYPE_CHECKING
+from typing import Dict, ItemsView, List, Optional, Any, TYPE_CHECKING
 
 import torch
 import torch.nn as nn
@@ -10,7 +10,8 @@ from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
 from ..utils.pytorch import TensorIndex1D
-from .base import Primitive, unmasked
+from ..rendering.sample_output import SampleOutput
+from .base import Primitive, nomask
 
 if TYPE_CHECKING:
     from ..training.regularizers.base import Regularizer
@@ -118,7 +119,7 @@ class MultiPrimitive(Primitive):
         """Number of primitives in this object."""
         return sum([len(prim) for prim in self.primitives.values()])
 
-    @unmasked
+    @nomask
     def _validate_batched_sizes(self):
         """Ensure all batched parameters have the same first-dimension size."""
         for prim in self.primitives.values():
@@ -143,7 +144,7 @@ class MultiPrimitive(Primitive):
             dim=1,
         )
 
-    @unmasked
+    @nomask
     @torch.no_grad()
     def filter(self, keys: Dict[str, TensorIndex1D]) -> MultiPrimitive:
         """In-place index selection of batched elements.
@@ -162,7 +163,7 @@ class MultiPrimitive(Primitive):
             self.primitives[name].filter(idx)
         return self
 
-    @unmasked
+    @nomask
     @torch.no_grad()
     def split(self, idx: Dict[str, Bool[Tensor, "Ns"]]) -> MultiPrimitive:
         """Split instances at given indices"""
@@ -173,40 +174,28 @@ class MultiPrimitive(Primitive):
             self.primitives[name].split(i)
         return self
 
-    def sample_rgb(
-        self,
-        co: Float[Tensor, "Nc 2"],
-        **kwargs,
-    ) -> Float[Tensor, "Nc Np 3"]:
-        return torch.cat(
-            [
-                prim.sample_rgb(co, **kwargs)
-                for prim in self.primitives.values()
-                if len(prim) > 0
-            ],
-            dim=1,
-        )
+    def forward(self, co: Float[Tensor, "Nc 2"]) -> SampleOutput:
+        """Sample primitive values at coordinates.
 
-    def sample_weights(
-        self,
-        co: Float[Tensor, "Nc 2"],
-        **kwargs,
-    ) -> Float[Tensor, "Nc Np"]:
-        return torch.cat(
-            [
-                prim.sample_weights(co, **kwargs)
-                for prim in self.primitives.values()
-                if len(prim) > 0
-            ],
-            dim=1,
-        )
+        Args:
+            co: Coordinates to sample at (N, 2).
+            rasterizer: Rasterizer Callable to aggregate rgb, a, weights.
 
-    @unmasked
+        Returns:
+            SampleOutput object.
+
+        Notes:
+            - Returns zeros if len(self) == 0.
+            - Uses masked batched parameters if context is active.
+        """
+        return SampleOutput.cat(*[p(co) for p in self.primitives.values()])
+
+    @nomask
     @torch.no_grad()
     def append(
         self,
         other: MultiPrimitive,
-        weight: Union[float, Dict[str, float]] = 0.0,
+        weight: float | Dict[str, float] = 0.0,
         ignore_exclusive: bool = False,
     ) -> MultiPrimitive:
         for key, prim in other.primitives.items():
@@ -220,14 +209,14 @@ class MultiPrimitive(Primitive):
                 self.primitives[key] = prim
         return self
 
-    @unmasked
-    def param_groups(self) -> List[Dict[str, Union[nn.Parameter, Any]]]:
+    @nomask
+    def param_groups(self) -> List[Dict[str, nn.Parameter | Any]]:
         groups = []
         for name, prim in self.primitives.items():
             pg = prim.param_groups()
             for g in pg:
                 g["name"] = (
-                    f"{name}$${g['name']}"  # Do not change '$$', needed for OptimizerWrapper
+                    f"{name}$${g['name']}"  # Do not change '$$', needed for OptimizerWrapper (specified in optimizer.py)
                 )
             groups.extend(pg)
         return groups
@@ -280,7 +269,7 @@ class MultiPrimitive(Primitive):
                 regs[f"{p_name}_{r_name}"] = r
         return regs
 
-    @unmasked
+    @nomask
     @torch.no_grad()
     def check_filter(self) -> Optional[Dict[str, Bool[Tensor, "N"]]]:
         filtered = {}
@@ -292,7 +281,7 @@ class MultiPrimitive(Primitive):
             return None
         return filtered
 
-    @unmasked
+    @nomask
     @torch.no_grad()
     def check_split(self) -> Optional[Dict[Bool[Tensor, "N"]]]:
         split = {}

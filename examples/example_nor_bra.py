@@ -47,8 +47,8 @@ run_folder = base_folder / run_name
 
 
 def get_primitive():
-    cubic = CubicFanPrimitive(size=100).to(device)
-    radial = RadialFreqPrimitive(size=200, scale_factor=1.0).to(device)
+    cubic = CubicFanPrimitive(size=10).to(device)
+    radial = RadialFreqPrimitive(size=20).to(device)
     multi = MultiPrimitive({"cubic": cubic, "radial": radial})
     return multi
 
@@ -68,8 +68,8 @@ def train():
     prim = get_primitive()
 
     # Rules
-    alpha_cull = AlphaFilter(threshold=0.5, interval=87)
-    grad_split = GradSplit(threshold=0.002, interval=223)
+    alpha_cull = AlphaFilter(threshold=0.1, interval=17)
+    grad_split = GradSplit(threshold=0.002, interval=26)
     # area_split = AreaSplit(threshold=0.1, interval=87)
     # map_split = MapSplit(msk_tensor_blur10 * 0.6 + 0.05, interval=333)
     ceiling = PrimitiveCeiling(10000)
@@ -171,7 +171,7 @@ def generate():
     )
 
     # Output
-    out = sampler.rasterize(prim, verbose=True)
+    out = sampler.rasterize(prim, verbose=False)
     img = ImgUtils.tensor2pil(out)
     img.save(run_folder / "output.png")
     print(f"Saved output to {run_folder}.")

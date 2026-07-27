@@ -8,7 +8,8 @@ from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
 from ..rendering.sample_output import SampleOutput
-from .base import Primitive, cached_property, unmasked, ParamDef
+from .base import Primitive, cached_property, nomask, ParamDef
+from ..training.splitters.base import Splitter
 
 if TYPE_CHECKING:
     from ..training.regularizers.base import Regularizer
@@ -328,9 +329,12 @@ class MetaPrimitive(Primitive):
         self.primitive.train(mode and self.primitive_trainable)
         return self
 
-    @unmasked
+    @nomask
     def param_groups(self) -> List[Dict[str, nn.Parameter]]:
         groups = super().param_groups()
         if self.primitive_trainable:
-            groups.extend(self.primitive.param_groups())
+            pg = self.primitive.param_groups()
+            for g in pg:
+                g["name"] = f"^^{g['name']}"
+            groups.extend(pg)
         return groups

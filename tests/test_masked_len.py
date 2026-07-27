@@ -5,7 +5,7 @@
 active ``masked`` context. ``len(self)`` therefore returns the masked
 length inside a ``masked`` block, consistent with batched-parameter
 accesses (``self.alphas`` etc.), and any ``cached_property`` deriving a
-shape from ``len(self)`` (e.g. ``CubicFanPrimitive.ref_axis``) stays
+shape from ``len(self)`` stays
 aligned with tensor parameters (``self.thetas`` -> ``R``).
 """
 
@@ -122,16 +122,6 @@ def test_multi_masked_slices_use_masked_len(device):
 # --------------------------------------------------------------------------- #
 
 
-def test_cubic_ref_axis_shape_matches_R_under_mask(device):
-    """``ref_axis`` uses ``expand(len(self), 2)``; ``R`` uses ``self.thetas``.
-    Under a mask they must share the same first dim."""
-    p = CubicFanPrimitive(size=80).to(device)
-    m = _keep_odd(80, device)
-    with p.masked(m):
-        assert p.ref_axis.shape[0] == p.R.shape[0]
-        assert p.ref_axis.shape[0] == len(p)
-
-
 def test_cubic_axes_computable_under_mask(device):
     """``axes = R @ ref.unsqueeze(-1)`` must not raise under a mask."""
     p = CubicFanPrimitive(size=80).to(device)
@@ -156,8 +146,7 @@ def test_cubic_sample_rgb_under_mask(device):
 def test_multi_sample_rgb_under_mask(device):
     """The exact traceback scenario: ``MultiPrimitive.sample_rgb`` under a
     mask. Pre-fix this raised ``RuntimeError: size of tensor a (43) must
-    match size of tensor b (40)`` because ``ref_axis`` used ``len(self)``
-    (full) while ``R`` used the masked ``self.thetas``."""
+    match size of tensor b (40)"""
     radial = RadialFreqPrimitive(size=40).to(device)
     cubic = CubicFanPrimitive(size=40).to(device)
     multi = MultiPrimitive({"radial": radial, "cubic": cubic})

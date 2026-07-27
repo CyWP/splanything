@@ -16,12 +16,12 @@ from torch import Tensor
 from ..rendering.sample_output import SampleOutput
 from ..rendering.processors.base import SampleProcessor
 from ..utils.pytorch import TensorIndex1D
+from ..training.initializers import Initializer
+from ..training.splitters import Splitter
 
 if TYPE_CHECKING:
     from ..training.regularizers.base import Regularizer
     from ..training.refinement.base import SplitRule, FilterRule
-    from ..training.initializers import Initializer
-    from ..training.splitters import Splitter
 
 _logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ class cached_property:
         return value
 
 
-class unmasked:
+class nomask:
     """Descriptor decorator running a Primitive method inside an ``unmasked`` context.
 
     Behaves like the wrapped method outside an ``unmasked()`` context.
@@ -197,7 +197,9 @@ class Primitive(nn.Module):
         for name, p_def in params.items():
             self.add_parameter(
                 name,
-                initializers[name](name, self.size if p_def.batched else 0, p_def.ndim),
+                initializers[name](
+                    name, self.size if p_def.batched else 0, p_def.channels
+                ),
                 batched=p_def.batched,
                 trainable=p_def.trainable,
                 lr_modifier=p_def.lr_mod,
@@ -402,7 +404,7 @@ class Primitive(nn.Module):
 
         self._validate_batched_sizes()
 
-    @unmasked
+    @nomask
     def state_dict(self, *args, **kwargs) -> Dict[str, Any]:
         """Return state dict with class name for serialization."""
         state = super().state_dict(*args, **kwargs)
@@ -425,7 +427,7 @@ class Primitive(nn.Module):
         name = next(iter(batched))
         return object.__getattribute__(self, "_batched_param")(name).shape[0]
 
-    @unmasked
+    @nomask
     def _validate_batched_sizes(self):
         """Ensure all batched parameters have the same first-dimension size."""
         sizes = set()
@@ -489,7 +491,7 @@ class Primitive(nn.Module):
         """
         raise NotImplementedError()
 
-    @unmasked
+    @nomask
     @torch.no_grad()
     def filter(self, idx: Bool[Tensor, "N"]) -> Primitive:
         """In-place index selection of batched elements.
@@ -524,13 +526,13 @@ class Primitive(nn.Module):
         self._context_masks = new_context
         return self
 
-    @unmasked
+    @nomask
     @torch.no_grad()
     def split(self, idx: Bool[Tensor, "N"]) -> Primitive:
         """Split instances at given indices"""
         updates = dict()
         for name, param in self.batched_parameters():
-            updates[name] = self._splitters[name](name, param, idx)
+            updates[name] = self._splitters[name](self, name, param, idx)
         self.update_parameters(updates)
         return self
 
@@ -564,7 +566,9 @@ class Primitive(nn.Module):
         """
         if len(self) == 0:
             return SampleOutput(
-                rgb=torch.zeros((co.shape[0], 3), device=self.device, dtype=co.dtype),
+                rgb=torch.zeros(
+                    (co.shape[0], 1, 3), device=self.device, dtype=co.dtype
+                ),
                 weights=torch.zeros(
                     (co.shape[0], 1), device=self.device, dtype=co.dtype
                 ),
@@ -579,7 +583,7 @@ class Primitive(nn.Module):
             sample = proc(sample, self)
         return sample
 
-    @unmasked
+    @nomask
     @torch.no_grad()
     def append(self, other: Primitive, weight: float = 0.0) -> Primitive:
         """Concatenate another primitive in-place.
@@ -609,7 +613,7 @@ class Primitive(nn.Module):
             prim.append(p)
         return prim
 
-    @unmasked
+    @nomask
     def param_groups(self) -> List[Dict[str, nn.Parameter]]:
         groups = []
         params_dict = {
@@ -723,7 +727,7 @@ class Primitive(nn.Module):
             regs[name] = weight * regularizer(self)
         return regs
 
-    @unmasked
+    @nomask
     @torch.no_grad()
     def check_filter(self) -> Optional[Bool[Tensor, "N"]]:
         if len(self._filter_rules) == 0:
@@ -740,7 +744,7 @@ class Primitive(nn.Module):
             return combined_filter
         return None
 
-    @unmasked
+    @nomask
     @torch.no_grad()
     def check_split(self) -> Optional[Bool[Tensor, "N"]]:
         if len(self._split_rules) == 0:
@@ -757,8 +761,8 @@ class Primitive(nn.Module):
             return combined_split
         return None
 
-    @unmasked
-    def load(self, path: Union[str, Path]):
+    @nomask
+    def load(self, path: str | Path):
         self.load_state_dict(torch.load(path, weights_only=False), strict=False)
 
     def _load_from_state_dict(

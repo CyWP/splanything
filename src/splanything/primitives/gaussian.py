@@ -1,13 +1,11 @@
-from typing import Tuple
+from typing import Tuple, Dict
 
 import torch
 from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
-from .base import Primitive, cached_property
-
-if TYPE_CHECKING:
-    from ..training.splitters import Splitter
+from .base import Primitive, cached_property, ParamDef
+from ..training.splitters import Splitter
 
 
 class GaussianSplitter(Splitter):
@@ -46,7 +44,7 @@ class GaussianPrimitive(Primitive):
             sigma_2=ParamDef(True, True, None),
             color=ParamDef(True, True, (3,)),
             alphas=ParamDef(True, True, None),
-            _ref_axis=ParamDef(False, False, (2,)),
+            ref_axis=ParamDef(False, False, (2,)),
         )
 
     @property
@@ -56,17 +54,6 @@ class GaussianPrimitive(Primitive):
     @cached_property
     def scales(self) -> Tuple[Float[Tensor, "N"], Float[Tensor, "N"]]:
         return (self.sigma_1, self.sigma_2)
-
-    @cached_property
-    def ref_axis(self) -> Float[Tensor, "N 2"]:
-        """Reference axis for rotations.
-
-        Returns:
-            Reference axis (N, 2)
-        """
-        return torch.tensor(
-            self.__class__._ref_axis, device=self.thetas.device, dtype=self.thetas.dtype
-        )
 
     @cached_property
     def R(self) -> Float[Tensor, "N 2 2"]:
@@ -91,7 +78,7 @@ class GaussianPrimitive(Primitive):
             two perpendicular axes of each gradient. ax_2 is ax_1 rotated
             90 degrees counterclockwise.
         """
-        ref = self.ref_axis
+        ref = self.ref_axis[None, :]
         ax_1 = self.R @ ref
         ax_2 = torch.stack([ax_1[:, 1], -ax_1[:, 0]], dim=1)
         return ax_1, ax_2
