@@ -6,6 +6,7 @@ from .gaussian import GaussianPrimitive
 from .radial_freq import RadialFreqPrimitive
 from .meta import MetaPrimitive
 from .multi import MultiPrimitive
+from . import initializers, splitters
 
 __all__ = [
     "Primitive",
@@ -16,4 +17,6 @@ __all__ = [
     "CubicFanPrimitive",
     "GaussianPrimitive",
     "RadialFreqPrimitive",
+    "initializers",
+    "splitters",
 ]

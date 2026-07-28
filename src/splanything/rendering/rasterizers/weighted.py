@@ -44,7 +44,7 @@ class WeightedRasterizer(Rasterizer):
             raise ValueError(f"top_k must be >= 1 or None, got {top_k}.")
         self.top_k = top_k
 
-    def rasterize(self, sample: SampleOutput, **kwargs) -> Float[Tensor, "N 4"]:
+    def rasterize(self, sample: SampleOutput, **kwargs) -> Float[Tensor, "Nc 4"]:
         """Aggregate via weight-normalized weighted average.
 
         Args:

@@ -194,7 +194,7 @@ class TrainSampler(Sampler):
 
         def _run(
             co_batch: Float[Tensor, "n 2"], prim_mask: Bool[Tensor, "Nprims"]
-        ) -> Float[Tensor, "n 4"]:
+        ) -> Float[Tensor, "Nc 4"]:
             with p.masked(prim_mask):
                 return rasterizer(p(co_batch))
 

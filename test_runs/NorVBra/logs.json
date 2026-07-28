@@ -9,8 +9,8 @@
     "msg": [
       "[Epoch 26][INFO] [epoch 26] GradSplit: 10 primitives marked for splitting.",
       "[Epoch 26][INFO] [epoch 26] Combined split: 10 marked for splitting.",
-      "[Epoch 26][INFO] [epoch 26] GradSplit: 13 primitives marked for splitting.",
-      "[Epoch 26][INFO] [epoch 26] Combined split: 13 marked for splitting."
+      "[Epoch 26][INFO] [epoch 26] GradSplit: 15 primitives marked for splitting.",
+      "[Epoch 26][INFO] [epoch 26] Combined split: 15 marked for splitting."
     ]
   },
   "34": {
@@ -29,8 +29,8 @@
     "msg": [
       "[Epoch 52][INFO] [epoch 52] GradSplit: 20 primitives marked for splitting.",
       "[Epoch 52][INFO] [epoch 52] Combined split: 20 marked for splitting.",
-      "[Epoch 52][INFO] [epoch 52] GradSplit: 26 primitives marked for splitting.",
-      "[Epoch 52][INFO] [epoch 52] Combined split: 26 marked for splitting."
+      "[Epoch 52][INFO] [epoch 52] GradSplit: 30 primitives marked for splitting.",
+      "[Epoch 52][INFO] [epoch 52] Combined split: 30 marked for splitting."
     ]
   },
   "68": {
@@ -41,10 +41,10 @@
   },
   "78": {
     "msg": [
-      "[Epoch 78][INFO] [epoch 78] GradSplit: 40 primitives marked for splitting.",
-      "[Epoch 78][INFO] [epoch 78] Combined split: 40 marked for splitting.",
-      "[Epoch 78][INFO] [epoch 78] GradSplit: 53 primitives marked for splitting.",
-      "[Epoch 78][INFO] [epoch 78] Combined split: 53 marked for splitting."
+      "[Epoch 78][INFO] [epoch 78] GradSplit: 38 primitives marked for splitting.",
+      "[Epoch 78][INFO] [epoch 78] Combined split: 38 marked for splitting.",
+      "[Epoch 78][INFO] [epoch 78] GradSplit: 60 primitives marked for splitting.",
+      "[Epoch 78][INFO] [epoch 78] Combined split: 60 marked for splitting."
     ]
   },
   "85": {
@@ -61,10 +61,10 @@
   },
   "104": {
     "msg": [
-      "[Epoch 104][INFO] [epoch 104] GradSplit: 80 primitives marked for splitting.",
-      "[Epoch 104][INFO] [epoch 104] Combined split: 80 marked for splitting.",
-      "[Epoch 104][INFO] [epoch 104] GradSplit: 107 primitives marked for splitting.",
-      "[Epoch 104][INFO] [epoch 104] Combined split: 107 marked for splitting."
+      "[Epoch 104][INFO] [epoch 104] GradSplit: 73 primitives marked for splitting.",
+      "[Epoch 104][INFO] [epoch 104] Combined split: 73 marked for splitting.",
+      "[Epoch 104][INFO] [epoch 104] GradSplit: 120 primitives marked for splitting.",
+      "[Epoch 104][INFO] [epoch 104] Combined split: 120 marked for splitting."
     ]
   },
   "119": {
@@ -75,10 +75,10 @@
   },
   "130": {
     "msg": [
-      "[Epoch 130][INFO] [epoch 130] GradSplit: 147 primitives marked for splitting.",
-      "[Epoch 130][INFO] [epoch 130] Combined split: 147 marked for splitting.",
-      "[Epoch 130][INFO] [epoch 130] GradSplit: 212 primitives marked for splitting.",
-      "[Epoch 130][INFO] [epoch 130] Combined split: 212 marked for splitting."
+      "[Epoch 130][INFO] [epoch 130] GradSplit: 138 primitives marked for splitting.",
+      "[Epoch 130][INFO] [epoch 130] Combined split: 138 marked for splitting.",
+      "[Epoch 130][INFO] [epoch 130] GradSplit: 232 primitives marked for splitting.",
+      "[Epoch 130][INFO] [epoch 130] Combined split: 232 marked for splitting."
     ]
   },
   "136": {
@@ -87,54 +87,14 @@
       "[Epoch 136][INFO] [epoch 136] AlphaFilter: 0 primitives marked for filtering."
     ]
   },
-  "153": {
+  "140": {
     "msg": [
-      "[Epoch 153][INFO] [epoch 153] AlphaFilter: 0 primitives marked for filtering.",
-      "[Epoch 153][INFO] [epoch 153] AlphaFilter: 0 primitives marked for filtering."
+      "[Epoch 140][INFO] [epoch 140] Preview closed, stopping training."
     ]
   },
-  "156": {
+  "141": {
     "msg": [
-      "[Epoch 156][INFO] [epoch 156] GradSplit: 284 primitives marked for splitting.",
-      "[Epoch 156][INFO] [epoch 156] Combined split: 284 marked for splitting.",
-      "[Epoch 156][INFO] [epoch 156] GradSplit: 426 primitives marked for splitting.",
-      "[Epoch 156][INFO] [epoch 156] Combined split: 426 marked for splitting."
-    ]
-  },
-  "170": {
-    "msg": [
-      "[Epoch 170][INFO] [epoch 170] AlphaFilter: 0 primitives marked for filtering.",
-      "[Epoch 170][INFO] [epoch 170] AlphaFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "182": {
-    "msg": [
-      "[Epoch 182][INFO] [epoch 182] GradSplit: 468 primitives marked for splitting.",
-      "[Epoch 182][INFO] [epoch 182] Combined split: 468 marked for splitting.",
-      "[Epoch 182][INFO] [epoch 182] GradSplit: 820 primitives marked for splitting.",
-      "[Epoch 182][INFO] [epoch 182] Combined split: 820 marked for splitting."
-    ]
-  },
-  "187": {
-    "msg": [
-      "[Epoch 187][INFO] [epoch 187] AlphaFilter: 0 primitives marked for filtering.",
-      "[Epoch 187][INFO] [epoch 187] AlphaFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "204": {
-    "msg": [
-      "[Epoch 204][INFO] [epoch 204] AlphaFilter: 0 primitives marked for filtering.",
-      "[Epoch 204][INFO] [epoch 204] AlphaFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "205": {
-    "msg": [
-      "[Epoch 205][INFO] [epoch 205] Preview closed, stopping training."
-    ]
-  },
-  "206": {
-    "msg": [
-      "[Epoch 206][INFO] [epoch 206] Checkpoint saved to /home/cyvv/Repos/splanything/test_runs/NorVBra"
+      "[Epoch 141][INFO] [epoch 141] Checkpoint saved to /home/cyvv/Repos/splanything/test_runs/NorVBra"
     ]
   }
 }

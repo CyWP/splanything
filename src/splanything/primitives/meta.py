@@ -9,13 +9,13 @@ from torch import Tensor
 
 from ..rendering.sample_output import SampleOutput
 from .base import Primitive, cached_property, nomask, ParamDef
-from ..training.splitters.base import Splitter
+from .splitters.base import Splitter
 
 if TYPE_CHECKING:
     from ..training.regularizers.base import Regularizer
     from ..training.refinement.base import SplitRule, FilterRule
-    from ..training.initializers import Initializer
-    from ..training.splitters import Splitter
+    from .initializers.base import Initializer
+    from .splitters.base import Splitter
 
 _logger = logging.getLogger(__name__)
 

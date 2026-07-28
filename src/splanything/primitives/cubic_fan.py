@@ -6,7 +6,7 @@ from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
 from .base import Primitive, ParamDef, cached_property
-from ..training.splitters.base import Splitter
+from .splitters.base import Splitter
 
 
 class CubicFanSplitter(Splitter):

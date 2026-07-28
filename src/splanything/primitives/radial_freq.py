@@ -9,7 +9,7 @@ from torch import Tensor
 
 from .base import Primitive, cached_property, ParamDef
 
-from ..training.initializers import Initializer
+from .initializers.base import Initializer
 
 
 class RadialFreqInitializer(Initializer):

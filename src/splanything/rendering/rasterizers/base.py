@@ -25,11 +25,11 @@ class Rasterizer(ABC):
         self,
         sample: SampleOutput,
         **kwargs,
-    ) -> Float[Tensor, "N 4"]:
+    ) -> Float[Tensor, "Nc 4"]:
         return self.rasterize(sample, **kwargs)
 
     @abstractmethod
-    def rasterize(self, sample: SampleOutput, **kwargs) -> Float[Tensor, "N 4"]:
+    def rasterize(self, sample: SampleOutput, **kwargs) -> Float[Tensor, "Nc 4"]:
         """Aggregate sample data to RGBA output.
 
         Args:

@@ -23,7 +23,7 @@ class ProbabilisticRasterizer(Rasterizer):
     def __init__(self, top_k: int = 1):
         self.top_k = top_k
 
-    def rasterize(self, sample: SampleOutput, **kwargs) -> Float[Tensor, "N 4"]:
+    def rasterize(self, sample: SampleOutput, **kwargs) -> Float[Tensor, "Nc 4"]:
         w = sample.weights.clamp(min=0)
         Nc, Np = w.shape
         valid = w.sum(dim=1) > 0
@@ -56,4 +56,5 @@ class ProbabilisticRasterizer(Rasterizer):
             # Monte Carlo estimate of expected color
             rgb[valid] = rgb_selected.mean(dim=1).clamp(0, 1)
         alpha = w.sum(dim=1).clamp(0, 1)
+        alpha = (alpha >= torch.rand_like(alpha)).to(alpha.dtype)
         return torch.cat([rgb, alpha[:, None]], dim=1)

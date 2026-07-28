@@ -723,3 +723,141 @@ class ImgUtils:
             sampled[:, 0].add_((torch.rand(N, device=map.device) - 0.5) / H)
             sampled[:, 1].add_((torch.rand(N, device=map.device) - 0.5) / W)
         return sampled
+
+    @staticmethod
+    @torch.no_grad()
+    def distance_map(
+        coords: Float[Tensor, "Nc 2"],
+        H: int,
+        W: int,
+        mode: str = "MIN",
+        k: int = 1,
+    ) -> Float[Tensor, "1 1 H W"]:
+        """Compute a per-pixel distance map to a set of 2D coordinates.
+
+        Pixel centers follow :meth:`gen_px_coords`; distances are Euclidean.
+
+        Args:
+            coords: Coordinates (Nc, 2) in pixel-center convention
+                (values in [0, 1]).
+            H: Output map height.
+            W: Output map width.
+            mode: Reduction mode. One of:
+                - ``"MIN"``: distance to the closest point.
+                - ``"MIN_K"``: mean distance to the ``k`` closest points.
+                - ``"MEAN"``: mean distance to all points.
+                - ``"MAX"``: distance to the farthest point.
+                - ``"MAX_K"``: mean distance to the ``k`` farthest points.
+            k: Number of points for ``MIN_K`` / ``MAX_K``; ignored by other
+                modes.
+
+        Returns:
+            Distance map (1, 1, H, W).
+
+        Raises:
+            ValueError: If ``mode`` is unknown, ``Nc == 0``, or ``k`` is not
+                in ``[1, Nc]``.
+
+        Notes:
+            - Distances are computed in normalized pixel-center space, so
+              values lie in ``[0, sqrt(2)]``.
+        """
+        Nc = coords.shape[0]
+        if Nc == 0:
+            raise ValueError("distance_map requires at least one coordinate.")
+        if k < 1 or k > Nc:
+            raise ValueError(f"k must be in [1, {Nc}], got k={k}.")
+
+        co_grid = ImgUtils.gen_px_coords(H, W, coords.device)  # (2, H, W)
+        co_flat = co_grid.reshape(2, -1).T  # (H*W, 2)
+        dists = torch.cdist(co_flat, coords.to(co_flat.dtype))  # (H*W, Nc)
+
+        if mode == "MIN":
+            reduced = dists.min(dim=1).values
+        elif mode == "MIN_K":
+            reduced = torch.topk(dists, k, largest=False).values.mean(dim=1)
+        elif mode == "MEAN":
+            reduced = dists.mean(dim=1)
+        elif mode == "MAX":
+            reduced = dists.max(dim=1).values
+        elif mode == "MAX_K":
+            reduced = torch.topk(dists, k, largest=True).values.mean(dim=1)
+        else:
+            raise ValueError(
+                f"Unknown mode '{mode}'; expected one of "
+                f"'MIN', 'MIN_K', 'MEAN', 'MAX', 'MAX_K'."
+            )
+
+        return reduced.reshape(1, 1, H, W)
+
+    @staticmethod
+    @torch.no_grad()
+    def vec_map(
+        coords: Float[Tensor, "Nc 2"],
+        H: int,
+        W: int,
+        mode: str = "MIN",
+        k: int = 1,
+    ) -> Tuple[Float[Tensor, "1 1 H W"], Float[Tensor, "1 1 H W"]]:
+        """Compute per-axis delta maps to a set of 2D coordinates.
+
+        Same reductions as :meth:`distance_map` but applied independently
+        along the y and x axes using **signed** coordinate differences
+        (``pixel_axis - coord_axis``) along each axis.
+
+        Args:
+            coords: Coordinates (Nc, 2) in pixel-center convention
+                (values in [0, 1]). First column is y, second is x.
+            H: Output map height.
+            W: Output map width.
+            mode: Reduction mode. One of:
+                - ``"MIN"``: smallest signed delta (per axis).
+                - ``"MIN_K"``: mean of the ``k`` smallest signed deltas (per axis).
+                - ``"MEAN"``: mean signed delta (per axis).
+                - ``"MAX"``: largest signed delta (per axis).
+                - ``"MAX_K"``: mean of the ``k`` largest signed deltas (per axis).
+            k: Number of points for ``MIN_K`` / ``MAX_K``; ignored by other
+                modes.
+
+        Returns:
+            Tuple of (y_delta, x_delta). Each map (1, 1, H, W) holds per-axis
+            signed delta values in normalized units.
+
+        Raises:
+            ValueError: If ``mode`` is unknown, ``Nc == 0``, or ``k`` is not
+                in ``[1, Nc]``.
+        """
+        Nc = coords.shape[0]
+        if Nc == 0:
+            raise ValueError("vec_map requires at least one coordinate.")
+        if k < 1 or k > Nc:
+            raise ValueError(f"k must be in [1, {Nc}], got k={k}.")
+
+        co_grid = ImgUtils.gen_px_coords(H, W, coords.device)  # (2, H, W)
+        y_axis = co_grid[0].reshape(-1).to(coords.dtype)  # (H*W,)
+        x_axis = co_grid[1].reshape(-1).to(coords.dtype)  # (H*W,)
+
+        y_diff = y_axis[:, None] - coords[:, 0]  # (H*W, Nc)
+        x_diff = x_axis[:, None] - coords[:, 1]  # (H*W, Nc)
+
+        def _reduce(
+            diffs: Float[Tensor, "HW Nc"],
+        ) -> Float[Tensor, " HW"]:
+            if mode == "MIN":
+                return diffs.min(dim=1).values
+            if mode == "MIN_K":
+                return torch.topk(diffs, k, largest=False).values.mean(dim=1)
+            if mode == "MEAN":
+                return diffs.mean(dim=1)
+            if mode == "MAX":
+                return diffs.max(dim=1).values
+            if mode == "MAX_K":
+                return torch.topk(diffs, k, largest=True).values.mean(dim=1)
+            raise ValueError(
+                f"Unknown mode '{mode}'; expected one of "
+                f"'MIN', 'MIN_K', 'MEAN', 'MAX', 'MAX_K'."
+            )
+
+        y_delta = _reduce(y_diff).reshape(1, 1, H, W)
+        x_delta = _reduce(x_diff).reshape(1, 1, H, W)
+        return y_delta, x_delta

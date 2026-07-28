@@ -40,7 +40,7 @@ from splanything.rendering.rasterizers import (
     WeightedRasterizer,
 )
 
-device = torch.device("cuda:0")
+device = torch.device("cpu")
 run_name = "NorVBra"
 base_folder = Path("../test_runs").resolve()
 run_folder = base_folder / run_name

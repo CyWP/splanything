@@ -16,8 +16,8 @@ from torch import Tensor
 from ..rendering.sample_output import SampleOutput
 from ..rendering.processors.base import SampleProcessor
 from ..utils.pytorch import TensorIndex1D
-from ..training.initializers import Initializer
-from ..training.splitters import Splitter
+from .initializers.base import Initializer
+from .splitters.base import Splitter
 
 if TYPE_CHECKING:
     from ..training.regularizers.base import Regularizer

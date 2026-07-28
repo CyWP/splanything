@@ -5,7 +5,7 @@ from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
 from .base import Primitive, cached_property, ParamDef
-from ..training.splitters import Splitter
+from .splitters.base import Splitter
 
 
 class GaussianSplitter(Splitter):

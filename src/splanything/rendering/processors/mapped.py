@@ -1,3 +1,4 @@
+from __future__ import annotations
 from torch import Tensor
 from typing import Callable, Optional
 from jaxtyping import Float

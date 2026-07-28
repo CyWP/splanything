@@ -1,8 +1,13 @@
+from __future__ import annotations
 from torch import Tensor
-from typing import Callable, Optional
+from typing import Callable, Optional, TYPE_CHECKING
 from jaxtyping import Float
 
-from .base import SampleProcessor, SampleOutput
+from .base import SampleProcessor
+from ..sample_output import SampleOutput
+
+if TYPE_CHECKING:
+    from ...primitives.base import Primitive
 
 
 class DistanceSampleProcessor(SampleProcessor):
