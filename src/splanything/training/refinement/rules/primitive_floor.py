@@ -12,55 +12,34 @@ from ..base import FilterRule, RefinementRule, SplitRule
 
 
 class PrimitiveFloor(SplitRule):
-    """Force splits when the primitive count drops below ``min_length``.
+    """Enforce a minimum primitive count, splitting when below ``min_length``.
 
-    A floor on the number of primitives a ``Primitive`` may contain.
-    When the rule fires and ``len(primitive) < min_length``, it returns
-    a boolean split mask that flags exactly ``min_length - len(primitive)``
-    elements for splitting, raising the primitive back to the floor.
-    Above the floor (``can_apply`` returns False) the rule is a no-op
-    and the primitive is left untouched.
+    When ``len(primitive) < min_length``, exactly ``min_length - N``
+    primitives are flagged for splitting. Above the floor, the rule is
+    a no-op.
 
-    The selection of which primitives to split is governed by
-    ``strategy``:
+    Selection strategy for which primitives to split:
 
-    - ``"stochastic"``: draw one uniform random score per primitive and
-      split the ``k`` highest. Equivalent to uniform random splitting.
-    - ``"map"``: bilinearly sample ``map`` at each primitive's centroid
-      and split the ``k`` primitives whose sampled values are highest.
-      Primitives in high-valued regions of the map get split first.
-    - ``"map_stochastic"``: same as ``"map"`` but the score is the
-      sampled value multiplied by an independent uniform random draw.
-      Primitives in high-valued regions are split on average more often,
-      with stochastic variation per call.
-    - ``"rule"``: defer ranking to another ``RefinementRule`` whose
-      ``criterion(primitive)`` produces the per-primitive score.
-      ``descending`` controls the cull direction: ``False`` (default)
-      splits the ``k`` highest scores; ``True`` splits the ``k`` lowest
-      scores.
+    - ``"stochastic"``: uniform random splitting.
+    - ``"map"``: bilinearly sample ``map`` at centroids; split primitives
+      with highest sampled values.
+    - ``"map_stochastic"``: sampled value * uniform random; probabilistically
+      weighted toward high-valued regions.
+    - ``"rule"``: defer ranking to another ``RefinementRule.criterion``.
+      ``descending=True`` splits the lowest scores; ``False`` (default)
+      splits the highest.
 
     Attributes:
         min_length: Minimum allowed number of primitives.
-        strategy: Selection strategy; one of ``"stochastic"``,
-            ``"map"``, ``"map_stochastic"``, ``"rule"``.
-        map: Score map (B, 1, H, W). Required for ``"map"`` and
-            ``"map_stochastic"``. Centroids are assumed to be in [0, 1],
-            matching ``gen_px_coords`` convention.
-        rule: ``RefinementRule`` whose ``criterion`` ranks primitives.
-            Required for ``"rule"``. Any rule with a ``criterion``
-            method works (``FilterRule`` or ``SplitRule``).
-        descending: For ``"rule"``, split the ``k`` lowest scores when
-            True; split the ``k`` highest scores when False. Ignored
-            for the other strategies (they always split the ``k``
-            highest scores).
-        interval: Fire every N invocations of ``__call__``.
+        strategy: Selection strategy.
+        map: Score map (B, 1, H, W) for ``"map"`` / ``"map_stochastic"``.
+        rule: ``RefinementRule`` for ``"rule"`` strategy.
+        descending: For ``"rule"``, split lowest when True.
+        interval: Fire every N invocations.
 
     Notes:
-        - Implements the ``SplitRule`` interface: ``judge`` returns
-          True == SPLIT and False == IGNORE, matching the convention
-          of the other split rules in this module.
-        - Only the first batch element of ``map`` (``map[0]``) is
-          sampled, consistent with ``MapFilter`` and ``MapSplit``.
+        - Only ``map[0]`` (first batch element) is sampled.
+        - Centroids must be in [0, 1] UV coordinates.
     """
 
     STRATEGIES = ("stochastic", "map", "map_stochastic", "rule")

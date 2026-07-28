@@ -6,36 +6,35 @@ from ..base import RefinementRule, SplitRule
 
 
 class IsoSplit(SplitRule):
-    """Split primitives that are too anisotropic.
+    """Split primitives whose aspect ratio deviates from isotropic.
 
-    Identifies primitives where scales[0] / scales[1]
-    deviates significantly from 1, indicating anisotropy. Splits them
-    to become more isotropic.
+    Splits primitives where ``scales[0] / scales[1]`` is above
+    ``threshold`` or below ``1 / threshold``, indicating significant
+    anisotropy.
 
     Attributes:
-        threshold: Ratio threshold for splitting (e.g., threshold=2 means
-            split if scale[0]/scale[1] > 2 or < 0.5).
-        interval: Apply every N epochs.
+        threshold: Anisotropy ratio threshold (default 5.0).
+        interval: Fire every N invocations.
     """
 
     def __init__(self, threshold: float = 5.0, interval: int = 10):
-        """Initialize IsoSplit rule.
-
+        """
         Args:
-            threshold: Anisotropy ratio threshold for splitting.
-            interval: Apply every N epochs.
+            threshold: Split if ``s1/s2 > threshold`` or ``s1/s2 < 1/threshold``
+                (default 5.0).
+            interval: Fire every N invocations (default 10).
         """
         super().__init__(interval=interval)
         self.threshold = threshold
 
     def criterion(self, primitive: Primitive, **kwargs) -> Float[Tensor, "N"]:
-        """Compute per-primitive anisotropy ratios.
+        """Compute per-primitive scale ratios.
 
         Args:
             primitive: Primitive to evaluate.
 
         Returns:
-            scale_1 / scale_2 ratios (N,).
+            Scale ratios (N,) = ``scales[0] / (scales[1] + 1e-8)``.
         """
         scale_1, scale_2 = primitive.scales
         return scale_1 / (scale_2 + 1e-8)

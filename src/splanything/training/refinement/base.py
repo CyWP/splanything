@@ -14,20 +14,40 @@ _logger = logging.getLogger(__name__)
 
 
 class CriterionProcessor(ABC):
+    """Transform a refinement criterion before judgement.
+
+    Subclasses implement ``apply`` to modify the per-primitive criterion
+    tensor (e.g., spatially weighting it via a map). Multiple processors
+    can be chained on a single ``RefinementRule``.
+
+    Notes:
+        - The criterion shape is ``(N, ...)`` where ``N`` is the number
+          of primitives. Processors must preserve this leading dimension.
+    """
+
     @abstractmethod
     def apply(
         self,
         primitive: Primitive,
-        rule: "RefinementRule",
+        rule: RefinementRule,
         criterion: Float[Tensor, "N ..."],
         **kwargs,
     ) -> Float[Tensor, "N ..."]:
-        """Modify the criterion."""
+        """Modify the criterion.
+
+        Args:
+            primitive: Primitive being evaluated.
+            rule: The refinement rule this processor belongs to.
+            criterion: Per-primitive criterion (N, ...).
+
+        Returns:
+            Modified criterion (N, ...).
+        """
 
     def __call__(
         self,
         primitive: Primitive,
-        rule: "RefinementRule",
+        rule: RefinementRule,
         criterion: Float[Tensor, "N ..."],
         **kwargs,
     ) -> Float[Tensor, "N ..."]:
@@ -37,9 +57,10 @@ class CriterionProcessor(ABC):
 class RefinementRule(ABC):
     """Base class for primitive refinement rules.
 
-    A rule may be shared across multiple primitives. Per-primitive state
-    (call counts, invocation ticks) is tracked via a weak-key registry so
-    that primitive lifetime controls registry entries.
+    A rule computes a per-primitive criterion, optionally transforms it
+    through a chain of ``CriterionProcessor`` s, then judges which
+    primitives to modify. The rule may be shared across multiple
+    primitives; per-primitive state is tracked via a weak-key registry.
 
     Attributes:
         interval: Fire every N invocations of ``__call__``.
@@ -52,6 +73,9 @@ class RefinementRule(ABC):
           ``register(primitive)`` or lazily on first ``__call__``.
         - Registry keys are weak; entries vanish when the primitive is
           garbage-collected.
+
+    Warnings:
+        - Subclasses must implement ``criterion`` and ``judge``.
     """
 
     def __init__(
@@ -63,24 +87,23 @@ class RefinementRule(ABC):
         """
         Args:
             interval: Fire every N invocations of ``__call__`` (default 1).
-            processors: Optional list of ``CriterionProcessor`` instances
-                applied to the criterion before ``judge``.
+            processors: Optional list of ``CriterionProcessor`` applied
+                to the criterion before ``judge``.
         """
         self.interval = interval
         self.processors: List[CriterionProcessor] = (
             [] if processors is None else list(processors)
         )
-        self._calls: "weakref.WeakKeyDictionary[Primitive, int]" = (
+        self._calls: weakref.WeakKeyDictionary[Primitive, int] = (
             weakref.WeakKeyDictionary()
         )
-        self._ticks: "weakref.WeakKeyDictionary[Primitive, int]" = (
+        self._ticks: weakref.WeakKeyDictionary[Primitive, int] = (
             weakref.WeakKeyDictionary()
         )
 
     def register(self, primitive: Primitive) -> None:
-        """Register a primitive with this rule.
+        """Register a primitive, initialising per-primitive counters.
 
-        Initialises the per-primitive call and tick counters to 0.
         Idempotent: re-registering an already-known primitive is a no-op.
 
         Args:
@@ -91,7 +114,7 @@ class RefinementRule(ABC):
             self._ticks[primitive] = 0
 
     def unregister(self, primitive: Primitive) -> None:
-        """Remove a primitive's per-primitive state from this rule.
+        """Remove a primitive's per-primitive state.
 
         Args:
             primitive: Primitive to unregister.
@@ -157,10 +180,10 @@ class RefinementRule(ABC):
     def __call__(self, primitive: Primitive, **kwargs) -> Optional[Any]:
         """Invoke the rule, gating on interval and ``can_apply``.
 
-        Per-primitive ticks increment on every invocation; the rule
+        Per-primitive ticks increment on every invocation. The rule
         fires only when ``ticks % interval == 0`` and ``can_apply``
         returns True. On a successful fire, ``calls`` is incremented
-        after ``apply`` runs, and the result is returned.
+        after ``apply`` runs.
 
         Args:
             primitive: Primitive to evaluate.
@@ -182,18 +205,44 @@ class RefinementRule(ABC):
 
 
 class FilterRule(RefinementRule, ABC):
+    """Refinement rule that produces a boolean keep/cull mask.
+
+    ``judge`` returns ``True`` == KEEP, ``False`` == REMOVE.
+    """
+
     @abstractmethod
     def judge(self, criterion: Float[Tensor, "N ..."]) -> Optional[Bool[Tensor, "N"]]:
-        """Returns boolean mask, True==KEEP, False==REMOVE."""
+        """Threshold the criterion into a keep mask.
+
+        Args:
+            criterion: Per-primitive criterion (N, ...).
+
+        Returns:
+            keep: Boolean mask (N,). True = KEEP, False = REMOVE.
+        """
 
     def log_result(self, result: Optional[Bool[Tensor, "N"]]) -> str:
-        return f"{self.__class__.__name__}: {0 if result is None else (~result).sum()} primitives marked for filtering."
+        n = 0 if result is None else (~result).sum()
+        return f"{self.__class__.__name__}: {n} primitives marked for filtering."
 
 
 class SplitRule(RefinementRule, ABC):
+    """Refinement rule that produces a boolean split/ignore mask.
+
+    ``judge`` returns ``True`` == SPLIT, ``False`` == IGNORE.
+    """
+
     @abstractmethod
     def judge(self, criterion: Float[Tensor, "N ..."]) -> Bool[Tensor, "N"]:
-        """Returns a boolean mask, True==SPLIT, False==IGNORE."""
+        """Threshold the criterion into a split mask.
+
+        Args:
+            criterion: Per-primitive criterion (N, ...).
+
+        Returns:
+            split: Boolean mask (N,). True = SPLIT, False = IGNORE.
+        """
 
     def log_result(self, result: Optional[Bool[Tensor, "N"]]) -> str:
-        return f"{self.__class__.__name__}: {0 if result is None else (result).sum()} primitives marked for splitting."
+        n = 0 if result is None else result.sum()
+        return f"{self.__class__.__name__}: {n} primitives marked for splitting."

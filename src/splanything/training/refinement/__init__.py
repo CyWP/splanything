@@ -1,4 +1,17 @@
-"""Rules for refinement (filtering, splitting, general finetuning) during training."""
+"""Refinement rules for adaptive primitive modification during training.
+
+Rules modify a ``Primitive`` in-place (filtering, splitting) based on
+per-primitive criteria. Processors transform the criterion before
+judgement.
+
+Exposes:
+- FilterRule
+- SplitRule
+- MapFilter
+- MapSplit
+- rules
+- processors
+"""
 
 from . import processors, rules
 from .base import FilterRule, SplitRule

@@ -12,53 +12,33 @@ from ..base import FilterRule, RefinementRule
 
 
 class PrimitiveCeiling(FilterRule):
-    """Cull excess primitives when their count exceeds ``max_length``.
+    """Cap the number of primitives, culling excess when above ``max_length``.
 
-    A cap on the number of primitives a ``Primitive`` may contain. When
-    the rule fires and ``len(primitive) > max_length``, it returns a
-    boolean keep mask that drops exactly ``len(primitive) - max_length``
-    elements, lowering the primitive back to the ceiling. Below the cap
-    (``can_apply`` returns False) the rule is a no-op and the primitive
-    is left untouched.
+    When ``len(primitive) > max_length``, exactly ``N - max_length``
+    primitives are culled. Below the cap, the rule is a no-op.
 
-    The selection of which primitives to drop is governed by ``strategy``:
+    Selection strategy for which primitives to drop:
 
-    - ``"stochastic"``: draw one uniform random score per primitive and
-      drop the ``k`` lowest. Equivalent to uniform random culling.
-    - ``"map"``: bilinearly sample ``map`` at each primitive's centroid
-      and drop the ``k`` primitives whose sampled values are lowest.
-      Primitives in low-valued regions of the map get culled first.
-    - ``"map_stochastic"``: same as ``"map"`` but the score is the
-      sampled value multiplied by an independent uniform random draw.
-      Primitives in high-valued regions can still be dropped, with
-      probability proportional to their sampled value.
-    - ``"rule"``: defer ranking to another ``FilterRule`` whose
-      ``criterion(primitive)`` produces the per-primitive score.
-      ``descending`` controls the cull direction: ``False`` drops the
-      ``k`` lowest scores (ascending cull); ``True`` drops the ``k``
-      highest scores (descending cull).
+    - ``"stochastic"``: uniform random culling.
+    - ``"map"``: bilinearly sample ``map`` at centroids; drop primitives
+      with lowest sampled values.
+    - ``"map_stochastic"``: sampled value * uniform random; probabilistically
+      weighted toward low-valued regions.
+    - ``"rule"``: defer ranking to another ``FilterRule.criterion``.
+      ``descending=True`` drops the highest scores; ``False`` drops the
+      lowest.
 
     Attributes:
         max_length: Maximum allowed number of primitives.
-        strategy: Selection strategy; one of ``"stochastic"``,
-            ``"map"``, ``"map_stochastic"``, ``"rule"``.
-        map: Probability map (B, 1, H, W) in [0, 1]. Required for
-            ``"map"`` and ``"map_stochastic"``. Centroids are assumed
-            to be in [0, 1], matching ``gen_px_coords`` convention.
-        rule: ``FilterRule`` whose ``criterion`` ranks primitives.
-            Required for ``"rule"``.
-        descending: For ``"rule"``, drop the ``k`` highest scores when
-            True; drop the ``k`` lowest scores when False. Ignored
-            for the other strategies (they always drop the ``k`` lowest
-            scores).
-        interval: Fire every N invocations of ``__call__``.
+        strategy: Selection strategy.
+        map: Score map (B, 1, H, W) for ``"map"`` / ``"map_stochastic"``.
+        rule: ``FilterRule`` for ``"rule"`` strategy.
+        descending: For ``"rule"``, cull highest when True.
+        interval: Fire every N invocations.
 
     Notes:
-        - Implements the ``FilterRule`` interface: ``judge`` returns
-          True == KEEP and False == CULL, matching the convention of
-          the other rules in this module.
-        - Only the first batch element of ``map`` (``map[0]``) is
-          sampled, consistent with ``MapFilter`` and ``MapSplit``.
+        - Only ``map[0]`` (first batch element) is sampled.
+        - Centroids must be in [0, 1] UV coordinates.
     """
 
     STRATEGIES = ("stochastic", "map", "map_stochastic", "rule")

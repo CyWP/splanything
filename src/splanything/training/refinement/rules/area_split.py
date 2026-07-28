@@ -6,34 +6,33 @@ from ..base import RefinementRule, SplitRule
 
 
 class AreaSplit(SplitRule):
-    """Split primitives based on area/scale threshold.
+    """Split primitives whose area exceeds a threshold.
 
-    Identifies primitives whose area exceeds a given threshold and splits
-    them into smaller primitives for better coverage of fine details.
+    Identifies primitives covering too much of the image and splits them
+    into smaller primitives for finer detail coverage.
 
     Attributes:
-        threshold: Maximum allowed area before splitting.
-        interval: Apply every N epochs.
+        threshold: Maximum area before splitting.
+        interval: Fire every N invocations.
     """
 
     def __init__(self, threshold: float = 1e-4, interval: int = 10):
-        """Initialize AreaSplit rule.
-
+        """
         Args:
-            threshold: Maximum area before splitting.
-            interval: Apply every N epochs.
+            threshold: Maximum allowed area before splitting (default 1e-4).
+            interval: Fire every N invocations (default 10).
         """
         super().__init__(interval=interval)
         self.threshold = threshold
 
     def criterion(self, primitive: Primitive, **kwargs) -> Float[Tensor, "N"]:
-        """Compute per-primitive areas.
+        """Read per-primitive areas.
 
         Args:
             primitive: Primitive to evaluate.
 
         Returns:
-            Areas tensor (N,).
+            Areas (N,).
         """
         return primitive.areas
 

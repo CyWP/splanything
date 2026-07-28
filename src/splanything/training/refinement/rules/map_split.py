@@ -10,27 +10,20 @@ from ..base import RefinementRule, SplitRule
 
 
 class MapSplit(SplitRule):
-    """Split primitives based on a probability map sampled at centroids.
+    """Split primitives by sampling a spatial probability map at centroids.
 
-    The map (shape ``(B, 1, H, W)``) is bilinearly sampled at each
-    primitive's centroid to produce a per-primitive probability in
-    ``[0, 1]``. Each primitive is then SPLIT or IGNORED by a Bernoulli
-    draw against its sampled probability.
-
-    Use this rule when splitting intensity should vary spatially — for
-    example, to concentrate resolution in specified regions.
+    The map (B, 1, H, W) is bilinearly sampled at each primitive's
+    centroid. Each primitive is independently split or ignored via a
+    Bernoulli draw against its sampled probability. Useful when
+    splitting intensity should vary spatially.
 
     Attributes:
-        map: Probability map (B, 1, H, W). Values in [0, 1].
-        interval: Fire every N invocations of ``__call__``.
+        map: Probability map (B, 1, H, W) with values in [0, 1].
+        interval: Fire every N invocations.
 
     Notes:
-        - Only the first batch element of the map (``map[0]``) is sampled.
-          Use a batch dimension of 1 unless you want different per-batch
-          behaviour.
-        - Centroids are assumed to be in ``[0, 1]`` (matching how
-          ``CubicFanPrimitive``, ``RadialFreqPrimitive``, and ``Gaussian``
-          initialise them via ``torch.rand``).
+        - Only ``map[0]`` (first batch element) is sampled.
+        - Centroids must be in [0, 1] UV coordinates.
     """
 
     def __init__(
@@ -38,6 +31,11 @@ class MapSplit(SplitRule):
         map: Float[Tensor, "B 1 H W"],
         interval: int = 1,
     ):
+        """
+        Args:
+            map: Probability map (B, 1, H, W), values in [0, 1].
+            interval: Fire every N invocations (default 1).
+        """
         super().__init__(interval=interval)
         self.map = map
 
@@ -45,7 +43,7 @@ class MapSplit(SplitRule):
         """Sample the probability map at each primitive's centroid.
 
         Args:
-            primitive: Primitive whose centroids define the sample locations.
+            primitive: Primitive whose centroids define sample locations.
 
         Returns:
             Per-primitive probabilities (N,).

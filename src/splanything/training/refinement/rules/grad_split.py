@@ -7,35 +7,34 @@ from ..base import RefinementRule, SplitRule
 
 
 class GradSplit(SplitRule):
-    """Split primitives based on gradient magnitude relative to area.
+    """Split primitives with high gradient magnitude relative to area.
 
-    Identifies primitives with high gradient-to-area ratios (indicating
-    high detail regions) and splits them into smaller primitives for
-    better reconstruction fidelity.
+    Aggregates the absolute gradient across all parameter groups,
+    weights by alpha, and splits primitives with large
+    gradient-to-area ratios (indicating high-detail regions).
 
     Attributes:
-        threshold: Ratio threshold for splitting (grad_mag * alphas).
-        interval: Apply every N epochs.
+        threshold: Split threshold on ``grad_mag * alphas``.
+        interval: Fire every N invocations.
     """
 
     def __init__(self, threshold: float = 0.05, interval: int = 10):
-        """Initialize GradSplit rule.
-
+        """
         Args:
-            threshold: Gradient-to-area ratio threshold for splitting.
-            interval: Apply every N epochs.
+            threshold: Gradient-to-area ratio threshold (default 0.05).
+            interval: Fire every N invocations (default 10).
         """
         super().__init__(interval=interval)
         self.threshold = threshold
 
     def criterion(self, primitive: Primitive, **kwargs) -> Float[Tensor, "N"]:
-        """Compute per-primitive gradient-to-area ratios.
+        """Compute per-primitive gradient-alpha products.
 
         Args:
             primitive: Primitive to evaluate.
 
         Returns:
-            Ratios tensor (N,).
+            Gradient-alpha products (N,).
         """
         areas = (
             primitive.areas
@@ -47,7 +46,7 @@ class GradSplit(SplitRule):
         grad_mag = torch.zeros(
             (len(primitive),), device=areas.device, dtype=areas.dtype
         )
-        for _, grad in primitive.batched_grads():
+        for named, grad in primitive.batched_grads():
             g = grad.abs()
             if len(g.shape) > 1:
                 g = g.sum(dim=tuple(range(1, len(g.shape))))

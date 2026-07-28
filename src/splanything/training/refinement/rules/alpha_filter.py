@@ -8,11 +8,10 @@ from ..base import FilterRule, RefinementRule
 
 
 class AlphaFilter(FilterRule):
-    """Cull primitives with alpha values below threshold.
+    """Cull primitives whose alpha values fall below a threshold.
 
-    Removes nearly-transparent primitives that contribute little to
-    the reconstruction, reducing computational overhead and preventing
-    overfitting to noise.
+    Removes nearly-transparent primitives that contribute little to the
+    reconstruction.
 
     Attributes:
         threshold: Alpha threshold for culling.
@@ -20,23 +19,22 @@ class AlphaFilter(FilterRule):
     """
 
     def __init__(self, threshold: float = 0.05, interval: int = 10):
-        """Initialize AlphaFilter rule.
-
+        """
         Args:
-            threshold: Alpha threshold below which primitives are culled.
-            interval: Apply every N epochs.
+            threshold: Alpha below which primitives are culled (default 0.05).
+            interval: Fire every N invocations (default 10).
         """
         super().__init__(interval=interval)
         self.threshold = threshold
 
     def criterion(self, primitive: Primitive, **kwargs) -> Float[Tensor, "N"]:
-        """Compute per-primitive alphas.
+        """Read per-primitive alphas.
 
         Args:
             primitive: Primitive to evaluate.
 
         Returns:
-            Alphas tensor (N,).
+            Alphas (N,).
         """
         return primitive.alphas
 
