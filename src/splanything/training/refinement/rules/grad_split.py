@@ -7,35 +7,40 @@ from ..base import RefinementRule, SplitRule
 
 
 class GradSplit(SplitRule):
-    """Split primitives with high gradient magnitude relative to area.
+    """Split primitives with high gradient magnitude.
 
-    Aggregates the absolute gradient across all parameter groups,
-    weights by alpha, and splits primitives with large
-    gradient-to-area ratios (indicating high-detail regions).
+    Aggregates the absolute gradient of a named attribute
+    (summing over trailing dimensions), optionally multiplies by alpha,
+    and splits primitives with large values (indicating high-detail regions).
 
     Attributes:
-        threshold: Split threshold on ``grad_mag * alphas``.
+        threshold: Split threshold on the aggregated gradient.
+        attr_name: Attribute whose gradient is evaluated (default ``"alphas"``).
+            When ``None``, aggregates gradients from all batched parameters.
         interval: Fire every N invocations.
     """
 
-    def __init__(self, threshold: float = 0.05, interval: int = 10):
-        """
-        Args:
-            threshold: Gradient-to-area ratio threshold (default 0.05).
-            interval: Fire every N invocations (default 10).
-        """
+    def __init__(
+        self,
+        threshold: float = 0.05,
+        attr_name: str | None = "alphas",
+        interval: int = 10,
+    ):
         super().__init__(interval=interval)
         self.threshold = threshold
+        self.attr_name = attr_name
 
     def criterion(self, primitive: Primitive, **kwargs) -> Float[Tensor, "N"]:
-        """Compute per-primitive gradient-alpha products.
-
-        Args:
-            primitive: Primitive to evaluate.
-
-        Returns:
-            Gradient-alpha products (N,).
-        """
+        if self.attr_name is not None:
+            param = getattr(primitive, self.attr_name)
+            if param.grad is None:
+                return torch.zeros(
+                    (len(primitive),), device=primitive.device, dtype=primitive.dtype
+                )
+            grad = param.grad.abs()
+            if grad.ndim > 1:
+                grad = grad.sum(dim=tuple(range(1, grad.ndim)))
+            return grad * primitive.alphas
         areas = (
             primitive.areas
             if hasattr(primitive, "areas")
@@ -54,12 +59,4 @@ class GradSplit(SplitRule):
         return grad_mag * primitive.alphas
 
     def judge(self, criterion: Float[Tensor, "N"]) -> Bool[Tensor, "N"]:
-        """Threshold ratios into a split mask.
-
-        Args:
-            criterion: Per-primitive ratios (N,).
-
-        Returns:
-            split: Boolean tensor. True = split, False = ignore.
-        """
         return criterion > self.threshold

@@ -51,6 +51,7 @@ class PrimitiveFloor(SplitRule):
         map: Optional[Float[Tensor, "B 1 H W"]] = None,
         rule: Optional[FilterRule] = None,
         descending: bool = False,
+        coords_attr: str = "centroids",
         interval: int = 1,
     ):
         """Initialize the floor rule.
@@ -64,6 +65,7 @@ class PrimitiveFloor(SplitRule):
                 Required for ``"rule"``.
             descending: For ``"rule"``, split lowest scores when True,
                 highest scores when False.
+            coords_attr: Attribute name for map sampling coordinates (default ``"centroids"``).
             interval: Fire every N invocations of ``__call__``.
 
         Raises:
@@ -87,6 +89,7 @@ class PrimitiveFloor(SplitRule):
         self.map = map
         self.rule = rule
         self.descending = descending
+        self.coords_attr = coords_attr
 
     def can_apply(self, primitive: Primitive, **kwargs) -> bool:
         """Only fire when the primitive actually falls below the floor."""
@@ -114,7 +117,7 @@ class PrimitiveFloor(SplitRule):
             return torch.rand(n, device=device, dtype=dtype)
 
         if self.strategy in ("map", "map_stochastic"):
-            sampled = ImgUtils.uv_sample(self.map, primitive.centroids)
+            sampled = ImgUtils.uv_sample(self.map, getattr(primitive, self.coords_attr))
             values = sampled[0, :, 0]
             if self.strategy == "map_stochastic":
                 values = values * torch.rand(n, device=device, dtype=dtype)

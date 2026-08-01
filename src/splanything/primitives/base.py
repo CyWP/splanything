@@ -15,7 +15,6 @@ from torch import Tensor
 
 from ..rendering.sample_output import SampleOutput
 from ..rendering.processors.base import SampleProcessor
-from ..utils.pytorch import TensorIndex1D
 from .initializers.base import Initializer
 from .splitters.base import Splitter
 
@@ -440,7 +439,7 @@ class Primitive(nn.Module):
                 f"All batched parameters must have the same size in dim 0."
             )
 
-    def __getitem__(self, key: TensorIndex1D) -> Primitive:
+    def __getitem__(self, key: Bool[Tensor, "N"]) -> Primitive:
         """Index retrieval returning new object.
 
         Creates a new primitive containing only elements matching key.

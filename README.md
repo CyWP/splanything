@@ -57,7 +57,7 @@ for state in trainer.train():
 - `splanything.rasterizers` — aggregation strategies such as `WeightedRasterizer`, `ProbabilisticRasterizer`
 - `splanything.losses` — `L1Loss`, `L2Loss`
 - `splanything.callbacks` — training callbacks like `LoopControl`
-- `splanything.refinement` — adaptive rules like `GradSplit`, `AlphaFilter`
+- `splanything.refinement` — adaptive rules like `GradSplit`, `ThresholdFilter`
 - `splanything.training` — `Trainer`, `TrainSampler`
 - `splanything.generators` — `Generator` for rendering at arbitrary resolutions
 - `splanything.utils` — image utilities, optimizer wrapper, lazy evaluation

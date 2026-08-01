@@ -20,9 +20,8 @@ from splanything.training.callbacks import (
     StatsPanel,
 )
 from splanything.training.refinement.rules import (
-    AlphaFilter,
+    ThresholdFilter,
     GradSplit,
-    AreaSplit,
     IsoSplit,
     MapSplit,
     BoundsFilter,
@@ -68,9 +67,9 @@ def train():
     prim = get_primitive()
 
     # Rules
-    alpha_cull = AlphaFilter(threshold=0.1, interval=17)
+    alpha_cull = ThresholdFilter(attr_name="alphas", threshold=0.1, interval=17)
     grad_split = GradSplit(threshold=0.002, interval=26)
-    # area_split = AreaSplit(threshold=0.1, interval=87)
+    # area_split = ThresholdFilter(attr_name="areas", threshold=0.1, interval=87)
     # map_split = MapSplit(msk_tensor_blur10 * 0.6 + 0.05, interval=333)
     ceiling = PrimitiveCeiling(10000)
     # bounds_cull = BoundsFilter(interval=200, margin=0.0, use_areas=False)

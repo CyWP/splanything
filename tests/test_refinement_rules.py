@@ -15,7 +15,7 @@ import torch
 
 from splanything.primitives import RadialFreqPrimitive
 from splanything.training.refinement.base import FilterRule
-from splanything.training.refinement.rules import AlphaFilter
+from splanything.training.refinement.rules import ThresholdFilter
 
 
 class CountingFilter(FilterRule):
@@ -43,7 +43,7 @@ def device():
 
 def test_rule_registers_via_add_filter_rule(device):
     prim = RadialFreqPrimitive(size=10).to(device)
-    rule = AlphaFilter(threshold=10.0, interval=1)
+    rule = ThresholdFilter(attr_name="alphas", threshold=10.0, interval=1)
     prim.add_filter_rule(rule)
     assert rule.calls(prim) == 0
     assert prim in rule._calls

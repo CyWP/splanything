@@ -10,45 +10,49 @@ from ..base import RefinementRule, SplitRule
 
 
 class MapSplit(SplitRule):
-    """Split primitives by sampling a spatial probability map at centroids.
+    """Split primitives by sampling a spatial probability map at coordinates.
 
     The map (B, 1, H, W) is bilinearly sampled at each primitive's
-    centroid. Each primitive is independently split or ignored via a
-    Bernoulli draw against its sampled probability. Useful when
-    splitting intensity should vary spatially.
+    coordinate (default: centroid). Each primitive is independently split
+    or ignored via a Bernoulli draw against its sampled probability.
+    Useful when splitting intensity should vary spatially.
 
     Attributes:
         map: Probability map (B, 1, H, W) with values in [0, 1].
+        coords_attr: Attribute name for sampling coordinates (default ``"centroids"``).
         interval: Fire every N invocations.
 
     Notes:
         - Only ``map[0]`` (first batch element) is sampled.
-        - Centroids must be in [0, 1] UV coordinates.
+        - Coordinates must be in [0, 1] UV space.
     """
 
     def __init__(
         self,
         map: Float[Tensor, "B 1 H W"],
+        coords_attr: str = "centroids",
         interval: int = 1,
     ):
         """
         Args:
             map: Probability map (B, 1, H, W), values in [0, 1].
+            coords_attr: Attribute name for sampling coordinates (default ``"centroids"``).
             interval: Fire every N invocations (default 1).
         """
         super().__init__(interval=interval)
         self.map = map
+        self.coords_attr = coords_attr
 
     def criterion(self, primitive: Primitive, **kwargs) -> Float[Tensor, "N"]:
-        """Sample the probability map at each primitive's centroid.
+        """Sample the probability map at each primitive's coordinates.
 
         Args:
-            primitive: Primitive whose centroids define sample locations.
+            primitive: Primitive whose coordinates define sample locations.
 
         Returns:
             Per-primitive probabilities (N,).
         """
-        sampled = ImgUtils.uv_sample(self.map, primitive.centroids)
+        sampled = ImgUtils.uv_sample(self.map, getattr(primitive, self.coords_attr))
         return sampled[0, :, 0]
 
     def judge(self, criterion: Float[Tensor, "N"]) -> Bool[Tensor, "N"]:

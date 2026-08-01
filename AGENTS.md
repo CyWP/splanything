@@ -67,7 +67,7 @@ splanything/
 - **Rasterizers**: Strategies for aggregating per-primitive samples into RGBA output
 - **Loss Functions**: L1 and L2 losses for image comparison
 - **Callbacks**: Loop management, checkpoints, previews, logging
-- **Refinement Rules**: Adaptive optimization (`GradSplit`, `AreaSplit`, `AlphaFilter`, `IsoSplit`)
+- **Refinement Rules**: Adaptive optimization (`GradSplit`, `ThresholdFilter`, `IsoSplit`, `BoundsFilter`)
 - **Generators**: Image generation from pretrained primitives at arbitrary resolutions
 - **Utilities**: Image processing, optimizer wrapper, optional lazy property evaluation (external/user preference)
 
@@ -114,6 +114,8 @@ splanything/
 - Inherit from `RefinementRule` (which also inherits `Callback`)
 - Run at `EPOCH_END`, modify primitive in-place
 - Rely on duck-typing for required primitive behaviors (e.g., `areas`, `alphas`, `scales`, `split()`)
+- String literals for method names must be fully uppercase: `"ALL"`, `"ANY"`, `"OVER"`, `"UNDER"`
+- `BoundsFilter` margin always defines the **outer** cull zone: primitives within `margin` of the image border are culled
 
 ### Lazy Evaluation (external / optional)
 - `utils.lazy` provides `@lazy_tree` for users who want cached properties with dependency tracking

@@ -9,7 +9,6 @@ import torch.nn as nn
 from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
-from ..utils.pytorch import TensorIndex1D
 from ..rendering.sample_output import SampleOutput
 from .base import Primitive, nomask
 
@@ -146,7 +145,7 @@ class MultiPrimitive(Primitive):
 
     @nomask
     @torch.no_grad()
-    def filter(self, keys: Dict[str, TensorIndex1D]) -> MultiPrimitive:
+    def filter(self, keys: Dict[str,]) -> MultiPrimitive:
         """In-place index selection of batched elements.
 
         Filters primitive parameters to keep only elements matching key.

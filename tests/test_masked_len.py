@@ -188,9 +188,9 @@ def test_check_filter_mask_size_matches_under_outer_mask(device):
     mask, the combined-filter tensor must match the masked batched params."""
     p = RadialFreqPrimitive(size=8).to(device)
     outer = torch.tensor([1, 1, 1, 1, 0, 0, 0, 0], dtype=torch.bool, device=device)
-    from splanything.training.refinement.rules import AlphaFilter
+    from splanything.training.refinement.rules import ThresholdFilter
 
-    p.add_filter_rule(AlphaFilter(threshold=10.0, interval=1))
+    p.add_filter_rule(ThresholdFilter(attr_name="alphas", threshold=10.0, interval=1))
     with p.masked(outer):
         keep = p.check_filter()
         # Under the outer mask, the combined mask is sized to the masked

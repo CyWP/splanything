@@ -159,6 +159,15 @@ class RefinementRule(ABC):
     def criterion(self, primitive: Primitive, **kwargs) -> Float[Tensor, "N ..."]:
         """Generate the criterion by which application is judged."""
 
+    def processed_criterion(
+        self, primitive: Primitive, **kwargs
+    ) -> Float[Tensor, "N ..."]:
+        """Generate the criterion by which application is judged, with processors applied."""
+        crit = self.criterion(primitive, **kwargs)
+        for proc in self.processors:
+            crit = proc(primitive, self, crit, **kwargs)
+        return crit
+
     @abstractmethod
     def judge(self, criterion: Float[Tensor, "N ..."], **kwargs) -> Any:
         """Process the criterion into the output for rule application."""
@@ -172,10 +181,7 @@ class RefinementRule(ABC):
         Returns:
             Whatever ``judge`` returns.
         """
-        crit = self.criterion(primitive, **kwargs)
-        for proc in self.processors:
-            crit = proc(primitive, self, crit, **kwargs)
-        return self.judge(crit)
+        return self.judge(self.processed_criterion(primitive, **kwargs))
 
     def __call__(self, primitive: Primitive, **kwargs) -> Optional[Any]:
         """Invoke the rule, gating on interval and ``can_apply``.
