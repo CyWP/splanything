@@ -4,6 +4,7 @@ import logging
 from contextlib import ExitStack, contextmanager
 from typing import Dict, ItemsView, List, Optional, Any, TYPE_CHECKING
 
+import math
 import torch
 import torch.nn as nn
 from jaxtyping import Bool, Float, Integer
@@ -43,6 +44,16 @@ class MultiPrimitive(Primitive):
         if regularizers is not None:
             for name, (r, weight) in regularizers.items():
                 self.add_regularizer(name, r, weight)
+        self._rescale_primitives()
+
+    def _rescale_primitives(self):
+        total = len(self)
+        if total == 0:
+            return
+        for prim in self.primitives.values():
+            factor = len(prim) / total
+            if factor != 1.0:
+                prim.scale(factor)
 
     @contextmanager
     def masked(self, mask: Bool[Tensor, "N"]):

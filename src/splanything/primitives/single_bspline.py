@@ -48,7 +48,7 @@ class SingleBSplinePrimitive(Primitive):
     def default_params(self) -> Dict[str, ParamDef]:
         return dict(
             centroids=ParamDef(True, True, (2,)),
-            width=ParamDef(False, True, None),
+            width=ParamDef(False, True, None, scalable=True),
             color_1=ParamDef(False, True, (3,)),
             color_2=ParamDef(False, True, (3,)),
             alphas=ParamDef(False, True, None),

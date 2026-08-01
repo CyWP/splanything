@@ -39,7 +39,7 @@ class PolygonPrimitive(Primitive):
         return dict(
             centroids=ParamDef(True, True, (2,), 0.5),
             thetas=ParamDef(True, True, None),
-            range=ParamDef(True, True, None),
+            range=ParamDef(True, True, None, scalable=True),
             centerpoint=ParamDef(True, True, (2,)),
             colors=ParamDef(True, True, (nc, 3)),
             alphas=ParamDef(True, True, None),

@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import functools
 import logging
+import math
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Dict, ItemsView, List, Optional, Set, TYPE_CHECKING
@@ -89,6 +90,16 @@ class ParamDef:
     trainable: bool
     channels: Optional[Tuple[int]] = None
     lr_mod: float = 1.0
+    scalable: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "batched": self.batched,
+            "trainable": self.trainable,
+            "channels": self.channels,
+            "lr_mod": self.lr_mod,
+            "scalable": self.scalable,
+        }
 
 
 class Primitive(nn.Module):
@@ -109,12 +120,14 @@ class Primitive(nn.Module):
         self.size = size
         self._batched_params: Set[str] = set()
         self._stable_params: Set[str] = set()
+        self._scalable_params: Set[str] = set()
         self._context_masks: List[Bool[Tensor, "N"]] = []
         self._property_cache: Dict[str, Any] = {}
         self._cache_active: bool = False
         self._split_rules = []
         self._filter_rules = []
         self._lr_modifiers = {}
+        self._param_defs: Dict[str, ParamDef] = {}
         self._sample_processors = []
         self._regularizers = {}
         if filter_rules is not None:
@@ -203,6 +216,9 @@ class Primitive(nn.Module):
                 trainable=p_def.trainable,
                 lr_modifier=p_def.lr_mod,
             )
+            if p_def.scalable:
+                self._scalable_params.add(name)
+        self._param_defs = params
 
     @property
     def device(self) -> torch.device:
@@ -288,6 +304,65 @@ class Primitive(nn.Module):
     def clear_cache(self):
         """Manually clear the property cache."""
         self._property_cache.clear()
+
+    @torch.no_grad()
+    def scale(self, factor: float | Float[Tensor, ""]):
+        """Scale all scalable parameters by sqrt(factor).
+
+        Args:
+            factor: Scaling factor. Scalable params are multiplied by sqrt(factor).
+
+        Notes:
+            - Modifies parameters in-place.
+            - Scalable params are those marked in their ParamDef.
+        """
+        s = math.sqrt(factor)
+        for name in self._scalable_params:
+            self.__getattr__(name).mul_(s)
+
+    @torch.no_grad()
+    def update_paramdefs(self, overrides: Dict[str, ParamDef]):
+        """Update ParamDefs after initialization.
+
+        Args:
+            overrides: Dict mapping parameter names to new ParamDef values.
+
+        Raises:
+            KeyError: If a parameter name is unknown.
+            ValueError: If batched status would change.
+
+        Notes:
+            - ``batched`` cannot be changed.
+            - ``trainable`` can be changed (transfers between
+              ``nn.Parameter`` and buffer).
+            - ``channels`` changes are accepted but do not reshape the
+              stored tensor.
+        """
+        for name, new_def in overrides.items():
+            if name not in self._param_defs:
+                raise KeyError(f"Unknown parameter: {name}")
+            old_def = self._param_defs[name]
+            if new_def.batched != old_def.batched:
+                raise ValueError(f"Cannot change batched status of parameter {name!r}.")
+            raw = self._parameters.get(name)
+            if raw is None:
+                raw = self._buffers.get(name)
+            if new_def.trainable != old_def.trainable:
+                if new_def.trainable:
+                    self._buffers.pop(name, None)
+                    self.register_parameter(name, nn.Parameter(raw))
+                else:
+                    self._parameters.pop(name, None)
+                    self.register_buffer(name, raw.detach().requires_grad_(False))
+            if new_def.trainable:
+                self._lr_modifiers[name] = new_def.lr_mod
+            else:
+                self._lr_modifiers.pop(name, None)
+            if new_def.scalable and name not in self._scalable_params:
+                self._scalable_params.add(name)
+            elif not new_def.scalable and name in self._scalable_params:
+                self._scalable_params.discard(name)
+            self._param_defs[name] = new_def
 
     def _batched_param(self, name: str) -> Any:
         """Fetch a batched parameter, applying the active mask if any.
@@ -409,6 +484,9 @@ class Primitive(nn.Module):
         state = super().state_dict(*args, **kwargs)
         state["_class"] = self.__class__.__name__.lower()
         state["_size"] = len(self)
+        state["_param_defs"] = {
+            name: p.to_dict() for name, p in self._param_defs.items()
+        }
         return state
 
     def __len__(self) -> int:
@@ -774,6 +852,18 @@ class Primitive(nn.Module):
         unexpected_keys,
         error_msgs,
     ):
+        restored_pds: Dict[str, dict] = {}
+        for meta in ("_class", "_size", "_param_defs"):
+            key = prefix + meta
+            data = state_dict.pop(key, None)
+            if meta == "_param_defs" and data is not None:
+                restored_pds = data
+        restored_pds = {
+            name: ParamDef(**d)
+            for name, d in restored_pds.items()
+            if name in self._param_defs
+        }
+
         # Resize parameters whose first dimension (number of primitives)
         # differs from the checkpoint. Any other shape mismatch is treated
         # as an error.
@@ -824,3 +914,6 @@ class Primitive(nn.Module):
             unexpected_keys,
             error_msgs,
         )
+
+        if restored_pds:
+            self.update_paramdefs(restored_pds)

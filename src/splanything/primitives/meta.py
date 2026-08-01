@@ -94,8 +94,8 @@ class MetaPrimitive(Primitive):
         return dict(
             centroids=ParamDef(True, True, (2,), 0.5),
             thetas=ParamDef(True, True, None),
-            scales_1=ParamDef(True, True, None),
-            scales_2=ParamDef(True, True, None),
+            scales_1=ParamDef(True, True, None, scalable=True),
+            scales_2=ParamDef(True, True, None, scalable=True),
             color_thetas=ParamDef(True, True, None),
             color_scales=ParamDef(True, True, None),
             alphas=ParamDef(True, True, None),

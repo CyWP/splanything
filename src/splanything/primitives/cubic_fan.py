@@ -37,8 +37,8 @@ class CubicFanPrimitive(Primitive):
         return dict(
             thetas=ParamDef(True, True, None),
             centroids=ParamDef(True, True, (2,), 0.5),
-            range_1=ParamDef(True, True, None),
-            range_2=ParamDef(True, True, None),
+            range_1=ParamDef(True, True, None, scalable=True),
+            range_2=ParamDef(True, True, None, scalable=True),
             color_1=ParamDef(True, True, (3,)),
             color_2=ParamDef(True, True, (3,)),
             alphas=ParamDef(True, True, None),

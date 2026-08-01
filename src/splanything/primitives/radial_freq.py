@@ -46,7 +46,7 @@ class RadialFreqPrimitive(Primitive):
         return dict(
             thetas=ParamDef(True, True, None),
             centroids=ParamDef(True, True, (2,), 0.5),
-            sigma=ParamDef(True, True, None),
+            sigma=ParamDef(True, True, None, scalable=True),
             freq=ParamDef(True, True, None),
             color_1=ParamDef(True, True, (3,)),
             color_2=ParamDef(True, True, (3,)),

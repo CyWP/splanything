@@ -15,8 +15,8 @@ class LinePrimitive(Primitive):
         return dict(
             centroids=ParamDef(True, True, (2,), 0.5),
             thetas=ParamDef(True, True, None),
-            length=ParamDef(True, True, None),
-            width=ParamDef(True, True, None),
+            length=ParamDef(True, True, None, scalable=True),
+            width=ParamDef(True, True, None, scalable=True),
             color_1=ParamDef(True, True, (3,)),
             color_2=ParamDef(True, True, (3,)),
             alphas=ParamDef(True, True, None),

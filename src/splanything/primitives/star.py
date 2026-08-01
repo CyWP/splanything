@@ -24,7 +24,7 @@ class StarPrimitive(Primitive):
         return dict(
             centroids=ParamDef(True, True, (2,), 0.5),
             thetas=ParamDef(True, True, None),
-            range=ParamDef(True, True, None),
+            range=ParamDef(True, True, None, scalable=True),
             axis_weight=ParamDef(True, True, None),
             color=ParamDef(True, True, (3,)),
             alphas=ParamDef(True, True, None),

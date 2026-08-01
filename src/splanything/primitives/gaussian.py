@@ -40,8 +40,8 @@ class GaussianPrimitive(Primitive):
         return dict(
             thetas=ParamDef(True, True, None),
             centroids=ParamDef(True, True, (2,), 0.5),
-            sigma_1=ParamDef(True, True, None),
-            sigma_2=ParamDef(True, True, None),
+            sigma_1=ParamDef(True, True, None, scalable=True),
+            sigma_2=ParamDef(True, True, None, scalable=True),
             color=ParamDef(True, True, (3,)),
             alphas=ParamDef(True, True, None),
             ref_axis=ParamDef(False, False, (2,)),
