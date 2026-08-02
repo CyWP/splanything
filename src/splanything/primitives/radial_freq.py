@@ -17,7 +17,9 @@ class RadialFreqInitializer(Initializer):
         self, name: str, param_shape: Tuple[int], batched: bool
     ) -> Float[Tensor, "N ..."]:
         if name == "freq":
-            return (1.0 + torch.rand(param_shape) * 3) * torch.pi
+            return (torch.randn(param_shape)) * torch.pi
+        if name == "floor":
+            return torch.randn(param_shape)
         return super().init_param(name, param_shape, batched)
 
 
@@ -47,6 +49,7 @@ class RadialFreqPrimitive(Primitive):
             thetas=ParamDef(True, True, None),
             centroids=ParamDef(True, True, (2,), 0.5),
             sigma=ParamDef(True, True, None, scalable=True),
+            floor=ParamDef(True, True, None, scalable=True),
             freq=ParamDef(True, True, None),
             color_1=ParamDef(True, True, (3,)),
             color_2=ParamDef(True, True, (3,)),
@@ -121,10 +124,11 @@ class RadialFreqPrimitive(Primitive):
         sigma = self.sigma
         alpha = self.alphas
         freq = self.freq
+        floor = torch.sigmoid(self.floor)
         deltas = co[:, None, :] - centroids[None, :, :]
         dists = deltas.norm(dim=-1)
         angles = torch.atan2(deltas[..., 1], deltas[..., 0])
         phase = (2 * math.pi * self.thetas)[None, :] + freq[None, :] * angles
-        modulation = torch.sin(phase)
+        modulation = (0.5 * torch.sin(phase) + 0.5) * (1 - floor) + floor
         gauss = torch.exp(-(dists**2) / (2 * sigma**2 + 1e-8))
         return gauss * modulation * alpha[None, :]

@@ -9,38 +9,45 @@ from ..base import RefinementRule, SplitRule
 class GradSplit(SplitRule):
     """Split primitives with high gradient magnitude.
 
-    Aggregates the absolute gradient of a named attribute
-    (summing over trailing dimensions), optionally multiplies by alpha,
-    and splits primitives with large values (indicating high-detail regions).
+    Aggregates the absolute gradient of one or more named attributes
+    (summing over trailing dimensions per attribute, then summing across
+    attributes), optionally multiplies by alpha, and splits primitives
+    with large values (indicating high-detail regions).
 
     Attributes:
         threshold: Split threshold on the aggregated gradient.
-        attr_name: Attribute whose gradient is evaluated (default ``"alphas"``).
-            When ``None``, aggregates gradients from all batched parameters.
+        attr_names: Attribute(s) whose gradient is evaluated (default ``"alphas"``).
+            A single string or a list of strings. When ``None``, aggregates
+            gradients from all batched parameters.
         interval: Fire every N invocations.
     """
 
     def __init__(
         self,
         threshold: float = 0.05,
-        attr_name: str | None = "alphas",
+        attr_names: str | list[str] | None = None,
         interval: int = 10,
     ):
         super().__init__(interval=interval)
         self.threshold = threshold
-        self.attr_name = attr_name
+        if isinstance(attr_names, str):
+            attr_names = [attr_names]
+        self.attr_names = attr_names
 
     def criterion(self, primitive: Primitive, **kwargs) -> Float[Tensor, "N"]:
-        if self.attr_name is not None:
-            param = getattr(primitive, self.attr_name)
-            if param.grad is None:
-                return torch.zeros(
-                    (len(primitive),), device=primitive.device, dtype=primitive.dtype
-                )
-            grad = param.grad.abs()
-            if grad.ndim > 1:
-                grad = grad.sum(dim=tuple(range(1, grad.ndim)))
-            return grad * primitive.alphas
+        if self.attr_names is not None:
+            grad_mag = torch.zeros(
+                (len(primitive),), device=primitive.device, dtype=primitive.dtype
+            )
+            for name in self.attr_names:
+                param = getattr(primitive, name)
+                if param.grad is None:
+                    continue
+                g = param.grad.abs()
+                if g.ndim > 1:
+                    g = g.sum(dim=tuple(range(1, g.ndim)))
+                grad_mag += g
+            return grad_mag * primitive.alphas
         areas = (
             primitive.areas
             if hasattr(primitive, "areas")

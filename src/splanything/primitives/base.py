@@ -479,6 +479,38 @@ class Primitive(nn.Module):
         self._validate_batched_sizes()
 
     @nomask
+    @torch.no_grad()
+    def update_params(self, initializers: Initializer | Dict[str, Initializer]):
+        """Re-initialize parameter values using the given initializers.
+
+        Args:
+            initializers: A single ``Initializer`` applied to all params,
+                or a dict mapping param names to per-param initializers.
+
+        Raises:
+            KeyError: If a named parameter does not exist.
+        """
+        if isinstance(initializers, Initializer):
+            inits = {name: initializers for name in self._param_defs}
+        else:
+            inits = initializers
+
+        for name, init in inits.items():
+            if name not in self._param_defs:
+                raise KeyError(f"Unknown parameter: {name}")
+            p_def = self._param_defs[name]
+            raw = self._parameters.get(name)
+            if raw is None:
+                raw = self._buffers.get(name)
+            if p_def.batched:
+                size = raw.shape[0]
+                channels = raw.shape[1:] if raw.ndim > 1 else None
+            else:
+                size = 0
+                channels = raw.shape if raw.ndim > 0 else None
+            raw.copy_(init(name, size, channels))
+
+    @nomask
     def state_dict(self, *args, **kwargs) -> Dict[str, Any]:
         """Return state dict with class name for serialization."""
         state = super().state_dict(*args, **kwargs)
@@ -698,13 +730,14 @@ class Primitive(nn.Module):
             **dict(self.stable_parameters()),
         }
         for name, param in params_dict.items():
-            groups.append(
-                {
-                    "params": param,
-                    "lr_modifier": self._lr_modifiers.get(name, 1.0),
-                    "name": name,
-                }
-            )
+            if isinstance(param, nn.Parameter):
+                groups.append(
+                    {
+                        "params": param,
+                        "lr_modifier": self._lr_modifiers.get(name, 1.0),
+                        "name": name,
+                    }
+                )
         return groups
 
     def batched_parameters(self) -> ItemsView[str, Float[Tensor, "N ..."]]:

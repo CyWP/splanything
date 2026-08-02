@@ -1,5 +1,8 @@
 import argparse
 import torch
+from typing import Tuple
+from jaxtyping import Float
+from torch import Tensor
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from pathlib import Path
@@ -11,8 +14,10 @@ from splanything.primitives import (
     MetaPrimitive,
     RadialFreqPrimitive,
     CubicFanPrimitive,
-    GaussianPrimitive,
+    StarPrimitive,
+    ParamDef,
 )
+from splanything.primitives.initializers import Initializer
 from splanything.training.callbacks import (
     PreviewWindow,
     PrimitiveCheckpoint,
@@ -37,18 +42,38 @@ from splanything.rendering.processors import FlexibleSampleProcessor
 from splanything.rendering.rasterizers import (
     ProbabilisticRasterizer,
     WeightedRasterizer,
+    MultiRasterizer,
 )
 
-device = torch.device("cpu")
+device = torch.device("cuda:0")
 run_name = "NorVBra"
 base_folder = Path("../test_runs").resolve()
 run_folder = base_folder / run_name
 
 
+class ThetaZero(Initializer):
+    def init_param(
+        self, name: str, param_shape: Tuple[int], batched: bool
+    ) -> Float[Tensor, "N ..."] | Float[Tensor, "..."]:
+        if any([c in name for c in ("theta", "angle")]):
+            return torch.zeros(param_shape)
+        return super().init_param(name, param_shape, batched)
+
+
 def get_primitive():
-    cubic = CubicFanPrimitive(size=10).to(device)
-    radial = RadialFreqPrimitive(size=20).to(device)
-    multi = MultiPrimitive({"cubic": cubic, "radial": radial})
+    # cubic = CubicFanPrimitive(size=10).to(device)
+    radial = RadialFreqPrimitive(
+        size=100,
+        initializers={"thetas": ThetaZero()},
+        param_defs={"thetas": ParamDef(batched=True, trainable=False)},
+    ).to(device)
+    star = StarPrimitive(
+        size=100,
+        n_axes=2,
+        initializers={"thetas": ThetaZero()},
+        param_defs={"thetas": ParamDef(batched=True, trainable=False)},
+    ).to(device)
+    multi = MultiPrimitive({"star": star, "radial": radial})
     return multi
 
 
@@ -68,15 +93,15 @@ def train():
 
     # Rules
     alpha_cull = ThresholdFilter(attr_name="alphas", threshold=0.1, interval=17)
-    grad_split = GradSplit(threshold=0.002, interval=26)
-    # area_split = ThresholdFilter(attr_name="areas", threshold=0.1, interval=87)
+    grad_split = GradSplit(threshold=0.05, interval=201)
+    area_split = ThresholdFilter(attr_name="areas", threshold=0.1, interval=87)
     # map_split = MapSplit(msk_tensor_blur10 * 0.6 + 0.05, interval=333)
     ceiling = PrimitiveCeiling(10000)
     # bounds_cull = BoundsFilter(interval=200, margin=0.0, use_areas=False)
     prim.add_filter_rule(alpha_cull)
     prim.add_split_rule(grad_split)
     # prim.add_split_rule(map_split)
-    # prim.add_split_rule(area_split)
+    prim.add_split_rule(area_split)
     prim.add_filter_rule(ceiling)
     # prim.add_filter_rule(bounds_cull)
 
@@ -107,18 +132,22 @@ def train():
     # Regularizers
     # cubic = prim.primitives["cubic"]
     # radial = prim.primitives["radial"]
-    prim.add_regularizer(
-        "Color Push",
-        AttributeProximity(["color_1", "color_2"], mode="PUSH"),
-        weight=0.25,
-    )
-    prim.add_regularizer(
-        "Area Range", AttributeRange("areas", min=0.1, max=0.25), weight=12.0
-    )
+    # prim["radial"].add_regularizer(
+    #     "Color Push",
+    #     AttributeProximity(["color_1", "color_2"], mode="PUSH"),
+    #     weight=0.25,
+    # )
+    # prim.add_regularizer(
+    #     "Area Range", AttributeRange("areas", min=0.1, max=0.25), weight=12.0
+    # )
     prim.add_regularizer(
         "Alpha Target", AttributeRange("alphas", min=0.95), weight=12.0
     )
-    prim.add_regularizer("Verticality", AttributeRange("thetas", target=0), weight=50.0)
+    prim["star"].add_regularizer(
+        "Range Ratio",
+        AttributeProximity(["range_1", "range_2"], mode="RATIO", ratio=0.5),
+        weight=5.0,
+    )
 
     # Trainer
     trainer = Trainer(

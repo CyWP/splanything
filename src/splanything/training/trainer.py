@@ -294,7 +294,8 @@ class Trainer:
     def _compute_regularizers(self):
         regs = self.primitive.compute_regularization()
         reg = sum(regs.values()) * float(self.epoch_backward_passes)
-        reg.backward()
+        if isinstance(reg, Tensor):
+            reg.backward()
         for name, r in regs.items():
             self.last_regularizers[name] = r.item()
 

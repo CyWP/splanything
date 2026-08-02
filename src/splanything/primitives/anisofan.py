@@ -9,11 +9,11 @@ from torch import Tensor
 from .base import Primitive, cached_property, ParamDef
 
 
-class StarPrimitive(Primitive):
+class AnisotropicFanPrimitive(Primitive):
     def __init__(
         self,
         size: int = 1,
-        n_axes: int = 2,
+        n_axes: int = 3,
         **kwargs,
     ):
         self._n_axes = n_axes
@@ -32,7 +32,7 @@ class StarPrimitive(Primitive):
 
     @cached_property
     def ranges(self) -> Tuple[Float[Tensor, "N"], Float[Tensor, "N"]]:
-        rng_1, rng_2 = self.range_1.abs(), self.range_2.abs()
+        rng_1, rng_2 = self.range_1, self.range_2
         rng_mask = rng_1 < rng_2
         rng_min = torch.where(rng_mask, rng_1, rng_2)
         rng_max = torch.where(rng_mask, rng_2, rng_1)
@@ -58,7 +58,7 @@ class StarPrimitive(Primitive):
 
     @cached_property
     def areas(self) -> Float[Tensor, "N"]:
-        return (2 * self.range_1 * self.range_2).abs()
+        return math.pi * (self.range_1 * self.range_2).abs()
 
     @cached_property
     def scales(self) -> Tuple[Float[Tensor, "N"], Float[Tensor, "N"]]:
@@ -97,8 +97,8 @@ class StarPrimitive(Primitive):
 
         angles = (
             torch.atan2(deltas[..., 1], deltas[..., 0]) - self.thetas[None, :]
-        ) % (torch.pi / self._n_axes) - (torch.pi / self._n_axes / 2)
-        range_weights = 1 - 2 * torch.sin(angles**2) / torch.pi
+        ) % (torch.pi / self._n_axes)
+        range_weights = (angles / (torch.pi / self._n_axes)) ** 4
         angular_ranges = range_weights * rng_min + (1 - range_weights) * rng_max
-        weights = torch.exp(-(dist) / angular_ranges.clamp(min=1e-6))
-        return weights * alpha[None, :]
+        weights = 1 - (dist / angular_ranges).clamp(0, 1)
+        return weights

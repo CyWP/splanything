@@ -1,0 +1,143 @@
+Date : 2026-08-01 18:32:18
+Directory : /home/cyvv/Repos/splanything
+Total : 90 files,  7143 codes, 2539 comments, 1430 blanks, all 11112 lines
+
+Languages
++----------+------------+------------+------------+------------+------------+
+| language | files      | code       | comment    | blank      | total      |
++----------+------------+------------+------------+------------+------------+
+| Python   |         86 |      6,905 |      2,539 |      1,386 |     10,830 |
+| Markdown |          2 |        172 |          0 |         39 |        211 |
+| TOML     |          1 |         43 |          0 |          5 |         48 |
+| YAML     |          1 |         23 |          0 |          0 |         23 |
++----------+------------+------------+------------+------------+------------+
+
+Directories
++-------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| path                                                                                            | files      | code       | comment    | blank      | total      |
++-------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| .                                                                                               |         90 |      7,143 |      2,539 |      1,430 |     11,112 |
+| . (Files)                                                                                       |          3 |        215 |          0 |         44 |        259 |
+| .github                                                                                         |          1 |         23 |          0 |          0 |         23 |
+| .github/workflows                                                                               |          1 |         23 |          0 |          0 |         23 |
+| examples                                                                                        |          2 |        276 |         42 |         48 |        366 |
+| src                                                                                             |         76 |      5,460 |      2,131 |        979 |      8,570 |
+| src/splanything                                                                                 |         76 |      5,460 |      2,131 |        979 |      8,570 |
+| src/splanything (Files)                                                                         |          1 |          4 |          0 |          2 |          6 |
+| src/splanything/primitives                                                                      |         21 |      2,548 |        378 |        390 |      3,316 |
+| src/splanything/primitives (Files)                                                              |         14 |      2,362 |        376 |        358 |      3,096 |
+| src/splanything/primitives/initializers                                                         |          4 |        122 |          2 |         19 |        143 |
+| src/splanything/primitives/splitters                                                            |          3 |         64 |          0 |         13 |         77 |
+| src/splanything/rendering                                                                       |         13 |        428 |        108 |         82 |        618 |
+| src/splanything/rendering (Files)                                                               |          3 |        173 |         29 |         25 |        227 |
+| src/splanything/rendering/processors                                                            |          5 |        130 |          3 |         27 |        160 |
+| src/splanything/rendering/rasterizers                                                           |          5 |        125 |         76 |         30 |        231 |
+| src/splanything/training                                                                        |         38 |      1,941 |      1,338 |        448 |      3,727 |
+| src/splanything/training (Files)                                                                |          5 |        767 |        284 |        120 |      1,171 |
+| src/splanything/training/callbacks                                                              |          7 |        292 |        171 |         86 |        549 |
+| src/splanything/training/losses                                                                 |          4 |         45 |         75 |         21 |        141 |
+| src/splanything/training/refinement                                                             |         17 |        662 |        583 |        181 |      1,426 |
+| src/splanything/training/refinement (Files)                                                     |          2 |        107 |        143 |         34 |        284 |
+| src/splanything/training/refinement/processors                                                  |          4 |         88 |         60 |         26 |        174 |
+| src/splanything/training/refinement/rules                                                       |         11 |        467 |        380 |        121 |        968 |
+| src/splanything/training/regularizers                                                           |          5 |        175 |        225 |         40 |        440 |
+| src/splanything/utils                                                                           |          3 |        539 |        307 |         57 |        903 |
+| tests                                                                                           |          8 |      1,169 |        366 |        359 |      1,894 |
++-------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+
+Files
++-------------------------------------------------------------------------------------------------+----------+------------+------------+------------+------------+
+| filename                                                                                        | language | code       | comment    | blank      | total      |
++-------------------------------------------------------------------------------------------------+----------+------------+------------+------------+------------+
+| /home/cyvv/Repos/splanything/.github/workflows/publish.yaml                                     | YAML     |         23 |          0 |          0 |         23 |
+| /home/cyvv/Repos/splanything/AGENTS.md                                                          | Markdown |        116 |          0 |         20 |        136 |
+| /home/cyvv/Repos/splanything/README.md                                                          | Markdown |         56 |          0 |         19 |         75 |
+| /home/cyvv/Repos/splanything/examples/example_nor_bra.py                                        | Python   |        146 |         25 |         24 |        195 |
+| /home/cyvv/Repos/splanything/examples/example_por_cro.py                                        | Python   |        130 |         17 |         24 |        171 |
+| /home/cyvv/Repos/splanything/pyproject.toml                                                     | TOML     |         43 |          0 |          5 |         48 |
+| /home/cyvv/Repos/splanything/src/splanything/__init__.py                                        | Python   |          4 |          0 |          2 |          6 |
+| /home/cyvv/Repos/splanything/src/splanything/primitives/__init__.py                             | Python   |         34 |          1 |          3 |         38 |
+| /home/cyvv/Repos/splanything/src/splanything/primitives/base.py                                 | Python   |        634 |        236 |         82 |        952 |
+| /home/cyvv/Repos/splanything/src/splanything/primitives/bspline.py                              | Python   |        144 |          0 |         26 |        170 |
+| /home/cyvv/Repos/splanything/src/splanything/primitives/cubic_fan.py                            | Python   |        110 |         17 |         15 |        142 |
+| /home/cyvv/Repos/splanything/src/splanything/primitives/gaussian.py                             | Python   |         99 |         13 |         17 |        129 |
+| /home/cyvv/Repos/splanything/src/splanything/primitives/initializers/__init__.py                | Python   |          4 |          0 |          2 |          6 |
+| /home/cyvv/Repos/splanything/src/splanything/primitives/initializers/base.py                    | Python   |         49 |          0 |          4 |         53 |
+| /home/cyvv/Repos/splanything/src/splanything/primitives/initializers/flex.py                    | Python   |         11 |          0 |          5 |         16 |
+| /home/cyvv/Repos/splanything/src/splanything/primitives/initializers/mapped.py                  | Python   |         58 |          2 |          8 |         68 |
+| /home/cyvv/Repos/splanything/src/splanything/primitives/line.py                                 | Python   |         82 |          0 |         14 |         96 |
+| /home/cyvv/Repos/splanything/src/splanything/primitives/meta.py                                 | Python   |        299 |         14 |         28 |        341 |
+| /home/cyvv/Repos/splanything/src/splanything/primitives/multi.py                                | Python   |        208 |         61 |         36 |        305 |
+| /home/cyvv/Repos/splanything/src/splanything/primitives/path.py                                 | Python   |         96 |          0 |         21 |        117 |
+| /home/cyvv/Repos/splanything/src/splanything/primitives/polygon.py                              | Python   |        138 |          0 |         25 |        163 |
+| /home/cyvv/Repos/splanything/src/splanything/primitives/radial_freq.py                          | Python   |         78 |         34 |         19 |        131 |
+| /home/cyvv/Repos/splanything/src/splanything/primitives/single_bspline.py                       | Python   |        207 |          0 |         31 |        238 |
+| /home/cyvv/Repos/splanything/src/splanything/primitives/single_path.py                          | Python   |        165 |          0 |         27 |        192 |
+| /home/cyvv/Repos/splanything/src/splanything/primitives/splitters/__init__.py                   | Python   |          3 |          0 |          2 |          5 |
+| /home/cyvv/Repos/splanything/src/splanything/primitives/splitters/base.py                       | Python   |         41 |          0 |          5 |         46 |
+| /home/cyvv/Repos/splanything/src/splanything/primitives/splitters/flex.py                       | Python   |         20 |          0 |          6 |         26 |
+| /home/cyvv/Repos/splanything/src/splanything/primitives/star.py                                 | Python   |         68 |          0 |         14 |         82 |
+| /home/cyvv/Repos/splanything/src/splanything/rendering/__init__.py                              | Python   |          4 |          0 |          2 |          6 |
+| /home/cyvv/Repos/splanything/src/splanything/rendering/processors/__init__.py                   | Python   |         10 |          0 |          2 |         12 |
+| /home/cyvv/Repos/splanything/src/splanything/rendering/processors/base.py                       | Python   |         20 |          3 |          6 |         29 |
+| /home/cyvv/Repos/splanything/src/splanything/rendering/processors/dist.py                       | Python   |         49 |          0 |          7 |         56 |
+| /home/cyvv/Repos/splanything/src/splanything/rendering/processors/flex.py                       | Python   |         15 |          0 |          6 |         21 |
+| /home/cyvv/Repos/splanything/src/splanything/rendering/processors/mapped.py                     | Python   |         36 |          0 |          6 |         42 |
+| /home/cyvv/Repos/splanything/src/splanything/rendering/rasterizers/__init__.py                  | Python   |         11 |          0 |          3 |         14 |
+| /home/cyvv/Repos/splanything/src/splanything/rendering/rasterizers/base.py                      | Python   |         14 |         22 |          7 |         43 |
+| /home/cyvv/Repos/splanything/src/splanything/rendering/rasterizers/multi.py                     | Python   |         34 |          0 |          4 |         38 |
+| /home/cyvv/Repos/splanything/src/splanything/rendering/rasterizers/probabilistic.py             | Python   |         39 |         16 |          6 |         61 |
+| /home/cyvv/Repos/splanything/src/splanything/rendering/rasterizers/weighted.py                  | Python   |         27 |         38 |         10 |         75 |
+| /home/cyvv/Repos/splanything/src/splanything/rendering/sample_output.py                         | Python   |         19 |         27 |          6 |         52 |
+| /home/cyvv/Repos/splanything/src/splanything/rendering/sampler.py                               | Python   |        150 |          2 |         17 |        169 |
+| /home/cyvv/Repos/splanything/src/splanything/training/__init__.py                               | Python   |         13 |          1 |          3 |         17 |
+| /home/cyvv/Repos/splanything/src/splanything/training/callbacks/__init__.py                     | Python   |         14 |          1 |          3 |         18 |
+| /home/cyvv/Repos/splanything/src/splanything/training/callbacks/base.py                         | Python   |         15 |         25 |          8 |         48 |
+| /home/cyvv/Repos/splanything/src/splanything/training/callbacks/loop_control.py                 | Python   |         29 |         19 |         10 |         58 |
+| /home/cyvv/Repos/splanything/src/splanything/training/callbacks/panel.py                        | Python   |         49 |          3 |         15 |         67 |
+| /home/cyvv/Repos/splanything/src/splanything/training/callbacks/preview_window.py               | Python   |        151 |         88 |         32 |        271 |
+| /home/cyvv/Repos/splanything/src/splanything/training/callbacks/primitive_checkpoint.py         | Python   |         14 |         18 |          8 |         40 |
+| /home/cyvv/Repos/splanything/src/splanything/training/callbacks/primitive_save.py               | Python   |         20 |         17 |         10 |         47 |
+| /home/cyvv/Repos/splanything/src/splanything/training/losses/__init__.py                        | Python   |          4 |          1 |          3 |          8 |
+| /home/cyvv/Repos/splanything/src/splanything/training/losses/base.py                            | Python   |         26 |         42 |          8 |         76 |
+| /home/cyvv/Repos/splanything/src/splanything/training/losses/l1.py                              | Python   |          8 |         16 |          5 |         29 |
+| /home/cyvv/Repos/splanything/src/splanything/training/losses/l2.py                              | Python   |          7 |         16 |          5 |         28 |
+| /home/cyvv/Repos/splanything/src/splanything/training/optimizer.py                              | Python   |        255 |        101 |         62 |        418 |
+| /home/cyvv/Repos/splanything/src/splanything/training/refinement/__init__.py                    | Python   |         12 |         14 |          3 |         29 |
+| /home/cyvv/Repos/splanything/src/splanything/training/refinement/base.py                        | Python   |         95 |        129 |         31 |        255 |
+| /home/cyvv/Repos/splanything/src/splanything/training/refinement/processors/__init__.py         | Python   |          8 |          7 |          3 |         18 |
+| /home/cyvv/Repos/splanything/src/splanything/training/refinement/processors/flex.py             | Python   |         20 |          8 |          8 |         36 |
+| /home/cyvv/Repos/splanything/src/splanything/training/refinement/processors/map_processor.py    | Python   |         29 |         33 |          6 |         68 |
+| /home/cyvv/Repos/splanything/src/splanything/training/refinement/processors/reduction.py        | Python   |         31 |         12 |          9 |         52 |
+| /home/cyvv/Repos/splanything/src/splanything/training/refinement/rules/__init__.py              | Python   |         23 |         15 |          3 |         41 |
+| /home/cyvv/Repos/splanything/src/splanything/training/refinement/rules/bounds_filter.py         | Python   |         56 |         46 |         10 |        112 |
+| /home/cyvv/Repos/splanything/src/splanything/training/refinement/rules/grad_split.py            | Python   |         44 |         12 |          7 |         63 |
+| /home/cyvv/Repos/splanything/src/splanything/training/refinement/rules/iso_split.py             | Python   |         14 |         32 |          8 |         54 |
+| /home/cyvv/Repos/splanything/src/splanything/training/refinement/rules/map_filter.py            | Python   |         23 |         38 |          9 |         70 |
+| /home/cyvv/Repos/splanything/src/splanything/training/refinement/rules/map_split.py             | Python   |         23 |         38 |          9 |         70 |
+| /home/cyvv/Repos/splanything/src/splanything/training/refinement/rules/multi_rules.py           | Python   |         84 |         36 |         22 |        142 |
+| /home/cyvv/Repos/splanything/src/splanything/training/refinement/rules/primitive_ceiling.py     | Python   |         65 |         68 |         17 |        150 |
+| /home/cyvv/Repos/splanything/src/splanything/training/refinement/rules/primitive_floor.py       | Python   |         65 |         69 |         17 |        151 |
+| /home/cyvv/Repos/splanything/src/splanything/training/refinement/rules/threshold_filter.py      | Python   |         34 |         13 |          9 |         56 |
+| /home/cyvv/Repos/splanything/src/splanything/training/refinement/rules/threshold_grad_filter.py | Python   |         36 |         13 |         10 |         59 |
+| /home/cyvv/Repos/splanything/src/splanything/training/regularizers/__init__.py                  | Python   |          5 |          1 |          3 |          9 |
+| /home/cyvv/Repos/splanything/src/splanything/training/regularizers/attr_attractor.py            | Python   |         87 |        101 |         15 |        203 |
+| /home/cyvv/Repos/splanything/src/splanything/training/regularizers/attr_proximity.py            | Python   |         24 |         33 |          7 |         64 |
+| /home/cyvv/Repos/splanything/src/splanything/training/regularizers/attr_range.py                | Python   |         32 |         40 |          7 |         79 |
+| /home/cyvv/Repos/splanything/src/splanything/training/regularizers/base.py                      | Python   |         27 |         50 |          8 |         85 |
+| /home/cyvv/Repos/splanything/src/splanything/training/sampler.py                                | Python   |        241 |         63 |         20 |        324 |
+| /home/cyvv/Repos/splanything/src/splanything/training/stages.py                                 | Python   |         16 |          0 |          1 |         17 |
+| /home/cyvv/Repos/splanything/src/splanything/training/trainer.py                                | Python   |        242 |        119 |         34 |        395 |
+| /home/cyvv/Repos/splanything/src/splanything/utils/__init__.py                                  | Python   |          1 |          0 |          1 |          2 |
+| /home/cyvv/Repos/splanything/src/splanything/utils/img.py                                       | Python   |        521 |        293 |         50 |        864 |
+| /home/cyvv/Repos/splanything/src/splanything/utils/math.py                                      | Python   |         17 |         14 |          6 |         37 |
+| /home/cyvv/Repos/splanything/tests/test_filter_split_optimizer_state.py                         | Python   |        232 |         76 |         69 |        377 |
+| /home/cyvv/Repos/splanything/tests/test_masked_len.py                                           | Python   |        116 |         41 |         45 |        202 |
+| /home/cyvv/Repos/splanything/tests/test_multi_masked.py                                         | Python   |        147 |         46 |         32 |        225 |
+| /home/cyvv/Repos/splanything/tests/test_patch_roundtrip.py                                      | Python   |        122 |         44 |         41 |        207 |
+| /home/cyvv/Repos/splanything/tests/test_refinement_rules.py                                     | Python   |         89 |         13 |         33 |        135 |
+| /home/cyvv/Repos/splanything/tests/test_sampler_roundtrip.py                                    | Python   |        108 |         52 |         35 |        195 |
+| /home/cyvv/Repos/splanything/tests/test_trainer_log_handler.py                                  | Python   |        256 |         55 |         64 |        375 |
+| /home/cyvv/Repos/splanything/tests/test_uv_sample.py                                            | Python   |         99 |         39 |         40 |        178 |
+| Total                                                                                           |          |      7,143 |      2,539 |      1,430 |     11,112 |
++-------------------------------------------------------------------------------------------------+----------+------------+------------+------------+------------+

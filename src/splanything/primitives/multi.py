@@ -4,14 +4,13 @@ import logging
 from contextlib import ExitStack, contextmanager
 from typing import Dict, ItemsView, List, Optional, Any, TYPE_CHECKING
 
-import math
 import torch
 import torch.nn as nn
 from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
 from ..rendering.sample_output import SampleOutput
-from .base import Primitive, nomask
+from .base import Primitive, ParamDef, nomask
 
 if TYPE_CHECKING:
     from ..training.regularizers.base import Regularizer
@@ -31,6 +30,7 @@ class MultiPrimitive(Primitive):
     ):
         nn.Module.__init__(self)
         self._context_masks: List[Bool[Tensor, "N"]] = []
+        self._param_defs: Dict[str, ParamDef] = {}
         self.primitives = nn.ModuleDict(primitives)
         if filter_rules is not None:
             for f in filter_rules:
@@ -302,3 +302,58 @@ class MultiPrimitive(Primitive):
         if len(split) == 0:
             return None
         return split
+
+    @nomask
+    def state_dict(self, *args, **kwargs) -> Dict[str, Any]:
+        state = super().state_dict(*args, **kwargs)
+        for name, prim in self.primitives.items():
+            for p_name, p_def in prim._param_defs.items():
+                state[f"{name}$${p_name}"] = p_def.to_dict()
+        return state
+
+    def _load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ):
+        state_dict.pop(prefix + "_class", None)
+        state_dict.pop(prefix + "_size", None)
+        state_dict.pop(prefix + "_param_defs", None)
+
+        child_pds: Dict[str, Dict[str, ParamDef]] = {
+            n: {} for n in self.primitives
+        }
+        for key in list(state_dict.keys()):
+            if not key.startswith(prefix):
+                continue
+            suffix = key[len(prefix):]
+            if "$$" not in suffix:
+                continue
+            child_name, p_name = suffix.split("$$", 1)
+            data = state_dict.pop(key, None)
+            if data is None:
+                continue
+            if child_name not in self.primitives:
+                continue
+            if p_name not in self.primitives[child_name]._param_defs:
+                continue
+            child_pds[child_name][p_name] = ParamDef(**data)
+
+        for name, pds in child_pds.items():
+            if pds:
+                self.primitives[name].update_paramdefs(pds)
+
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
