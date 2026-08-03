@@ -38,7 +38,11 @@ from splanything.training.regularizers import AttributeProximity, AttributeRange
 from splanything.training.refinement.processors import MapCriterionProcessor
 from splanything.utils.img import ImgUtils
 from splanything.rendering import Sampler, SampleOutput
-from splanything.rendering.processors import FlexibleSampleProcessor
+from splanything.rendering.processors import (
+    FlexibleSampleProcessor,
+    DistanceSampleProcessor,
+    MultiSampleProcessor,
+)
 from splanything.rendering.rasterizers import (
     ProbabilisticRasterizer,
     WeightedRasterizer,
@@ -63,12 +67,12 @@ class ThetaZero(Initializer):
 def get_primitive():
     # cubic = CubicFanPrimitive(size=10).to(device)
     radial = RadialFreqPrimitive(
-        size=100,
+        size=30,
         initializers={"thetas": ThetaZero()},
         param_defs={"thetas": ParamDef(batched=True, trainable=False)},
     ).to(device)
     star = StarPrimitive(
-        size=100,
+        size=30,
         n_axes=2,
         initializers={"thetas": ThetaZero()},
         param_defs={"thetas": ParamDef(batched=True, trainable=False)},
@@ -77,15 +81,18 @@ def get_primitive():
     return multi
 
 
+def get_target():
+    return Image.open("../assets/bra_nor_offside_masked.png")
+
+
 def train():
     # Images
     tgt = ImgUtils.pil2tensor(
         Image.open("../assets/bra_nor_offside.png").convert("RGBA")
     ).to(device)
-    msk_img = Image.open("../assets/bra_nor_offside_masked.png")
-    msk_img_blur40 = msk_img.filter(ImageFilter.GaussianBlur(radius=40))
+    tgt_H, tgt_W = tgt.shape[2:]
+    msk_img = get_target()
     msk_img_blur10 = msk_img.filter(ImageFilter.GaussianBlur(radius=10))
-    msk_tensor_blur40 = ImgUtils.pil2map(msk_img_blur40, mode="A").to(device)
     msk_tensor_blur10 = ImgUtils.pil2map(msk_img_blur10, mode="A").to(device)
 
     # primitive
@@ -119,7 +126,17 @@ def train():
     )
 
     # Callbacks
-    train_callbacks = [PreviewWindow(frequency=5, show_target=True), StatsPanel()]
+    vis_sampler = Sampler(
+        H=tgt_H * 3,
+        W=tgt_W * 3,
+        max_batch=1000000,
+        padding=(300, 300, 300, 300),
+        device=device,
+    )
+    train_callbacks = [
+        PreviewWindow(frequency=5, show_target=True, sampler=vis_sampler),
+        StatsPanel(),
+    ]
 
     # Optim
     optimizer = OptimizerWrapper(prim, AdamW, lr=0.002)
@@ -145,9 +162,14 @@ def train():
     )
     prim["star"].add_regularizer(
         "Range Ratio",
-        AttributeProximity(["range_1", "range_2"], mode="RATIO", ratio=0.5),
+        AttributeProximity(["rng_1", "rng_2"], mode="RATIO", ratio=0.5),
         weight=5.0,
     )
+    # prim["star"].add_regularizer(
+    #     "Vertical skew",
+    #     AttributeProximity(["scales_1", "scales_2"], mode="RATIO", ratio=0.5),
+    #     weight=5.0,
+    # )
 
     # Trainer
     trainer = Trainer(
@@ -170,30 +192,44 @@ def generate():
     prim.load(run_folder / "primitive.pt")
     prim.requires_grad_(False)
     prim = prim.to(device)
+    msk_img = get_target()
+    msk_tensor = ImgUtils.pil2map(msk_img, mode="A").to(device)
+    msk_img_blur10 = msk_img.filter(ImageFilter.GaussianBlur(radius=10))
+    msk_tensor_blur10 = ImgUtils.pil2map(msk_img_blur10, mode="A").to(device)
+    msk_img_blur40 = msk_img.filter(ImageFilter.GaussianBlur(radius=40))
+    msk_tensor_blur40 = ImgUtils.pil2map(msk_img_blur40, mode="A").to(device)
 
     # Sample processor
-    def proc_fn(sample, primitive):
-        sample.weights *= ((sample.rgb - 0.5) ** 2).sum(dim=2)
-        # sample.weights = sample.weights**2
-        # sample.weights = sample.weights.max(dim=1).values.unsqueeze(-1) - sample.weights
-        co = sample.co
-        centroids = primitive.centroids
-        dists = ((centroids[None, :, :] - co[:, None, :]) ** 2).sum(dim=-1)
-        # sample.weights = sample.weights * torch.exp(-(dists))
-        sample.weights = sample.weights * (torch.sin(dists * 10000) * 0.4 + 0.7)
-        return sample
+    sample_proc = FlexibleSampleProcessor(
+        lambda s, p: SampleOutput(s.rgb, s.weights**1.6 * 2, s.co)
+    )
+    dist_proc = DistanceSampleProcessor(
+        sample_proc,
+        proc_fn=lambda s, p, d: SampleOutput(
+            s.rgb, s.weights * (torch.sin(d * 10000) * 0.2 + 0.8), s.co
+        ),
+    )
+    multi_proc = MultiSampleProcessor(
+        [(sample_proc, msk_tensor_blur40), (dist_proc, 1 - msk_tensor_blur40)]
+    )
+    prim.add_sample_processor(multi_proc)
 
-    sample_proc = FlexibleSampleProcessor(proc_fn)
-    prim.add_sample_processor(sample_proc)
+    # Rasterizer
+    rast = MultiRasterizer(
+        [
+            (WeightedRasterizer(), msk_tensor_blur10),
+            (ProbabilisticRasterizer(top_k=5), 1 - msk_tensor_blur10),
+        ]
+    )
 
     # Sampler
     sampler = Sampler(
-        3072,
+        4096,
         1024,
-        patch_size=32,
+        patch_size=256,
         max_batch=10000000,
-        rasterizer=None,  # ProbabilisticRasterizer(top_k=100),
-        padding=(1536, 1536, 1024, 1024),
+        rasterizer=rast,
+        padding=(1536, 1536, 1536, 1536),
         device=device,
         low_vram=False,
     )

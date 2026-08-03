@@ -42,9 +42,9 @@ run_folder = base_folder / run_name
 
 
 def get_primitive():
-    radial = RadialFreqPrimitive(size=5, scale_factor=1.0).to(device)
-    cubic = CubicFanPrimitive(size=3, scale_factor=1.0).to(device)
-    gauss = GaussianPrimitive(size=1, scale_factor=1.0).to(device)
+    radial = RadialFreqPrimitive(size=5).to(device)
+    cubic = CubicFanPrimitive(size=3).to(device)
+    gauss = GaussianPrimitive(size=1).to(device)
     multi = MultiPrimitive({"radial": radial, "cubic": cubic})  # , "gaussian": gauss})
     prim = MetaPrimitive(
         primitive=multi, size=100, primitive_trainable=False, scale_factor=1.0
