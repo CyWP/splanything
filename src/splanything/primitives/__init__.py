@@ -9,7 +9,6 @@ from .star import StarPrimitive
 from .line import LinePrimitive
 from .path import PathPrimitive
 from .bspline import BSplinePrimitive
-from .anisofan import AnisotropicFanPrimitive
 from .single_path import SinglePathPrimitive
 from .single_bspline import SingleBSplinePrimitive
 from .meta import MetaPrimitive
@@ -28,7 +27,6 @@ __all__ = [
     "RadialFreqPrimitive",
     "PolygonPrimitive",
     "StarPrimitive",
-    "AnisotropicFanPrimitive",
     "LinePrimitive",
     "PathPrimitive",
     "BSplinePrimitive",

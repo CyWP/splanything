@@ -25,4 +25,4 @@ class SampleProcessor(ABC):
         sample: SampleOutput,
         primitive: Primitive,
     ) -> SampleOutput:
-        return self.process(*args, **kwargs)
+        return self.process(sample, primitive)

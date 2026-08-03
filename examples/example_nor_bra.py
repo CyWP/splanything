@@ -146,7 +146,6 @@ def train():
         max_batch=1000000,
         padding=(H_pad, H_pad, W_pad, W_pad),
         device=device,
-        uniform_spacing=False,
     )
     train_callbacks = [
         PreviewWindow(
@@ -197,6 +196,7 @@ def train():
         losses=losses,
         callbacks=train_callbacks,
         base_folder=base_folder,
+        adjust_prim=False,
     )
     for _ in trainer.train():
         pass
@@ -213,8 +213,8 @@ def generate():
     prim = prim.to(device)
     gp = gen_padding
     msk_img = ImageOps.expand(
-        get_target().resize((gen_H, gen_W)),
-        border=(gp[2], gp[1], gp[3], gp[0]),
+        get_target().resize((gen_W // 8, gen_H // 8)),
+        border=(gp[2] // 8, gp[1] // 8, gp[3] // 8, gp[0] // 8),
         fill=(0, 0, 0, 0),
     )
     msk_tensor = ImgUtils.pil2map(msk_img, mode="A").to(device)
@@ -275,8 +275,6 @@ def generate():
         device=device,
         low_vram=False,
     )
-
-    prim.adjust_to_canvas(gen_H, gen_W)
 
     # Output
     out = sampler.rasterize(prim, verbose=True)

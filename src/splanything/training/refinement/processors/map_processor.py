@@ -28,7 +28,7 @@ class MapCriterionProcessor(CriterionProcessor):
     def __init__(
         self,
         map: Float[Tensor, "B 1 H W"],
-        coords_attr: str = "centroids",
+        coords_attr: str = "adjusted_coords",
         proc_fn: Optional[
             Callable[Float[Tensor, "N ..."], Float[Tensor, "N ..."]]
         ] = None,

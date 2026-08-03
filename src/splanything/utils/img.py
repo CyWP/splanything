@@ -226,26 +226,30 @@ class ImgUtils:
         W: int,
         device: torch.device,
         padding: Tuple[int, int, int, int] = (0, 0, 0, 0),
-    ) -> Float[Tensor, "2 H W"]:
+    ) -> Float[Tensor, "2 (H+pt+pb) (W+pl+pr)"]:
         """Generate normalized pixel coordinates.
 
+        Both axes independently fill ``[0, 1]`` so each pixel center lies
+        at ``(i + 0.5) / dim``. Padding is applied **outward** — the
+        returned grid has shape ``(2, H + pt + pb, W + pl + pr)``.
+
         Args:
-            H: Image height.
-            W: Image width.
+            H: Image height (unpadded frame).
+            W: Image width (unpadded frame).
             device: Target device.
+            padding: Outward padding (top, bottom, left, right).
 
         Returns:
-            Coordinates tensor (2, H, W) with values in [0, 1].
+            Coordinates tensor ``(2, H + pt + pb, W + pl + pr)``.
         """
         p_top, p_bot, p_left, p_right = padding
-        H_frame = H - p_top - p_bot
-        W_frame = W - p_left - p_right
-        H_half = 0.5 / H_frame if H_frame != 0 else 0
-        W_half = 0.5 / W_frame if W_frame != 0 else 0
+        y_start, y_end = 0.5 / H, 1.0 - 0.5 / H
+        x_start, x_end = 0.5 / W, 1.0 - 0.5 / W
+
         co = torch.stack(
             torch.meshgrid(
-                torch.linspace(H_half, 1 - H_half, H, device=device),
-                torch.linspace(W_half, 1 - W_half, W, device=device),
+                torch.linspace(y_start, y_end, H, device=device),
+                torch.linspace(x_start, x_end, W, device=device),
                 indexing="ij",
             ),
             dim=0,
@@ -307,12 +311,14 @@ class ImgUtils:
             W: Image width.
             device: Target device.
             patch_size: Optional patch size.
+            padding: Outward padding (top, bottom, left, right).
 
         Returns:
             Tuple of (patches, centers).
         """
         return ImgUtils.extract_patches(
-            ImgUtils.gen_px_coords(H, W, device, padding=padding), patch_size
+            ImgUtils.gen_px_coords(H, W, device, padding=padding),
+            patch_size,
         )
 
     @staticmethod
@@ -630,19 +636,19 @@ class ImgUtils:
     ) -> Float[Tensor, "B N C"]:
         """Bilinearly sample an image at normalized pixel-center coordinates.
 
-        Uses the **pixel-center convention** matching :meth:`gen_px_coords`:
-        the center of pixel ``i`` along an axis of size ``D`` sits at UV
-        ``(i + 0.5) / D``. Equivalently, the pixel index for UV ``u`` is
-        ``u * D - 0.5``. UVs outside ``[0, 1]`` (e.g. centroids that have
-        drifted past the image frame after a split) are clamped to the
-        nearest edge pixel via the fractional weights, so they return a
-        valid sample rather than extrapolating.
+        Each axis independently fills ``[0, 1]``, and the pixel index for
+        UV ``u`` is ``u * D - 0.5`` where ``D`` is the axis size.
+
+        UVs outside ``[0, 1]`` (e.g. centroids that have drifted past the
+        image frame after a split) are clamped to the nearest edge pixel
+        via the fractional weights, so they return a valid sample rather
+        than extrapolating.
 
         Args:
             img: Image tensor (B, C, H, W).
             uv_co: Normalized coordinates (N, 2) in pixel-center convention,
                 typically produced by :meth:`gen_px_coords` or by
-                ``primitive.centroids``.
+                ``primitive.centroid_coordinates``.
 
         Returns:
             Sampled values (B, N, C).
@@ -715,7 +721,9 @@ class ImgUtils:
         if (weights < 0).any():
             raise ValueError("sample_px_coords expects non-negative map values.")
         indices = torch.multinomial(weights, N, replacement=True)  # (N,)
-        co = ImgUtils.gen_px_coords(H, W, map.device)  # (2, H, W)
+        co = ImgUtils.gen_px_coords(
+            H, W, map.device
+        )  # (2, H, W)
         co_flat = co.reshape(2, -1).T  # (H*W, 2)
         sampled = co_flat[indices]  # (N, 2)
         if noise:
@@ -792,7 +800,7 @@ class ImgUtils:
 
     @staticmethod
     @torch.no_grad()
-    def vec_map(
+    def delta_map(
         coords: Float[Tensor, "Nc 2"],
         H: int,
         W: int,
@@ -829,7 +837,7 @@ class ImgUtils:
         """
         Nc = coords.shape[0]
         if Nc == 0:
-            raise ValueError("vec_map requires at least one coordinate.")
+            raise ValueError("delta_map requires at least one coordinate.")
         if k < 1 or k > Nc:
             raise ValueError(f"k must be in [1, {Nc}], got k={k}.")
 

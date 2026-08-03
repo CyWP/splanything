@@ -18,7 +18,7 @@ class Sampler:
         self,
         H: int,
         W: int,
-        patch_size: Optional[int] = None,
+        patch_size: int = 32,
         max_batch: Optional[int] = None,
         rasterizer: Optional[Rasterizer] = None,
         padding: Tuple[int, int, int, int] = (0, 0, 0, 0),

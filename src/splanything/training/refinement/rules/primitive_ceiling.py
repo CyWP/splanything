@@ -50,7 +50,7 @@ class PrimitiveCeiling(FilterRule):
         map: Optional[Float[Tensor, "B 1 H W"]] = None,
         rule: Optional[FilterRule] = None,
         descending: bool = False,
-        coords_attr: str = "centroids",
+        coords_attr: str = "adjusted_coords",
         interval: int = 1,
     ):
         """Initialize the ceiling rule.

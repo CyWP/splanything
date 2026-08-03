@@ -42,15 +42,19 @@ class MetaSplitter(Splitter):
             s = torch.sin(p.thetas)
             axis_dirs = torch.stack(
                 [torch.stack([c, s], dim=-1), torch.stack([-s, c], dim=-1)], dim=1
-            )  # (N, 2, 2)
+            )  # (N_split, 2, 2)
+            Ns = split_param.shape[0]
+            longest_idx = longest.long()
             dirs_world = axis_dirs[
-                torch.arange(len(self), device=axis_dirs.device),
-                longest,
-            ]  # (N, 2)
+                torch.arange(Ns, device=axis_dirs.device), longest_idx
+            ]
             dirs_world = dirs_world / dirs_world.norm(dim=-1, keepdim=True).clamp_min(
                 1e-12
             )
-            split_lengths = scales[:, longest]
+            all_scales = torch.stack([p.scales_1, p.scales_2], dim=-1)
+            split_lengths = all_scales[
+                torch.arange(Ns, device=all_scales.device), longest_idx
+            ]
             offset = 0.25 * split_lengths[:, None] * dirs_world
             return split_param + offset, split_param - offset
 
@@ -68,7 +72,15 @@ class MetaPrimitive(Primitive):
         sample_processors: Optional[List[SampleProcessor]] = None,
         regularizers: Optional[Dict[str, Tuple[Regularizer, float]]] = None,
         primitive_trainable: bool = False,
+        modify_scale: bool = True,
+        modify_rotation: bool = True,
+        modify_color: bool = True,
+        modify_alphas: bool = True,
     ):
+        self._modify_scale = modify_scale
+        self._modify_rotation = modify_rotation
+        self._modify_color = modify_color
+        self._modify_alphas = modify_alphas
         super().__init__(
             size=size,
             initializers=initializers,
@@ -91,13 +103,15 @@ class MetaPrimitive(Primitive):
 
     @property
     def default_params(self) -> Dict[str, ParamDef]:
+        ms = self._modify_scale
+        mc = self._modify_color
         return dict(
             centroids=ParamDef(True, True, (2,), 0.5),
             thetas=ParamDef(True, True, None),
-            scales_1=ParamDef(True, True, None, scalable=True),
-            scales_2=ParamDef(True, True, None, scalable=True),
-            color_thetas=ParamDef(True, True, None),
-            color_scales=ParamDef(True, True, None),
+            scales_1=ParamDef(True, ms, None, scalable=True),
+            scales_2=ParamDef(True, ms, None, scalable=True),
+            color_thetas=ParamDef(True, mc, None),
+            color_scales=ParamDef(True, mc, None),
             alphas=ParamDef(True, True, None),
         )
 
@@ -109,10 +123,15 @@ class MetaPrimitive(Primitive):
     def transforms(self) -> Float[Tensor, "N 2 2"]:
         c = torch.cos(self.thetas)
         s = torch.sin(self.thetas)
+        if not self._modify_rotation:
+            c = torch.ones_like(c)
+            s = torch.zeros_like(s)
+        sx = self.scales_1 if self._modify_scale else torch.ones_like(self.scales_1)
+        sy = self.scales_2 if self._modify_scale else torch.ones_like(self.scales_2)
         return torch.stack(
             [
-                torch.stack([self.scales_1 * c, -self.scales_2 * s], dim=-1),
-                torch.stack([self.scales_1 * s, self.scales_2 * c], dim=-1),
+                torch.stack([sx * c, -sy * s], dim=-1),
+                torch.stack([sx * s, sy * c], dim=-1),
             ],
             dim=-2,
         )
@@ -149,7 +168,7 @@ class MetaPrimitive(Primitive):
         return (self.scales_1, self.scales_2)
 
     @torch.no_grad()
-    def patch_mask(
+    def _raw_patch_mask(
         self,
         centers: Float[Tensor, "P 2"],
         patch_sizes: Integer[Tensor, "P"],
@@ -231,7 +250,7 @@ class MetaPrimitive(Primitive):
         **kwargs,
     ) -> Float[Tensor, "Nc Np 3"]:
         rgb = self.primitive.sample_rgb(co, **kwargs)  # (M, Npi, 3)
-        if meta_idx is None or not hasattr(self, "color_thetas"):
+        if not self._modify_color or meta_idx is None:
             return rgb
         theta = self.color_thetas[meta_idx]  # (M,)
         scale = self.color_scales[meta_idx]  # (M,)
@@ -262,7 +281,7 @@ class MetaPrimitive(Primitive):
         **kwargs,
     ) -> Float[Tensor, "Nc Np"]:
         weights = self.primitive.sample_weights(co, **kwargs)  # (M, Npi)
-        if meta_idx is None or not hasattr(self, "alphas"):
+        if not self._modify_alphas or meta_idx is None:
             return weights
         return weights * self.alphas[meta_idx][:, None]  # (M, Npi)
 

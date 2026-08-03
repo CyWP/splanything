@@ -58,8 +58,7 @@ class CubicFanPrimitive(Primitive):
             two perpendicular axes of each gradient. ax_2 is ax_1 rotated
             90 degrees counterclockwise.
         """
-        ref = self.ref_axis[None, :]
-        ax_1 = (self.R @ ref.unsqueeze(-1)).squeeze(-1)
+        ax_1 = self.R @ self.ref_axis
         ax_2 = torch.stack([ax_1[:, 1], -ax_1[:, 0]], dim=1)
         return ax_1, ax_2
 
@@ -91,7 +90,7 @@ class CubicFanPrimitive(Primitive):
         return (self.range_1, self.range_2)
 
     @torch.no_grad()
-    def patch_mask(
+    def _raw_patch_mask(
         self,
         centers: Float[Tensor, "P 2"],
         patch_sizes: Integer[Tensor, "P"],

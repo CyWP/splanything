@@ -20,8 +20,9 @@ class ProbabilisticRasterizer(Rasterizer):
         - Assumes weights already encode the desired selection distribution.
     """
 
-    def __init__(self, top_k: int = 1):
+    def __init__(self, top_k: int = 1, alpha_as_dropout: bool = True):
         self.top_k = top_k
+        self._alpha_as_dropout = alpha_as_dropout
 
     def rasterize(self, sample: SampleOutput, **kwargs) -> Float[Tensor, "Nc 4"]:
         w = sample.weights.clamp(min=0)
@@ -56,5 +57,6 @@ class ProbabilisticRasterizer(Rasterizer):
             # Monte Carlo estimate of expected color
             rgb[valid] = rgb_selected.mean(dim=1).clamp(0, 1)
         alpha = w.sum(dim=1).clamp(0, 1)
-        alpha = (alpha >= torch.rand_like(alpha)).to(alpha.dtype)
+        if self._alpha_as_dropout:
+            alpha = (alpha >= torch.rand_like(alpha)).to(alpha.dtype)
         return torch.cat([rgb, alpha[:, None]], dim=1)

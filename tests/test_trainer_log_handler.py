@@ -33,7 +33,7 @@ def device():
 
 
 def _make_minimal_trainer(device, name="probe"):
-    prim = RadialFreqPrimitive(size=2, scale_factor=1.0).to(device)
+    prim = RadialFreqPrimitive(size=2).to(device)
     target = torch.rand(1, 4, 8, 8, device=device)
     sampling_map = torch.full((1, 1, 8, 8), 1.0, device=device)
     sampler = TrainSampler(

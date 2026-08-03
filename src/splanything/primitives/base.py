@@ -130,6 +130,7 @@ class Primitive(nn.Module):
         self._param_defs: Dict[str, ParamDef] = {}
         self._sample_processors = []
         self._regularizers = {}
+        self.register_buffer("_aspect_ratio", torch.tensor(1.0))
         if filter_rules is not None:
             for f in filter_rules:
                 self.add_filter_rule(f)
@@ -319,6 +320,44 @@ class Primitive(nn.Module):
         s = math.sqrt(factor)
         for name in self._scalable_params:
             self.__getattr__(name).mul_(s)
+
+    @nomask
+    @torch.no_grad()
+    @torch.no_grad()
+    def adjust_to_canvas(self, H: int, W: int) -> Primitive:
+        target_ar = torch.tensor(H / W, device=self._aspect_ratio.device)
+        current_ar = self._aspect_ratio.item()
+        if target_ar.item() == current_ar:
+            return self
+        correction = (target_ar / self._aspect_ratio).item()
+        if hasattr(self, "centroids"):
+            dim = 1 if correction > 1.0 else 0
+            factor = min(correction, 1 / correction)
+            self.centroids[:, dim] = (self.centroids[:, dim] - 0.5) * factor + 0.5
+        self.scale(correction)
+        self._aspect_ratio.copy_(target_ar)
+        return self
+
+    def _co_transform(self, co: Float[Tensor, "Nc 2"]) -> Float[Tensor, "Nc 2"]:
+        ar = self._aspect_ratio.item()
+        if ar == 1.0:
+            return co
+        dim = 1 if ar > 1.0 else 0
+        factor = min(ar, 1 / ar)
+        co = co.clone()
+        co[:, dim] = (co[:, dim] - 0.5) * factor + 0.5
+        return co
+
+    @cached_property
+    def adjusted_coords(self) -> Float[Tensor, "N 2"]:
+        ar = self._aspect_ratio.item()
+        if ar == 1.0 or not hasattr(self, "centroids"):
+            return self.centroids
+        dim = 1 if ar > 1.0 else 0
+        factor = min(ar, 1 / ar)
+        coords = self.centroids.clone()
+        coords[:, dim] = (coords[:, dim] - 0.5) / factor + 0.5
+        return coords
 
     @torch.no_grad()
     def update_paramdefs(self, overrides: Dict[str, ParamDef]):
@@ -598,6 +637,16 @@ class Primitive(nn.Module):
         Returns:
             Bool tensor (P, N) indicating which primitives are valid for a given patch.
         """
+        return self._raw_patch_mask(self._co_transform(centers), patch_sizes, H, W)
+
+    @torch.no_grad()
+    def _raw_patch_mask(
+        self,
+        centers: Float[Tensor, "P 2"],
+        patch_sizes: Integer[Tensor, "P"],
+        H: Integer[Tensor, "P"],
+        W: Integer[Tensor, "P"],
+    ) -> Bool[Tensor, "P N"]:
         raise NotImplementedError()
 
     @nomask
@@ -683,7 +732,7 @@ class Primitive(nn.Module):
                 ),
                 co=co,
             )
-            return torch.zeros(co.shape[0], 4, device=self.device, dtype=self.dtype)
+        co = self._co_transform(co)
         with self.cache_properties():
             rgb = self.sample_rgb(co)
             weights = self.sample_weights(co)

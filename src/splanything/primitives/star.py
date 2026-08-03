@@ -39,6 +39,14 @@ class StarPrimitive(Primitive):
         return rng_min, rng_max
 
     @cached_property
+    def rng_1(self) -> Tuple[Float[Tensor, "N"]]:
+        return self.ranges[0]
+
+    @cached_property
+    def rng_2(self) -> Tuple[Float[Tensor, "N"]]:
+        return self.ranges[1]
+
+    @cached_property
     def axes(self) -> Tuple[Float[Tensor, "N 2"], Float[Tensor, "N 2"]]:
         c = torch.cos(self.thetas)
         s = torch.sin(self.thetas)
@@ -65,7 +73,7 @@ class StarPrimitive(Primitive):
         return (self.range_1, self.range_2)
 
     @torch.no_grad()
-    def patch_mask(
+    def _raw_patch_mask(
         self,
         centers: Float[Tensor, "P 2"],
         patch_sizes: Integer[Tensor, "P"],

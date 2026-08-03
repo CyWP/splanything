@@ -78,7 +78,7 @@ def test_primitive_param_groups_lacks_name_key(device):
     so that ``OptimizerWrapper.filter`` / ``split`` can map old groups to
     new ones. Today they are nameless, which is what triggers the bug.
     """
-    prim = RadialFreqPrimitive(size=4, scale_factor=1.0).to(device)
+    prim = RadialFreqPrimitive(size=4).to(device)
     pg = prim.param_groups()
     assert all("name" in g for g in pg), (
         f"Every param_groups dict should have a 'name' key; got "
@@ -89,7 +89,7 @@ def test_primitive_param_groups_lacks_name_key(device):
 def test_filter_keeps_all_batched_params_in_optimizer(device):
     """After ``Primitive.filter`` every surviving batched parameter must
     appear in some optimizer group (otherwise AdamW will not touch it)."""
-    prim = RadialFreqPrimitive(size=5, scale_factor=1.0).to(device)
+    prim = RadialFreqPrimitive(size=5).to(device)
     opt = OptimizerWrapper(prim, AdamW, lr=0.01)
 
     keep = torch.tensor([True, False, True, False, True], device=device)
@@ -107,7 +107,7 @@ def test_filter_keeps_all_batched_params_in_optimizer(device):
 
 
 def test_split_keeps_all_batched_params_in_optimizer(device):
-    prim = RadialFreqPrimitive(size=4, scale_factor=1.0).to(device)
+    prim = RadialFreqPrimitive(size=4).to(device)
     opt = OptimizerWrapper(prim, AdamW, lr=0.01)
 
     split_idx = torch.tensor([True, False, True, False], device=device)
@@ -126,7 +126,7 @@ def test_split_keeps_all_batched_params_in_optimizer(device):
 def test_filter_does_not_collapse_groups_to_single_tensor(device):
     """The smoking-gun assertion: after filter, no two groups should
     reference the same ``nn.Parameter`` object."""
-    prim = RadialFreqPrimitive(size=5, scale_factor=1.0).to(device)
+    prim = RadialFreqPrimitive(size=5).to(device)
     opt = OptimizerWrapper(prim, AdamW, lr=0.01)
 
     keep = torch.tensor([True, False, True, False, True], device=device)
@@ -150,7 +150,7 @@ def test_filter_does_not_collapse_groups_to_single_tensor(device):
 
 
 def test_split_does_not_collapse_groups_to_single_tensor(device):
-    prim = RadialFreqPrimitive(size=4, scale_factor=1.0).to(device)
+    prim = RadialFreqPrimitive(size=4).to(device)
     opt = OptimizerWrapper(prim, AdamW, lr=0.01)
 
     split_idx = torch.tensor([True, False, True, False], device=device)
@@ -182,13 +182,12 @@ def test_meta_filter_does_not_collapse_groups(device):
     prim = MetaPrimitive(
         primitive=MultiPrimitive(
             {
-                "radial": RadialFreqPrimitive(size=5, scale_factor=1.0),
-                "cubic": CubicFanPrimitive(size=5, scale_factor=1.0),
+                "radial": RadialFreqPrimitive(size=5),
+                "cubic": CubicFanPrimitive(size=5),
             }
         ),
         size=20,
         primitive_trainable=False,
-        scale_factor=1.0,
     ).to(device)
     opt = OptimizerWrapper(prim, AdamW, lr=0.01)
 
@@ -212,8 +211,8 @@ def test_multiprimitive_param_groups_have_names(device):
     (this is why the inner radial/cubic groups are unaffected)."""
     multi = MultiPrimitive(
         {
-            "radial": RadialFreqPrimitive(size=5, scale_factor=1.0),
-            "cubic": CubicFanPrimitive(size=5, scale_factor=1.0),
+            "radial": RadialFreqPrimitive(size=5),
+            "cubic": CubicFanPrimitive(size=5),
         }
     ).to(device)
     pg = multi.param_groups()
@@ -256,8 +255,8 @@ def test_multiprimitive_filter_also_collapses_groups(device):
     """
     multi = MultiPrimitive(
         {
-            "radial": RadialFreqPrimitive(size=5, scale_factor=1.0),
-            "cubic": CubicFanPrimitive(size=5, scale_factor=1.0),
+            "radial": RadialFreqPrimitive(size=5),
+            "cubic": CubicFanPrimitive(size=5),
         }
     ).to(device)
     opt = OptimizerWrapper(multi, AdamW, lr=0.01)
@@ -285,8 +284,8 @@ def test_multiprimitive_split_also_collapses_groups(device):
     """
     multi = MultiPrimitive(
         {
-            "radial": RadialFreqPrimitive(size=4, scale_factor=1.0),
-            "cubic": CubicFanPrimitive(size=4, scale_factor=1.0),
+            "radial": RadialFreqPrimitive(size=4),
+            "cubic": CubicFanPrimitive(size=4),
         }
     ).to(device)
     opt = OptimizerWrapper(multi, AdamW, lr=0.01)
@@ -316,8 +315,8 @@ def test_optimizer_refs_track_primitive_refs_after_filter(device):
     """
     multi = MultiPrimitive(
         {
-            "radial": RadialFreqPrimitive(size=5, scale_factor=1.0),
-            "cubic": CubicFanPrimitive(size=5, scale_factor=1.0),
+            "radial": RadialFreqPrimitive(size=5),
+            "cubic": CubicFanPrimitive(size=5),
         }
     ).to(device)
     opt = OptimizerWrapper(multi, AdamW, lr=0.01)
@@ -346,7 +345,7 @@ def test_filter_preserves_defaultdict_state(device):
     ``self._optimizer.state`` with a plain ``dict``, breaking lazy state
     initialization. PyTorch optimizers rely on ``state[p]`` returning
     ``{}`` for unseen params; with a plain dict this raises ``KeyError``."""
-    prim = RadialFreqPrimitive(size=5, scale_factor=1.0).to(device)
+    prim = RadialFreqPrimitive(size=5).to(device)
     opt = OptimizerWrapper(prim, AdamW, lr=0.01)
     assert isinstance(opt._optimizer.state, defaultdict), (
         "Before filter the optimizer state should be a defaultdict so "

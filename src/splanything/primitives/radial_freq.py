@@ -81,7 +81,7 @@ class RadialFreqPrimitive(Primitive):
         return torch.stack([torch.cos(ang), torch.sin(ang)], dim=1)
 
     @torch.no_grad()
-    def patch_mask(
+    def _raw_patch_mask(
         self,
         centers: Float[Tensor, "P 2"],
         patch_sizes: Integer[Tensor, "P"],

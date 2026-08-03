@@ -1,3 +1,4 @@
+import torch
 from torch import Tensor
 from typing import List, Tuple
 from jaxtyping import Float
@@ -19,7 +20,7 @@ class MultiRasterizer(Rasterizer):
     def rasterize(self, sample: SampleOutput, **kwargs) -> Float[Tensor, "Nc 4"]:
         Nc = sample.co.shape[0]
         out = torch.zeros((Nc, 4), device=sample.rgb.device, dtype=sample.rgb.dtype)
-        if self.normalize_weights:
+        if self._normalize_weights:
             cum_weights = torch.zeros(
                 (Nc, 1), device=sample.rgb.device, dtype=sample.rgb.dtype
             )
@@ -29,7 +30,7 @@ class MultiRasterizer(Rasterizer):
                 weight = ImgUtils.uv_sample(w, sample.co)
             else:
                 weight = w
-            out += weight * rasterized
+            out += (weight * rasterized)[0]
             if self._normalize_weights:
                 cum_weights += weight
         if self._normalize_weights:

@@ -15,17 +15,21 @@ class MappedSampleProcessor(SampleProcessor):
         proc_fn: Optional[
             Callable[[SampleOutput, Primitive, Float[Tensor, "Np"]], SampleOutput]
         ] = None,
+        coords_attr: str = "adjusted_coords",
     ):
         self._processor = processor
         self._map = proc_map
         self._proc_fn = proc_fn
+        self._coords_attr = coords_attr
 
     def process(
         self,
         sample: SampleOutput,
         primitive: Primitive,
     ) -> SampleOutput:
-        sampled = ImgUtils.uv_sample(self._map, primitive.centroids).squeeze(-1)
+        sampled = ImgUtils.uv_sample(
+            self._map, getattr(primitive, self._coords_attr)
+        ).squeeze(-1)
         return self.process_map(self._processor(sample, primitive), primitive, sampled)
 
     def process_map(

@@ -30,7 +30,7 @@ class MapSplit(SplitRule):
     def __init__(
         self,
         map: Float[Tensor, "B 1 H W"],
-        coords_attr: str = "centroids",
+        coords_attr: str = "adjusted_coords",
         interval: int = 1,
     ):
         """

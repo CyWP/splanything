@@ -32,6 +32,7 @@ class Regularizer(nn.Module):
     def __init__(
         self,
         weight_map: Optional[Float[Tensor, "B 1 H W"]] = None,
+        coords_attr: str = "adjusted_coords",
     ):
         """Initialize the regularizer.
 
@@ -43,6 +44,7 @@ class Regularizer(nn.Module):
         """
         super().__init__()
         self.weight_map = weight_map
+        self._coords_attr = coords_attr
 
     def compute(self, primitive: Primitive) -> Float[Tensor, ""]:
         """Compute unweighted regularization value.
@@ -78,7 +80,7 @@ class Regularizer(nn.Module):
         """
         out = self.compute(primitive)
         if self.weight_map is not None:
-            sample_at = co if co is not None else primitive.centroids
+            sample_at = co if co is not None else getattr(primitive, self._coords_attr)
             weight = ImgUtils.uv_sample(self.weight_map, sample_at)[0].squeeze(-1)
             return out * weight
         return out

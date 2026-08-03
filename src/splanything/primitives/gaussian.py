@@ -78,8 +78,7 @@ class GaussianPrimitive(Primitive):
             two perpendicular axes of each gradient. ax_2 is ax_1 rotated
             90 degrees counterclockwise.
         """
-        ref = self.ref_axis[None, :]
-        ax_1 = self.R @ ref
+        ax_1 = self.R @ self.ref_axis
         ax_2 = torch.stack([ax_1[:, 1], -ax_1[:, 0]], dim=1)
         return ax_1, ax_2
 
@@ -88,7 +87,7 @@ class GaussianPrimitive(Primitive):
         return self.sigma_1 * self.sigma_2 * self._sigma_cutoff**2 * torch.pi
 
     @torch.no_grad()
-    def patch_mask(
+    def _raw_patch_mask(
         self,
         centers: Float[Tensor, "P 2"],
         patch_sizes: Integer[Tensor, "P"],

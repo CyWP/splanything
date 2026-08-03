@@ -142,15 +142,17 @@ class Trainer:
         base_folder: Optional[Path] = None,
         scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
         low_vram: bool = False,
+        adjust_prim: bool = True,
     ):
 
         self.name = name
         self.base_folder = Path(base_folder) or Path(".")
         self.run_folder = self.base_folder / name
         self.run_folder.mkdir(parents=True, exist_ok=True)
-
         self.primitive = primitive
         self.sampler = sampler
+        if adjust_prim:
+            self.primitive.adjust_to_canvas(self.sampler.H, self.sampler.W)
         self.target = sampler.target_img
         self.optimizer = optimizer
         self.losses = losses

@@ -136,7 +136,7 @@ class SingleBSplinePrimitive(Primitive):
         return (w, w)
 
     @torch.no_grad()
-    def patch_mask(
+    def _raw_patch_mask(
         self,
         centers: Float[Tensor, "P 2"],
         patch_sizes: Integer[Tensor, "P"],

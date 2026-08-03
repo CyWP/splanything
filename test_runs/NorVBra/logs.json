@@ -23,6 +23,14 @@
       "[Epoch 68][INFO] [epoch 68] ThresholdFilter: 0 primitives marked for filtering."
     ]
   },
+  "69": {
+    "msg": [
+      "[Epoch 69][INFO] [epoch 69] ThresholdFilter: 11 primitives marked for filtering.",
+      "[Epoch 69][INFO] [epoch 69] Combined filter: 11 marked for filtering.",
+      "[Epoch 69][INFO] [epoch 69] ThresholdFilter: 16 primitives marked for filtering.",
+      "[Epoch 69][INFO] [epoch 69] Combined filter: 16 marked for filtering."
+    ]
+  },
   "85": {
     "msg": [
       "[Epoch 85][INFO] [epoch 85] ThresholdFilter: 0 primitives marked for filtering.",
@@ -31,9 +39,9 @@
   },
   "87": {
     "msg": [
-      "[Epoch 87][INFO] [epoch 87] ThresholdFilter: 100 primitives marked for filtering.",
-      "[Epoch 87][INFO] [epoch 87] ThresholdFilter: 63 primitives marked for filtering.",
-      "[Epoch 87][INFO] [epoch 87] Combined split: 37 marked for splitting."
+      "[Epoch 87][INFO] [epoch 87] ThresholdFilter: 69 primitives marked for filtering.",
+      "[Epoch 87][INFO] [epoch 87] ThresholdFilter: 81 primitives marked for filtering.",
+      "[Epoch 87][INFO] [epoch 87] Combined split: 53 marked for splitting."
     ]
   },
   "102": {
@@ -54,6 +62,14 @@
       "[Epoch 136][INFO] [epoch 136] ThresholdFilter: 0 primitives marked for filtering."
     ]
   },
+  "138": {
+    "msg": [
+      "[Epoch 138][INFO] [epoch 138] ThresholdFilter: 2 primitives marked for filtering.",
+      "[Epoch 138][INFO] [epoch 138] Combined filter: 2 marked for filtering.",
+      "[Epoch 138][INFO] [epoch 138] ThresholdFilter: 9 primitives marked for filtering.",
+      "[Epoch 138][INFO] [epoch 138] Combined filter: 9 marked for filtering."
+    ]
+  },
   "153": {
     "msg": [
       "[Epoch 153][INFO] [epoch 153] ThresholdFilter: 0 primitives marked for filtering.",
@@ -66,11 +82,16 @@
       "[Epoch 170][INFO] [epoch 170] ThresholdFilter: 0 primitives marked for filtering."
     ]
   },
+  "173": {
+    "msg": [
+      "[Epoch 173][INFO] [epoch 173] GradSplit: 0 primitives marked for splitting."
+    ]
+  },
   "174": {
     "msg": [
-      "[Epoch 174][INFO] [epoch 174] ThresholdFilter: 100 primitives marked for filtering.",
-      "[Epoch 174][INFO] [epoch 174] ThresholdFilter: 92 primitives marked for filtering.",
-      "[Epoch 174][INFO] [epoch 174] Combined split: 45 marked for splitting."
+      "[Epoch 174][INFO] [epoch 174] ThresholdFilter: 67 primitives marked for filtering.",
+      "[Epoch 174][INFO] [epoch 174] ThresholdFilter: 116 primitives marked for filtering.",
+      "[Epoch 174][INFO] [epoch 174] Combined split: 62 marked for splitting."
     ]
   },
   "187": {
@@ -81,14 +102,22 @@
   },
   "201": {
     "msg": [
-      "[Epoch 201][INFO] [epoch 201] GradSplit: 0 primitives marked for splitting.",
-      "[Epoch 201][INFO] [epoch 201] GradSplit: 0 primitives marked for splitting."
+      "[Epoch 201][INFO] [epoch 201] GradSplit: 15 primitives marked for splitting.",
+      "[Epoch 201][INFO] [epoch 201] Combined split: 15 marked for splitting."
     ]
   },
   "204": {
     "msg": [
       "[Epoch 204][INFO] [epoch 204] ThresholdFilter: 0 primitives marked for filtering.",
       "[Epoch 204][INFO] [epoch 204] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "207": {
+    "msg": [
+      "[Epoch 207][INFO] [epoch 207] ThresholdFilter: 2 primitives marked for filtering.",
+      "[Epoch 207][INFO] [epoch 207] Combined filter: 2 marked for filtering.",
+      "[Epoch 207][INFO] [epoch 207] ThresholdFilter: 9 primitives marked for filtering.",
+      "[Epoch 207][INFO] [epoch 207] Combined filter: 9 marked for filtering."
     ]
   },
   "221": {
@@ -111,15 +140,23 @@
   },
   "261": {
     "msg": [
-      "[Epoch 261][INFO] [epoch 261] ThresholdFilter: 100 primitives marked for filtering.",
-      "[Epoch 261][INFO] [epoch 261] ThresholdFilter: 125 primitives marked for filtering.",
-      "[Epoch 261][INFO] [epoch 261] Combined split: 57 marked for splitting."
+      "[Epoch 261][INFO] [epoch 261] ThresholdFilter: 80 primitives marked for filtering.",
+      "[Epoch 261][INFO] [epoch 261] ThresholdFilter: 143 primitives marked for filtering.",
+      "[Epoch 261][INFO] [epoch 261] Combined split: 88 marked for splitting."
     ]
   },
   "272": {
     "msg": [
       "[Epoch 272][INFO] [epoch 272] ThresholdFilter: 0 primitives marked for filtering.",
       "[Epoch 272][INFO] [epoch 272] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "276": {
+    "msg": [
+      "[Epoch 276][INFO] [epoch 276] ThresholdFilter: 1 primitives marked for filtering.",
+      "[Epoch 276][INFO] [epoch 276] Combined filter: 1 marked for filtering.",
+      "[Epoch 276][INFO] [epoch 276] ThresholdFilter: 9 primitives marked for filtering.",
+      "[Epoch 276][INFO] [epoch 276] Combined filter: 9 marked for filtering."
     ]
   },
   "289": {
@@ -134,6 +171,14 @@
       "[Epoch 306][INFO] [epoch 306] ThresholdFilter: 0 primitives marked for filtering."
     ]
   },
+  "307": {
+    "msg": [
+      "[Epoch 307][INFO] [epoch 307] MapSplit: 5 primitives marked for splitting.",
+      "[Epoch 307][INFO] [epoch 307] Combined split: 5 marked for splitting.",
+      "[Epoch 307][INFO] [epoch 307] MapSplit: 12 primitives marked for splitting.",
+      "[Epoch 307][INFO] [epoch 307] Combined split: 12 marked for splitting."
+    ]
+  },
   "323": {
     "msg": [
       "[Epoch 323][INFO] [epoch 323] ThresholdFilter: 0 primitives marked for filtering.",
@@ -146,11 +191,24 @@
       "[Epoch 340][INFO] [epoch 340] ThresholdFilter: 0 primitives marked for filtering."
     ]
   },
+  "345": {
+    "msg": [
+      "[Epoch 345][INFO] [epoch 345] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 345][INFO] [epoch 345] ThresholdFilter: 7 primitives marked for filtering.",
+      "[Epoch 345][INFO] [epoch 345] Combined filter: 7 marked for filtering."
+    ]
+  },
+  "346": {
+    "msg": [
+      "[Epoch 346][INFO] [epoch 346] GradSplit: 1 primitives marked for splitting.",
+      "[Epoch 346][INFO] [epoch 346] Combined split: 1 marked for splitting."
+    ]
+  },
   "348": {
     "msg": [
-      "[Epoch 348][INFO] [epoch 348] ThresholdFilter: 100 primitives marked for filtering.",
-      "[Epoch 348][INFO] [epoch 348] ThresholdFilter: 177 primitives marked for filtering.",
-      "[Epoch 348][INFO] [epoch 348] Combined split: 62 marked for splitting."
+      "[Epoch 348][INFO] [epoch 348] ThresholdFilter: 84 primitives marked for filtering.",
+      "[Epoch 348][INFO] [epoch 348] ThresholdFilter: 175 primitives marked for filtering.",
+      "[Epoch 348][INFO] [epoch 348] Combined split: 141 marked for splitting."
     ]
   },
   "357": {
@@ -173,15 +231,22 @@
   },
   "402": {
     "msg": [
-      "[Epoch 402][INFO] [epoch 402] GradSplit: 0 primitives marked for splitting.",
-      "[Epoch 402][INFO] [epoch 402] GradSplit: 5 primitives marked for splitting.",
-      "[Epoch 402][INFO] [epoch 402] Combined split: 5 marked for splitting."
+      "[Epoch 402][INFO] [epoch 402] GradSplit: 28 primitives marked for splitting.",
+      "[Epoch 402][INFO] [epoch 402] Combined split: 28 marked for splitting."
     ]
   },
   "408": {
     "msg": [
       "[Epoch 408][INFO] [epoch 408] ThresholdFilter: 0 primitives marked for filtering.",
       "[Epoch 408][INFO] [epoch 408] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "414": {
+    "msg": [
+      "[Epoch 414][INFO] [epoch 414] ThresholdFilter: 2 primitives marked for filtering.",
+      "[Epoch 414][INFO] [epoch 414] Combined filter: 2 marked for filtering.",
+      "[Epoch 414][INFO] [epoch 414] ThresholdFilter: 14 primitives marked for filtering.",
+      "[Epoch 414][INFO] [epoch 414] Combined filter: 14 marked for filtering."
     ]
   },
   "425": {
@@ -192,19 +257,679 @@
   },
   "435": {
     "msg": [
-      "[Epoch 435][INFO] [epoch 435] ThresholdFilter: 100 primitives marked for filtering.",
-      "[Epoch 435][INFO] [epoch 435] ThresholdFilter: 256 primitives marked for filtering.",
-      "[Epoch 435][INFO] [epoch 435] Combined split: 50 marked for splitting."
+      "[Epoch 435][INFO] [epoch 435] ThresholdFilter: 110 primitives marked for filtering.",
+      "[Epoch 435][INFO] [epoch 435] ThresholdFilter: 248 primitives marked for filtering.",
+      "[Epoch 435][INFO] [epoch 435] Combined split: 195 marked for splitting."
     ]
   },
-  "440": {
+  "442": {
     "msg": [
-      "[Epoch 440][INFO] [epoch 440] Preview closed, stopping training."
+      "[Epoch 442][INFO] [epoch 442] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 442][INFO] [epoch 442] ThresholdFilter: 0 primitives marked for filtering."
     ]
   },
-  "441": {
+  "459": {
     "msg": [
-      "[Epoch 441][INFO] [epoch 441] Checkpoint saved to /home/cyvv/Repos/splanything/test_runs/NorVBra"
+      "[Epoch 459][INFO] [epoch 459] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 459][INFO] [epoch 459] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "476": {
+    "msg": [
+      "[Epoch 476][INFO] [epoch 476] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 476][INFO] [epoch 476] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "483": {
+    "msg": [
+      "[Epoch 483][INFO] [epoch 483] ThresholdFilter: 3 primitives marked for filtering.",
+      "[Epoch 483][INFO] [epoch 483] Combined filter: 3 marked for filtering.",
+      "[Epoch 483][INFO] [epoch 483] ThresholdFilter: 8 primitives marked for filtering.",
+      "[Epoch 483][INFO] [epoch 483] Combined filter: 8 marked for filtering."
+    ]
+  },
+  "493": {
+    "msg": [
+      "[Epoch 493][INFO] [epoch 493] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 493][INFO] [epoch 493] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "510": {
+    "msg": [
+      "[Epoch 510][INFO] [epoch 510] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 510][INFO] [epoch 510] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "519": {
+    "msg": [
+      "[Epoch 519][INFO] [epoch 519] GradSplit: 0 primitives marked for splitting."
+    ]
+  },
+  "522": {
+    "msg": [
+      "[Epoch 522][INFO] [epoch 522] ThresholdFilter: 107 primitives marked for filtering.",
+      "[Epoch 522][INFO] [epoch 522] ThresholdFilter: 324 primitives marked for filtering.",
+      "[Epoch 522][INFO] [epoch 522] Combined split: 306 marked for splitting."
+    ]
+  },
+  "527": {
+    "msg": [
+      "[Epoch 527][INFO] [epoch 527] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 527][INFO] [epoch 527] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "544": {
+    "msg": [
+      "[Epoch 544][INFO] [epoch 544] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 544][INFO] [epoch 544] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "552": {
+    "msg": [
+      "[Epoch 552][INFO] [epoch 552] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 552][INFO] [epoch 552] ThresholdFilter: 8 primitives marked for filtering.",
+      "[Epoch 552][INFO] [epoch 552] Combined filter: 8 marked for filtering."
+    ]
+  },
+  "561": {
+    "msg": [
+      "[Epoch 561][INFO] [epoch 561] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 561][INFO] [epoch 561] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "578": {
+    "msg": [
+      "[Epoch 578][INFO] [epoch 578] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 578][INFO] [epoch 578] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "595": {
+    "msg": [
+      "[Epoch 595][INFO] [epoch 595] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 595][INFO] [epoch 595] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "603": {
+    "msg": [
+      "[Epoch 603][INFO] [epoch 603] GradSplit: 50 primitives marked for splitting.",
+      "[Epoch 603][INFO] [epoch 603] Combined split: 50 marked for splitting."
+    ]
+  },
+  "609": {
+    "msg": [
+      "[Epoch 609][INFO] [epoch 609] ThresholdFilter: 157 primitives marked for filtering.",
+      "[Epoch 609][INFO] [epoch 609] ThresholdFilter: 460 primitives marked for filtering.",
+      "[Epoch 609][INFO] [epoch 609] Combined split: 468 marked for splitting."
+    ]
+  },
+  "612": {
+    "msg": [
+      "[Epoch 612][INFO] [epoch 612] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 612][INFO] [epoch 612] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "614": {
+    "msg": [
+      "[Epoch 614][INFO] [epoch 614] MapSplit: 11 primitives marked for splitting.",
+      "[Epoch 614][INFO] [epoch 614] Combined split: 11 marked for splitting.",
+      "[Epoch 614][INFO] [epoch 614] MapSplit: 38 primitives marked for splitting.",
+      "[Epoch 614][INFO] [epoch 614] Combined split: 38 marked for splitting."
+    ]
+  },
+  "621": {
+    "msg": [
+      "[Epoch 621][INFO] [epoch 621] ThresholdFilter: 16 primitives marked for filtering.",
+      "[Epoch 621][INFO] [epoch 621] Combined filter: 16 marked for filtering.",
+      "[Epoch 621][INFO] [epoch 621] ThresholdFilter: 6 primitives marked for filtering.",
+      "[Epoch 621][INFO] [epoch 621] Combined filter: 6 marked for filtering."
+    ]
+  },
+  "629": {
+    "msg": [
+      "[Epoch 629][INFO] [epoch 629] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 629][INFO] [epoch 629] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "646": {
+    "msg": [
+      "[Epoch 646][INFO] [epoch 646] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 646][INFO] [epoch 646] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "663": {
+    "msg": [
+      "[Epoch 663][INFO] [epoch 663] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 663][INFO] [epoch 663] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "680": {
+    "msg": [
+      "[Epoch 680][INFO] [epoch 680] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 680][INFO] [epoch 680] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "690": {
+    "msg": [
+      "[Epoch 690][INFO] [epoch 690] ThresholdFilter: 13 primitives marked for filtering.",
+      "[Epoch 690][INFO] [epoch 690] Combined filter: 13 marked for filtering.",
+      "[Epoch 690][INFO] [epoch 690] ThresholdFilter: 4 primitives marked for filtering.",
+      "[Epoch 690][INFO] [epoch 690] Combined filter: 4 marked for filtering."
+    ]
+  },
+  "692": {
+    "msg": [
+      "[Epoch 692][INFO] [epoch 692] GradSplit: 2 primitives marked for splitting.",
+      "[Epoch 692][INFO] [epoch 692] Combined split: 2 marked for splitting."
+    ]
+  },
+  "696": {
+    "msg": [
+      "[Epoch 696][INFO] [epoch 696] ThresholdFilter: 138 primitives marked for filtering.",
+      "[Epoch 696][INFO] [epoch 696] Combined split: 1 marked for splitting.",
+      "[Epoch 696][INFO] [epoch 696] ThresholdFilter: 852 primitives marked for filtering.",
+      "[Epoch 696][INFO] [epoch 696] Combined split: 574 marked for splitting."
+    ]
+  },
+  "697": {
+    "msg": [
+      "[Epoch 697][INFO] [epoch 697] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 697][INFO] [epoch 697] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "714": {
+    "msg": [
+      "[Epoch 714][INFO] [epoch 714] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 714][INFO] [epoch 714] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "731": {
+    "msg": [
+      "[Epoch 731][INFO] [epoch 731] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 731][INFO] [epoch 731] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "748": {
+    "msg": [
+      "[Epoch 748][INFO] [epoch 748] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 748][INFO] [epoch 748] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "759": {
+    "msg": [
+      "[Epoch 759][INFO] [epoch 759] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 759][INFO] [epoch 759] ThresholdFilter: 6 primitives marked for filtering.",
+      "[Epoch 759][INFO] [epoch 759] Combined filter: 6 marked for filtering."
+    ]
+  },
+  "765": {
+    "msg": [
+      "[Epoch 765][INFO] [epoch 765] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 765][INFO] [epoch 765] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "782": {
+    "msg": [
+      "[Epoch 782][INFO] [epoch 782] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 782][INFO] [epoch 782] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "783": {
+    "msg": [
+      "[Epoch 783][INFO] [epoch 783] ThresholdFilter: 140 primitives marked for filtering.",
+      "[Epoch 783][INFO] [epoch 783] ThresholdFilter: 1421 primitives marked for filtering.",
+      "[Epoch 783][INFO] [epoch 783] Combined split: 573 marked for splitting."
+    ]
+  },
+  "799": {
+    "msg": [
+      "[Epoch 799][INFO] [epoch 799] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 799][INFO] [epoch 799] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "804": {
+    "msg": [
+      "[Epoch 804][INFO] [epoch 804] GradSplit: 77 primitives marked for splitting.",
+      "[Epoch 804][INFO] [epoch 804] Combined split: 77 marked for splitting."
+    ]
+  },
+  "816": {
+    "msg": [
+      "[Epoch 816][INFO] [epoch 816] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 816][INFO] [epoch 816] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "828": {
+    "msg": [
+      "[Epoch 828][INFO] [epoch 828] ThresholdFilter: 26 primitives marked for filtering.",
+      "[Epoch 828][INFO] [epoch 828] Combined filter: 26 marked for filtering.",
+      "[Epoch 828][INFO] [epoch 828] ThresholdFilter: 2 primitives marked for filtering.",
+      "[Epoch 828][INFO] [epoch 828] Combined filter: 2 marked for filtering."
+    ]
+  },
+  "833": {
+    "msg": [
+      "[Epoch 833][INFO] [epoch 833] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 833][INFO] [epoch 833] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "850": {
+    "msg": [
+      "[Epoch 850][INFO] [epoch 850] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 850][INFO] [epoch 850] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "865": {
+    "msg": [
+      "[Epoch 865][INFO] [epoch 865] GradSplit: 0 primitives marked for splitting."
+    ]
+  },
+  "867": {
+    "msg": [
+      "[Epoch 867][INFO] [epoch 867] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 867][INFO] [epoch 867] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "870": {
+    "msg": [
+      "[Epoch 870][INFO] [epoch 870] ThresholdFilter: 191 primitives marked for filtering.",
+      "[Epoch 870][INFO] [epoch 870] ThresholdFilter: 2188 primitives marked for filtering.",
+      "[Epoch 870][INFO] [epoch 870] Combined split: 377 marked for splitting."
+    ]
+  },
+  "884": {
+    "msg": [
+      "[Epoch 884][INFO] [epoch 884] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 884][INFO] [epoch 884] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "897": {
+    "msg": [
+      "[Epoch 897][INFO] [epoch 897] ThresholdFilter: 14 primitives marked for filtering.",
+      "[Epoch 897][INFO] [epoch 897] Combined filter: 14 marked for filtering.",
+      "[Epoch 897][INFO] [epoch 897] ThresholdFilter: 6 primitives marked for filtering.",
+      "[Epoch 897][INFO] [epoch 897] Combined filter: 6 marked for filtering."
+    ]
+  },
+  "901": {
+    "msg": [
+      "[Epoch 901][INFO] [epoch 901] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 901][INFO] [epoch 901] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "918": {
+    "msg": [
+      "[Epoch 918][INFO] [epoch 918] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 918][INFO] [epoch 918] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "921": {
+    "msg": [
+      "[Epoch 921][INFO] [epoch 921] MapSplit: 9 primitives marked for splitting.",
+      "[Epoch 921][INFO] [epoch 921] Combined split: 9 marked for splitting.",
+      "[Epoch 921][INFO] [epoch 921] MapSplit: 79 primitives marked for splitting.",
+      "[Epoch 921][INFO] [epoch 921] Combined split: 79 marked for splitting."
+    ]
+  },
+  "935": {
+    "msg": [
+      "[Epoch 935][INFO] [epoch 935] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 935][INFO] [epoch 935] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "952": {
+    "msg": [
+      "[Epoch 952][INFO] [epoch 952] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 952][INFO] [epoch 952] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "957": {
+    "msg": [
+      "[Epoch 957][INFO] [epoch 957] ThresholdFilter: 186 primitives marked for filtering.",
+      "[Epoch 957][INFO] [epoch 957] ThresholdFilter: 2723 primitives marked for filtering.",
+      "[Epoch 957][INFO] [epoch 957] Combined split: 292 marked for splitting."
+    ]
+  },
+  "966": {
+    "msg": [
+      "[Epoch 966][INFO] [epoch 966] ThresholdFilter: 8 primitives marked for filtering.",
+      "[Epoch 966][INFO] [epoch 966] Combined filter: 8 marked for filtering.",
+      "[Epoch 966][INFO] [epoch 966] ThresholdFilter: 1 primitives marked for filtering.",
+      "[Epoch 966][INFO] [epoch 966] Combined filter: 1 marked for filtering."
+    ]
+  },
+  "969": {
+    "msg": [
+      "[Epoch 969][INFO] [epoch 969] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 969][INFO] [epoch 969] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "986": {
+    "msg": [
+      "[Epoch 986][INFO] [epoch 986] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 986][INFO] [epoch 986] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1003": {
+    "msg": [
+      "[Epoch 1003][INFO] [epoch 1003] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1003][INFO] [epoch 1003] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1005": {
+    "msg": [
+      "[Epoch 1005][INFO] [epoch 1005] GradSplit: 93 primitives marked for splitting.",
+      "[Epoch 1005][INFO] [epoch 1005] Combined split: 93 marked for splitting."
+    ]
+  },
+  "1020": {
+    "msg": [
+      "[Epoch 1020][INFO] [epoch 1020] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1020][INFO] [epoch 1020] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1035": {
+    "msg": [
+      "[Epoch 1035][INFO] [epoch 1035] ThresholdFilter: 46 primitives marked for filtering.",
+      "[Epoch 1035][INFO] [epoch 1035] Combined filter: 46 marked for filtering.",
+      "[Epoch 1035][INFO] [epoch 1035] ThresholdFilter: 14 primitives marked for filtering.",
+      "[Epoch 1035][INFO] [epoch 1035] Combined filter: 14 marked for filtering."
+    ]
+  },
+  "1037": {
+    "msg": [
+      "[Epoch 1037][INFO] [epoch 1037] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1037][INFO] [epoch 1037] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1038": {
+    "msg": [
+      "[Epoch 1038][INFO] [epoch 1038] GradSplit: 0 primitives marked for splitting."
+    ]
+  },
+  "1044": {
+    "msg": [
+      "[Epoch 1044][INFO] [epoch 1044] ThresholdFilter: 225 primitives marked for filtering.",
+      "[Epoch 1044][INFO] [epoch 1044] ThresholdFilter: 3051 primitives marked for filtering.",
+      "[Epoch 1044][INFO] [epoch 1044] Combined split: 241 marked for splitting."
+    ]
+  },
+  "1054": {
+    "msg": [
+      "[Epoch 1054][INFO] [epoch 1054] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1054][INFO] [epoch 1054] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1071": {
+    "msg": [
+      "[Epoch 1071][INFO] [epoch 1071] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1071][INFO] [epoch 1071] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1088": {
+    "msg": [
+      "[Epoch 1088][INFO] [epoch 1088] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1088][INFO] [epoch 1088] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1104": {
+    "msg": [
+      "[Epoch 1104][INFO] [epoch 1104] ThresholdFilter: 14 primitives marked for filtering.",
+      "[Epoch 1104][INFO] [epoch 1104] Combined filter: 14 marked for filtering.",
+      "[Epoch 1104][INFO] [epoch 1104] ThresholdFilter: 1 primitives marked for filtering.",
+      "[Epoch 1104][INFO] [epoch 1104] Combined filter: 1 marked for filtering."
+    ]
+  },
+  "1105": {
+    "msg": [
+      "[Epoch 1105][INFO] [epoch 1105] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1105][INFO] [epoch 1105] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1122": {
+    "msg": [
+      "[Epoch 1122][INFO] [epoch 1122] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1122][INFO] [epoch 1122] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1131": {
+    "msg": [
+      "[Epoch 1131][INFO] [epoch 1131] ThresholdFilter: 211 primitives marked for filtering.",
+      "[Epoch 1131][INFO] [epoch 1131] ThresholdFilter: 3263 primitives marked for filtering.",
+      "[Epoch 1131][INFO] [epoch 1131] Combined split: 269 marked for splitting."
+    ]
+  },
+  "1139": {
+    "msg": [
+      "[Epoch 1139][INFO] [epoch 1139] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1139][INFO] [epoch 1139] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1156": {
+    "msg": [
+      "[Epoch 1156][INFO] [epoch 1156] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1156][INFO] [epoch 1156] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1173": {
+    "msg": [
+      "[Epoch 1173][INFO] [epoch 1173] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1173][INFO] [epoch 1173] ThresholdFilter: 9 primitives marked for filtering.",
+      "[Epoch 1173][INFO] [epoch 1173] Combined filter: 9 marked for filtering.",
+      "[Epoch 1173][INFO] [epoch 1173] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1173][INFO] [epoch 1173] ThresholdFilter: 8 primitives marked for filtering.",
+      "[Epoch 1173][INFO] [epoch 1173] Combined filter: 8 marked for filtering."
+    ]
+  },
+  "1190": {
+    "msg": [
+      "[Epoch 1190][INFO] [epoch 1190] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1190][INFO] [epoch 1190] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1206": {
+    "msg": [
+      "[Epoch 1206][INFO] [epoch 1206] GradSplit: 98 primitives marked for splitting.",
+      "[Epoch 1206][INFO] [epoch 1206] Combined split: 98 marked for splitting."
+    ]
+  },
+  "1207": {
+    "msg": [
+      "[Epoch 1207][INFO] [epoch 1207] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1207][INFO] [epoch 1207] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1211": {
+    "msg": [
+      "[Epoch 1211][INFO] [epoch 1211] GradSplit: 1 primitives marked for splitting.",
+      "[Epoch 1211][INFO] [epoch 1211] Combined split: 1 marked for splitting."
+    ]
+  },
+  "1218": {
+    "msg": [
+      "[Epoch 1218][INFO] [epoch 1218] ThresholdFilter: 300 primitives marked for filtering.",
+      "[Epoch 1218][INFO] [epoch 1218] ThresholdFilter: 3482 primitives marked for filtering.",
+      "[Epoch 1218][INFO] [epoch 1218] Combined split: 312 marked for splitting."
+    ]
+  },
+  "1224": {
+    "msg": [
+      "[Epoch 1224][INFO] [epoch 1224] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1224][INFO] [epoch 1224] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1228": {
+    "msg": [
+      "[Epoch 1228][INFO] [epoch 1228] MapSplit: 15 primitives marked for splitting.",
+      "[Epoch 1228][INFO] [epoch 1228] Combined split: 15 marked for splitting.",
+      "[Epoch 1228][INFO] [epoch 1228] MapSplit: 93 primitives marked for splitting.",
+      "[Epoch 1228][INFO] [epoch 1228] Combined split: 93 marked for splitting."
+    ]
+  },
+  "1241": {
+    "msg": [
+      "[Epoch 1241][INFO] [epoch 1241] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1241][INFO] [epoch 1241] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1242": {
+    "msg": [
+      "[Epoch 1242][INFO] [epoch 1242] ThresholdFilter: 69 primitives marked for filtering.",
+      "[Epoch 1242][INFO] [epoch 1242] Combined filter: 69 marked for filtering.",
+      "[Epoch 1242][INFO] [epoch 1242] ThresholdFilter: 6 primitives marked for filtering.",
+      "[Epoch 1242][INFO] [epoch 1242] Combined filter: 6 marked for filtering."
+    ]
+  },
+  "1258": {
+    "msg": [
+      "[Epoch 1258][INFO] [epoch 1258] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1258][INFO] [epoch 1258] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1275": {
+    "msg": [
+      "[Epoch 1275][INFO] [epoch 1275] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1275][INFO] [epoch 1275] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1292": {
+    "msg": [
+      "[Epoch 1292][INFO] [epoch 1292] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1292][INFO] [epoch 1292] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1305": {
+    "msg": [
+      "[Epoch 1305][INFO] [epoch 1305] ThresholdFilter: 246 primitives marked for filtering.",
+      "[Epoch 1305][INFO] [epoch 1305] ThresholdFilter: 3900 primitives marked for filtering.",
+      "[Epoch 1305][INFO] [epoch 1305] Combined split: 293 marked for splitting."
+    ]
+  },
+  "1309": {
+    "msg": [
+      "[Epoch 1309][INFO] [epoch 1309] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1309][INFO] [epoch 1309] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1311": {
+    "msg": [
+      "[Epoch 1311][INFO] [epoch 1311] ThresholdFilter: 23 primitives marked for filtering.",
+      "[Epoch 1311][INFO] [epoch 1311] Combined filter: 23 marked for filtering.",
+      "[Epoch 1311][INFO] [epoch 1311] ThresholdFilter: 7 primitives marked for filtering.",
+      "[Epoch 1311][INFO] [epoch 1311] Combined filter: 7 marked for filtering."
+    ]
+  },
+  "1326": {
+    "msg": [
+      "[Epoch 1326][INFO] [epoch 1326] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1326][INFO] [epoch 1326] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1343": {
+    "msg": [
+      "[Epoch 1343][INFO] [epoch 1343] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1343][INFO] [epoch 1343] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1360": {
+    "msg": [
+      "[Epoch 1360][INFO] [epoch 1360] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1360][INFO] [epoch 1360] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1377": {
+    "msg": [
+      "[Epoch 1377][INFO] [epoch 1377] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1377][INFO] [epoch 1377] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1380": {
+    "msg": [
+      "[Epoch 1380][INFO] [epoch 1380] ThresholdFilter: 3 primitives marked for filtering.",
+      "[Epoch 1380][INFO] [epoch 1380] Combined filter: 3 marked for filtering.",
+      "[Epoch 1380][INFO] [epoch 1380] ThresholdFilter: 4 primitives marked for filtering.",
+      "[Epoch 1380][INFO] [epoch 1380] Combined filter: 4 marked for filtering."
+    ]
+  },
+  "1384": {
+    "msg": [
+      "[Epoch 1384][INFO] [epoch 1384] GradSplit: 5 primitives marked for splitting.",
+      "[Epoch 1384][INFO] [epoch 1384] Combined split: 5 marked for splitting."
+    ]
+  },
+  "1392": {
+    "msg": [
+      "[Epoch 1392][INFO] [epoch 1392] ThresholdFilter: 220 primitives marked for filtering.",
+      "[Epoch 1392][INFO] [epoch 1392] ThresholdFilter: 4219 primitives marked for filtering.",
+      "[Epoch 1392][INFO] [epoch 1392] Combined split: 261 marked for splitting."
+    ]
+  },
+  "1394": {
+    "msg": [
+      "[Epoch 1394][INFO] [epoch 1394] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1394][INFO] [epoch 1394] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1407": {
+    "msg": [
+      "[Epoch 1407][INFO] [epoch 1407] GradSplit: 115 primitives marked for splitting.",
+      "[Epoch 1407][INFO] [epoch 1407] Combined split: 115 marked for splitting."
+    ]
+  },
+  "1411": {
+    "msg": [
+      "[Epoch 1411][INFO] [epoch 1411] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1411][INFO] [epoch 1411] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1428": {
+    "msg": [
+      "[Epoch 1428][INFO] [epoch 1428] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1428][INFO] [epoch 1428] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1445": {
+    "msg": [
+      "[Epoch 1445][INFO] [epoch 1445] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1445][INFO] [epoch 1445] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1449": {
+    "msg": [
+      "[Epoch 1449][INFO] [epoch 1449] ThresholdFilter: 66 primitives marked for filtering.",
+      "[Epoch 1449][INFO] [epoch 1449] Combined filter: 66 marked for filtering.",
+      "[Epoch 1449][INFO] [epoch 1449] ThresholdFilter: 11 primitives marked for filtering.",
+      "[Epoch 1449][INFO] [epoch 1449] Combined filter: 11 marked for filtering."
+    ]
+  },
+  "1462": {
+    "msg": [
+      "[Epoch 1462][INFO] [epoch 1462] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1462][INFO] [epoch 1462] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1479": {
+    "msg": [
+      "[Epoch 1479][INFO] [epoch 1479] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1479][INFO] [epoch 1479] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1479][INFO] [epoch 1479] ThresholdFilter: 269 primitives marked for filtering.",
+      "[Epoch 1479][INFO] [epoch 1479] ThresholdFilter: 4436 primitives marked for filtering.",
+      "[Epoch 1479][INFO] [epoch 1479] Combined split: 294 marked for splitting."
+    ]
+  },
+  "1496": {
+    "msg": [
+      "[Epoch 1496][INFO] [epoch 1496] ThresholdFilter: 0 primitives marked for filtering.",
+      "[Epoch 1496][INFO] [epoch 1496] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1500": {
+    "msg": [
+      "[Epoch 1500][INFO] [epoch 1500] Preview closed, stopping training."
+    ]
+  },
+  "1501": {
+    "msg": [
+      "[Epoch 1501][INFO] [epoch 1501] Checkpoint saved to /home/cyvv/Repos/splanything/test_runs/NorVBra"
     ]
   }
 }

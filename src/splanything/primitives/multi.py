@@ -32,6 +32,7 @@ class MultiPrimitive(Primitive):
         self._context_masks: List[Bool[Tensor, "N"]] = []
         self._param_defs: Dict[str, ParamDef] = {}
         self.primitives = nn.ModuleDict(primitives)
+        self.register_buffer("_aspect_ratio", torch.tensor(1.0))
         if filter_rules is not None:
             for f in filter_rules:
                 self.add_filter_rule(f)
@@ -139,7 +140,7 @@ class MultiPrimitive(Primitive):
         return self.primitives[key]
 
     @torch.no_grad()
-    def patch_mask(
+    def _raw_patch_mask(
         self,
         centers: Float[Tensor, "P 2"],
         patch_sizes: Integer[Tensor, "P"],
@@ -218,6 +219,12 @@ class MultiPrimitive(Primitive):
             elif not ignore_exclusive:
                 self.primitives[key] = prim
         return self
+
+    @nomask
+    @torch.no_grad()
+    def adjust_to_canvas(self, H: int, W: int) -> MultiPrimitive:
+        for prim in self.primitives.values():
+            prim.adjust_to_canvas(H, W)
 
     @nomask
     def param_groups(self) -> List[Dict[str, nn.Parameter | Any]]:
@@ -325,13 +332,11 @@ class MultiPrimitive(Primitive):
         state_dict.pop(prefix + "_size", None)
         state_dict.pop(prefix + "_param_defs", None)
 
-        child_pds: Dict[str, Dict[str, ParamDef]] = {
-            n: {} for n in self.primitives
-        }
+        child_pds: Dict[str, Dict[str, ParamDef]] = {n: {} for n in self.primitives}
         for key in list(state_dict.keys()):
             if not key.startswith(prefix):
                 continue
-            suffix = key[len(prefix):]
+            suffix = key[len(prefix) :]
             if "$$" not in suffix:
                 continue
             child_name, p_name = suffix.split("$$", 1)
@@ -347,6 +352,31 @@ class MultiPrimitive(Primitive):
         for name, pds in child_pds.items():
             if pds:
                 self.primitives[name].update_paramdefs(pds)
+
+        for c_name, child in self.primitives.items():
+            c_prefix = prefix + "primitives." + c_name + "."
+            for p_name, param in list(child._parameters.items()) + list(
+                child._buffers.items()
+            ):
+                if param is None:
+                    continue
+                key = c_prefix + p_name
+                if key not in state_dict:
+                    continue
+                ckpt = state_dict[key]
+                if param.shape == ckpt.shape:
+                    continue
+                if param.ndim != ckpt.ndim:
+                    continue
+                if param.shape[1:] != ckpt.shape[1:]:
+                    continue
+                new_tensor = torch.empty_like(ckpt)
+                if p_name in child._parameters:
+                    child._parameters[p_name] = nn.Parameter(
+                        new_tensor, requires_grad=param.requires_grad
+                    )
+                else:
+                    child._buffers[p_name] = new_tensor
 
         super()._load_from_state_dict(
             state_dict,
