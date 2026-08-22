@@ -4,6 +4,7 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
+from ...utils.img import Splimage
 from ...primitives.base import Primitive
 from .base import Regularizer
 
@@ -37,7 +38,7 @@ class AttributeRange(Regularizer):
         min: Optional[float | Float[Tensor, "..."]] = None,
         max: Optional[float | Float[Tensor, "..."]] = None,
         target: Optional[float | Float[Tensor, "..."]] = None,
-        weight_map: Optional[Float[Tensor, "B 1 H W"]] = None,
+        weight_map: Optional[Splimage] = None,
     ):
         """Initialize the regularizer.
 

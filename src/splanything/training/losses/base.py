@@ -5,7 +5,7 @@ from jaxtyping import Float
 from torch import Tensor
 
 from ..trainer import Trainer
-from ...utils.img import ImgUtils
+from ...utils.img import Splimage
 
 
 class Loss(nn.Module):
@@ -25,12 +25,12 @@ class Loss(nn.Module):
 
     def __init__(
         self,
-        weight_map: Optional[Float[Tensor, "B 1 H W"]] = None,
+        weight_map: Optional[Splimage] = None,
     ):
         """Initialize the loss.
 
         Args:
-            weight_map: Optional spatial map (B, 1, H, W) sampled at
+            weight_map: Optional spatial map (Splimage object) sampled at
                 coordinates in ``forward`` to spatially weight the
                 loss. Not premultiplied by any scalar weight.
         """
@@ -70,6 +70,5 @@ class Loss(nn.Module):
         """
         out = self.compute(trainer)
         if co is not None and self.weight_map is not None:
-            weight = ImgUtils.uv_sample(self.weight_map, co)[0].squeeze(-1)
-            return out * weight
+            return out * self.weight_map.mask_sample(co)[0].squeeze(-1)
         return out

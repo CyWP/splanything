@@ -4,6 +4,7 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
+from ...utils.img import Splimage
 from ...primitives.base import Primitive
 from .base import Regularizer
 
@@ -40,7 +41,7 @@ class AttributeProximity(Regularizer):
         attr_names: List[str],
         mode: Literal["ATTRACT", "PUSH", "RATIO"] = "PUSH",
         ratio: Optional[float] = None,
-        weight_map: Optional[Float[Tensor, "B 1 H W"]] = None,
+        weight_map: Optional[Splimage] = None,
     ):
         """Initialize the regularizer.
 
@@ -82,9 +83,7 @@ class AttributeProximity(Regularizer):
             first = getattr(primitive, self.attr_names[0])
             second = getattr(primitive, self.attr_names[1])
             return ((first - self.ratio * second) ** 2).mean()
-        vals = torch.cat(
-            [getattr(primitive, name) for name in self.attr_names], dim=-1
-        )
+        vals = torch.cat([getattr(primitive, name) for name in self.attr_names], dim=-1)
         dist = (vals - vals.mean(dim=-1, keepdim=True)) ** 2
         if self.mode == "PUSH":
             return torch.exp(-dist).mean()

@@ -2,12 +2,10 @@ from __future__ import annotations
 from typing import List, Tuple, TYPE_CHECKING
 
 import torch
-from jaxtyping import Float
-from torch import Tensor
 
 from .base import SampleProcessor
 from ..sample_output import SampleOutput
-from ...utils.img import ImgUtils
+from ...utils.img import Splimage
 
 if TYPE_CHECKING:
     from ...primitives.base import Primitive
@@ -16,7 +14,7 @@ if TYPE_CHECKING:
 class MultiSampleProcessor(SampleProcessor):
     def __init__(
         self,
-        processors: List[Tuple[SampleProcessor, float | Float[Tensor, "B 1 H W"]]],
+        processors: List[Tuple[SampleProcessor, float | Splimage]],
         normalize_weights: bool = False,
     ):
         self._processors = [p for p, _ in processors]
@@ -38,8 +36,8 @@ class MultiSampleProcessor(SampleProcessor):
             )
         for proc, w in zip(self._processors, self._weights):
             processed = proc(sample, primitive)
-            if isinstance(w, torch.Tensor) and w.ndim == 4:
-                weight = ImgUtils.uv_sample(w, sample.co).squeeze(0)
+            if isinstance(w, Splimage):
+                weight = w.mask_sample(sample.co).squeeze(0)
             else:
                 weight = torch.tensor(
                     w, device=sample.rgb.device, dtype=sample.rgb.dtype

@@ -5,8 +5,8 @@ from jaxtyping import Bool, Float
 from torch import Tensor
 
 from ....primitives.base import Primitive
-from ....utils.img import ImgUtils
-from ..base import RefinementRule, SplitRule
+from ....utils.img import Splimage
+from ..base import SplitRule
 
 
 class MapSplit(SplitRule):
@@ -29,7 +29,7 @@ class MapSplit(SplitRule):
 
     def __init__(
         self,
-        map: Float[Tensor, "B 1 H W"],
+        map: Splimage,
         coords_attr: str = "adjusted_coords",
         interval: int = 1,
     ):
@@ -52,7 +52,7 @@ class MapSplit(SplitRule):
         Returns:
             Per-primitive probabilities (N,).
         """
-        sampled = ImgUtils.uv_sample(self.map, getattr(primitive, self.coords_attr))
+        sampled = self.map.mask_sample(getattr(primitive, self.coords_attr))
         return sampled[0, :, 0]
 
     def judge(self, criterion: Float[Tensor, "N"]) -> Bool[Tensor, "N"]:
@@ -65,5 +65,3 @@ class MapSplit(SplitRule):
             split: Boolean mask (N,). True = SPLIT, False = IGNORE.
         """
         return torch.bernoulli(criterion).bool()
-
-    apply = RefinementRule.apply

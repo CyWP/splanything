@@ -4,13 +4,13 @@ from typing import Tuple, Optional, Callable
 from jaxtyping import Float
 
 from .base import Initializer
-from ...utils.img import ImgUtils
+from ...utils.img import Splimage
 
 
 class MappedInitializer(Initializer):
     def __init__(
         self,
-        map: Float[Tensor, "B 1 H W"],
+        map: Splimage,
         coordinate_key: str = "centroids",
         initializer: Optional[Initializer] = None,
         apply_func: Optional[
@@ -37,7 +37,7 @@ class MappedInitializer(Initializer):
                 f"The coordinate key '{name}' must represent 2D Coordinates."
             )
             co = self.generate_coords(param_shape[0])
-            self._sampled_cache = ImgUtils.uv_sample(self.map, co)
+            self._sampled_cache = self.map.mask_sample(co)
             self.process_feats_cache()
             return co
         feat = self.initializer.init_param(name, param_shape, batched)
@@ -48,7 +48,7 @@ class MappedInitializer(Initializer):
             return self.apply_map(name, self._sampled_cache, feat)
 
     def generate_coords(self, N: int) -> Float[Tensor, "N 2"]:
-        return ImgUtils.sample_px_coords(self.map, N, noise=True)
+        return self.map.sample_px_coords(N, noise=True)
 
     def process_feats_cache(self):
         # Reference to previously intialized tensors are kept,

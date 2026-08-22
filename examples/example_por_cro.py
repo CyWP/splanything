@@ -60,8 +60,8 @@ def train():
     msk_img = Image.open("../assets/por_cro_offside_masked.png")
     msk_img_blur40 = msk_img.filter(ImageFilter.GaussianBlur(radius=40))
     msk_img_blur10 = msk_img.filter(ImageFilter.GaussianBlur(radius=10))
-    msk_tensor_blur40 = ImgUtils.pil2map(msk_img_blur40, mode="A").to(device)
-    msk_tensor_blur10 = ImgUtils.pil2map(msk_img_blur10, mode="A").to(device)
+    msk_tensor_blur40 = ImgUtils.pil2mask(msk_img_blur40, mode="A").to(device)
+    msk_tensor_blur10 = ImgUtils.pil2mask(msk_img_blur10, mode="A").to(device)
 
     # primitive
     prim = get_primitive()

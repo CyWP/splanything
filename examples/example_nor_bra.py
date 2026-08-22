@@ -7,7 +7,7 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from pathlib import Path
 
-from PIL import Image, ImageFilter, ImageOps
+from PIL import Image, ImageFilter
 from splanything.training import Trainer, TrainSampler, OptimizerWrapper
 from splanything.primitives import (
     MultiPrimitive,
@@ -70,7 +70,7 @@ def get_primitive():
     # cubic = CubicFanPrimitive(size=10).to(device)
     msk_img = get_target()
     msk_img_blur40 = msk_img.filter(ImageFilter.GaussianBlur(radius=40))
-    msk_tensor_blur40 = ImgUtils.pil2map(msk_img_blur40, mode="A").to(device)
+    msk_tensor_blur40 = ImgUtils.pil2mask(msk_img_blur40, mode="A").to(device)
     init_map = msk_tensor_blur40 * 0.75 + 0.25
     radial = RadialFreqPrimitive(
         size=150,
@@ -101,7 +101,7 @@ def train():
     tgt_H, tgt_W = tgt.shape[2:]
     msk_img = get_target()
     msk_img_blur10 = msk_img.filter(ImageFilter.GaussianBlur(radius=10))
-    msk_tensor_blur10 = ImgUtils.pil2map(msk_img_blur10, mode="A").to(device)
+    msk_tensor_blur10 = ImgUtils.pil2mask(msk_img_blur10, mode="A").to(device)
 
     # primitive
     prim = get_primitive()
@@ -212,11 +212,11 @@ def generate():
     prim.requires_grad_(False)
     prim = prim.to(device)
     msk_img = get_target().resize((gen_W, gen_H))
-    msk_tensor = ImgUtils.pil2map(msk_img, mode="A").to(device)
+    msk_tensor = ImgUtils.pil2mask(msk_img, mode="A").to(device)
     msk_img_blur100 = msk_img.filter(ImageFilter.GaussianBlur(radius=100))
-    msk_tensor_blur100 = ImgUtils.pil2map(msk_img_blur100, mode="A").to(device)
+    msk_tensor_blur100 = ImgUtils.pil2mask(msk_img_blur100, mode="A").to(device)
     msk_img_blur40 = msk_img.filter(ImageFilter.GaussianBlur(radius=40))
-    msk_tensor_blur40 = ImgUtils.pil2map(msk_img_blur40, mode="A").to(device)
+    msk_tensor_blur40 = ImgUtils.pil2mask(msk_img_blur40, mode="A").to(device)
 
     # Sample processor
     sample_proc = FlexibleSampleProcessor(

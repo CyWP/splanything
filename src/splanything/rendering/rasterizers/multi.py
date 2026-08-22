@@ -4,13 +4,13 @@ from typing import List, Tuple
 from jaxtyping import Float
 from .base import Rasterizer
 from ..sample_output import SampleOutput
-from ...utils.img import ImgUtils
+from ...utils.img import Splimage
 
 
 class MultiRasterizer(Rasterizer):
     def __init__(
         self,
-        rasterizers: List[Tuple[Rasterizer, float | Float[Tensor, "B 1 H W"]]],
+        rasterizers: List[Tuple[Rasterizer, float | Splimage]],
         normalize_weights: bool = False,
     ):
         self._rasterizers = [r for r, _ in rasterizers]
@@ -27,7 +27,7 @@ class MultiRasterizer(Rasterizer):
         for r, w in zip(self._rasterizers, self._weights):
             rasterized = r(sample)
             if isinstance(w, torch.Tensor) and w.ndim == 4:
-                weight = ImgUtils.uv_sample(w, sample.co)
+                weight = w.mask_sample(sample.co)
             else:
                 weight = w
             out += (weight * rasterized)[0]

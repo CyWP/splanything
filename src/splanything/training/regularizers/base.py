@@ -5,7 +5,7 @@ from jaxtyping import Float
 from torch import Tensor
 
 from ...primitives.base import Primitive
-from ...utils.img import ImgUtils
+from ...utils.img import Splimage
 
 
 class Regularizer(nn.Module):
@@ -31,7 +31,7 @@ class Regularizer(nn.Module):
 
     def __init__(
         self,
-        weight_map: Optional[Float[Tensor, "B 1 H W"]] = None,
+        weight_map: Optional[Splimage] = None,
         coords_attr: str = "adjusted_coords",
     ):
         """Initialize the regularizer.
@@ -80,7 +80,6 @@ class Regularizer(nn.Module):
         """
         out = self.compute(primitive)
         if self.weight_map is not None:
-            sample_at = co if co is not None else getattr(primitive, self._coords_attr)
-            weight = ImgUtils.uv_sample(self.weight_map, sample_at)[0].squeeze(-1)
-            return out * weight
+            sample_at = getattr(primitive, self._coords_attr) if co is None else co
+            return out * self.map.mask_sample(sample_at)[0].squeeze(-1)
         return out

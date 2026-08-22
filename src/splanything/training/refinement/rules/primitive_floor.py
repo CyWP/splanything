@@ -7,7 +7,7 @@ from jaxtyping import Bool, Float
 from torch import Tensor
 
 from ....primitives.base import Primitive
-from ....utils.img import ImgUtils
+from ....utils.img import Splimage
 from ..base import FilterRule, RefinementRule, SplitRule
 
 
@@ -48,7 +48,7 @@ class PrimitiveFloor(SplitRule):
         self,
         min_length: int,
         strategy: Literal["stochastic", "map", "map_stochastic", "rule"] = "stochastic",
-        map: Optional[Float[Tensor, "B 1 H W"]] = None,
+        map: Optional[Splimage] = None,
         rule: Optional[FilterRule] = None,
         descending: bool = False,
         coords_attr: str = "adjusted_coords",
@@ -117,8 +117,7 @@ class PrimitiveFloor(SplitRule):
             return torch.rand(n, device=device, dtype=dtype)
 
         if self.strategy in ("map", "map_stochastic"):
-            sampled = ImgUtils.uv_sample(self.map, getattr(primitive, self.coords_attr))
-            values = sampled[0, :, 0]
+            values = self.map.mask_sample(getattr(primitive, self.coords_attr))[0, :, 0]
             if self.strategy == "map_stochastic":
                 values = values * torch.rand(n, device=device, dtype=dtype)
             return values

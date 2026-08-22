@@ -4,7 +4,7 @@ from typing import Callable, Optional
 
 from ..base import CriterionProcessor, RefinementRule
 from ....primitives.base import Primitive
-from ....utils.img import ImgUtils
+from ....utils.img import Splimage
 
 
 class MapCriterionProcessor(CriterionProcessor):
@@ -27,7 +27,7 @@ class MapCriterionProcessor(CriterionProcessor):
 
     def __init__(
         self,
-        map: Float[Tensor, "B 1 H W"],
+        map: Splimage,
         coords_attr: str = "adjusted_coords",
         proc_fn: Optional[
             Callable[Float[Tensor, "N ..."], Float[Tensor, "N ..."]]
@@ -61,7 +61,7 @@ class MapCriterionProcessor(CriterionProcessor):
         Returns:
             Modified criterion (N, ...).
         """
-        sampled = ImgUtils.uv_sample(
-            self.map, getattr(primitive, self.coords_attr)
-        ).view(criterion.shape)
+        sampled = self.map.mask_sample(getattr(primitive, self.coords_attr)).view(
+            criterion.shape
+        )
         return self.proc_fn(sampled, criterion)

@@ -4,14 +4,14 @@ from typing import Callable, Optional
 from jaxtyping import Float
 
 from .base import SampleProcessor, SampleOutput
-from ...utils.img import ImgUtils
+from ...utils.img import Splimage
 
 
 class MappedSampleProcessor(SampleProcessor):
     def __init__(
         self,
         processor: SampleProcessor,
-        proc_map: Float[Tensor, "B 1 H W"],
+        proc_map: Splimage,
         proc_fn: Optional[
             Callable[[SampleOutput, Primitive, Float[Tensor, "Np"]], SampleOutput]
         ] = None,
@@ -27,9 +27,9 @@ class MappedSampleProcessor(SampleProcessor):
         sample: SampleOutput,
         primitive: Primitive,
     ) -> SampleOutput:
-        sampled = ImgUtils.uv_sample(
-            self._map, getattr(primitive, self._coords_attr)
-        ).squeeze(-1)
+        sampled = self._map.mask_sample(getattr(primitive, self._coords_attr)).squeeze(
+            -1
+        )
         return self.process_map(self._processor(sample, primitive), primitive, sampled)
 
     def process_map(

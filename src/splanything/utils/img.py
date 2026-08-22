@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import math
-from typing import List, Optional, Sequence, Tuple
+import os
+from typing import Callable, List, Literal, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import torch
@@ -95,38 +96,48 @@ class ImgUtils:
         return torch.from_numpy(stacked).permute(0, 3, 1, 2).float() / 255.0
 
     @staticmethod
-    def pil2map(
+    def pil2mask(
         img: Image.Image | Sequence[Image.Image],
         mode: str = "mean",
     ) -> Float[Tensor, "B 1 H W"]:
-        return ImgUtils.tensor2map(ImgUtils.pil2tensor(img), mode=mode)
+        return ImgUtils.tensor2mask(ImgUtils.pil2tensor(img), mode=mode)
 
     @staticmethod
-    def tensor2map(
+    def tensor2mask(
         x: Float[Tensor, "B C H W"],
         mode: str = "mean",
     ) -> Float[Tensor, "B 1 H W"]:
-        """Reduce a multi-channel image tensor to a single-channel map.
+        """Reduce a multi-channel image tensor to a single-channel mask.
 
         Args:
             x: Image tensor (B, C, H, W).
-            mode: Reduction mode. One of "R", "G", "B", "A" (select the
-                corresponding channel) or "mean" (average across channels).
+            mode: Reduction mode. One of:
+                - "R", "G", "B", "A": select the corresponding channel.
+                - "RGB": mean of the first 3 channels (R, G, B). Useful when
+                  an alpha channel was artificially added (e.g. ``=1``) and
+                  should not dilute the color average.
+                - "mean": mean across **all** channels.
 
         Returns:
-            Single-channel map (B, 1, H, W).
+            Single-channel mask (B, 1, H, W).
 
         Raises:
-            ValueError: If mode is not one of "R", "G", "B", "A", "mean".
+            ValueError: If mode is not one of "R", "G", "B", "A", "RGB", "mean".
         """
         channel_map = {"R": 0, "G": 1, "B": 2, "A": 3}
         if mode == "mean":
             return x.mean(dim=1, keepdim=True)
+        if mode == "RGB":
+            if x.shape[1] < 3:
+                raise ValueError(
+                    f"'RGB' mode requires at least 3 channels, got {x.shape[1]}."
+                )
+            return x[:, :3].mean(dim=1, keepdim=True)
         if mode in channel_map:
             idx = channel_map[mode]
             return x[:, idx : idx + 1, :, :]
         raise ValueError(
-            f"Unknown mode '{mode}'; expected one of 'R', 'G', 'B', 'A', 'mean'."
+            f"Unknown mode '{mode}'; expected one of 'R', 'G', 'B', 'A', 'RGB', 'mean'."
         )
 
     @staticmethod
@@ -608,14 +619,14 @@ class ImgUtils:
         return torch.from_numpy(arr).unsqueeze(0).permute(0, 3, 1, 2)
 
     @staticmethod
-    def img2map(
+    def img2mask(
         img: Float[Tensor, "B C H W"], min: float = -1.0, max: float = 1.0
     ) -> Float[Tensor, "B 1 H W"]:
         return (img.mean(dim=1).unsqueeze(1) + 1) / 2
 
     @staticmethod
-    def load_map(path: str) -> Float[Tensor, "B 1 H W"]:
-        return ImgUtils.img2map(ImgUtils.load_image(path, mode="RGBA"))
+    def load_mask(path: str) -> Float[Tensor, "B 1 H W"]:
+        return ImgUtils.img2mask(ImgUtils.load_image(path, mode="RGBA"))
 
     @staticmethod
     def same_size(*imgs: Float[Tensor, "B C H W"]) -> bool:
@@ -633,6 +644,7 @@ class ImgUtils:
     def uv_sample(
         img: Float[Tensor, "B C H W"],
         uv_co: Float[Tensor, "N 2"],
+        padding: Tuple[int, int, int, int] = (0, 0, 0, 0),
     ) -> Float[Tensor, "B N C"]:
         """Bilinearly sample an image at normalized pixel-center coordinates.
 
@@ -644,11 +656,19 @@ class ImgUtils:
         via the fractional weights, so they return a valid sample rather
         than extrapolating.
 
+        Implicit padding is treated as already baked into the image:
+        ``padding`` (top, bottom, left, right) shifts UV ``[0, 1]`` to the
+        logical (unpadded) frame so coordinates falling inside the padded
+        border correctly sample those border pixels.
+
         Args:
             img: Image tensor (B, C, H, W).
             uv_co: Normalized coordinates (N, 2) in pixel-center convention,
                 typically produced by :meth:`gen_px_coords` or by
                 ``primitive.centroid_coordinates``.
+            padding: Implicit padding (top, bottom, left, right) already
+                present in ``img``. UV ``[0, 1]`` maps to the logical
+                frame; values outside that range sample the padding.
 
         Returns:
             Sampled values (B, N, C).
@@ -656,8 +676,18 @@ class ImgUtils:
         B, C, H, W = img.shape
         N = uv_co.shape[0]
 
-        y = uv_co[:, 0] * H - 0.5
-        x = uv_co[:, 1] * W - 0.5
+        pt, pb, pl, pr = padding
+        H_logical = H - pt - pb
+        W_logical = W - pl - pr
+        if H_logical < 1 or W_logical < 1:
+            raise ValueError(
+                f"Padding {padding} leaves no logical image (got "
+                f"H_logical={H_logical}, W_logical={W_logical} from "
+                f"img shape {(B, C, H, W)})."
+            )
+
+        y = uv_co[:, 0] * H_logical - 0.5 + pt
+        x = uv_co[:, 1] * W_logical - 0.5 + pl
 
         x0 = x.floor().long().clamp(0, W - 1)
         y0 = y.floor().long().clamp(0, H - 1)
@@ -721,9 +751,7 @@ class ImgUtils:
         if (weights < 0).any():
             raise ValueError("sample_px_coords expects non-negative map values.")
         indices = torch.multinomial(weights, N, replacement=True)  # (N,)
-        co = ImgUtils.gen_px_coords(
-            H, W, map.device
-        )  # (2, H, W)
+        co = ImgUtils.gen_px_coords(H, W, map.device)  # (2, H, W)
         co_flat = co.reshape(2, -1).T  # (H*W, 2)
         sampled = co_flat[indices]  # (N, 2)
         if noise:
@@ -869,3 +897,843 @@ class ImgUtils:
         y_delta = _reduce(y_diff).reshape(1, 1, H, W)
         x_delta = _reduce(x_diff).reshape(1, 1, H, W)
         return y_delta, x_delta
+
+
+_SplimageInput = Union[
+    np.ndarray,
+    Image.Image,
+    List[Image.Image],
+    Tensor,
+    os.PathLike,
+    str,
+]
+
+
+class Splimage:
+    """Cached image wrapper with lazy format conversion and padding.
+
+    Canonical representation is a BCHW torch tensor in [0, 1].
+    Conversions to numpy, PIL, and mask are cached on first access and
+    invalidated by any mutation.
+
+    Attributes:
+        padding (Tuple[int, int, int, int]): Logical padding (top, bottom,
+            left, right) in pixels. Used by uv_sample to shift coordinates
+            inward.
+
+    Construction:
+        Splimage(img): Construct from numpy (BHWC), PIL Image or list of
+            PIL Images, or torch tensor (BCHW).
+    """
+
+    _tensor: Float[Tensor, "B C H W"]
+    _padding: Tuple[int, int, int, int]
+    _img_cache: Optional[Float[Tensor, "B C H W"]]
+    _pil_cache: Optional[Union[Image.Image, List[Image.Image]]]
+    _np_cache: Optional[np.ndarray]
+    _mask_cache: dict
+    _forced_alpha: bool
+    _force_rgba_enabled: bool
+    _mask_mode: str
+    _is_mask: bool
+
+    def __init__(
+        self,
+        img: _SplimageInput,
+        padding: Tuple[int, int, int, int] = (0, 0, 0, 0),
+        force_rgba: bool = True,
+        mask_mode: str = "mean",
+    ) -> None:
+        """
+        Args:
+            img: Source image. Accepted formats:
+                - numpy array: BHWC (or HWC, auto-batched).
+                - PIL Image or list of PIL Images.
+                - torch tensor: BCHW (or HWC, auto-batched).
+                - path-like (``str`` or ``os.PathLike``): loaded via
+                  :meth:`PIL.Image.open` and converted to a tensor.
+            padding: Implicit padding (top, bottom, left, right) already
+                present in the image; not added by this constructor.
+                Capped by the image's H/W.
+            force_rgba: If True, pad multi-channel inputs with fewer than
+                4 channels with a constant alpha of ``1`` so the canonical
+                tensor is BCHW with C=4. Inputs that arrive as 1-channel
+                tensors are treated as masks and kept as-is regardless of
+                this flag; ``mask(mode="mean")`` on a forced-alpha image is
+                automatically routed through the first 3 channels (RGB) so
+                the artificial alpha does not dilute the average.
+            mask_mode: Mode used by :meth:`mask` when called
+                without an explicit ``mode`` argument. Persists across
+                :meth:`update` calls.
+        """
+        self._img_cache = None
+        self._pil_cache = None
+        self._np_cache = None
+        self._mask_cache = {}
+        self._forced_alpha = False
+        self._is_mask = False
+        self._force_rgba_enabled = force_rgba
+        self._mask_mode = mask_mode
+
+        if isinstance(img, np.ndarray):
+            self._from_numpy(img)
+        elif isinstance(img, Image.Image):
+            self._tensor = ImgUtils.pil2tensor(img)
+        elif isinstance(img, (list, tuple)):
+            self._tensor = ImgUtils.pil2tensor(img)
+        elif isinstance(img, Tensor):
+            self._from_tensor(img)
+        elif isinstance(img, (str, os.PathLike)):
+            self._tensor = ImgUtils.pil2tensor(Image.open(img))
+        else:
+            raise TypeError(f"Cannot construct Splimage from {type(img).__name__}.")
+
+        if self._tensor.shape[1] == 1:
+            self._is_mask = True
+        elif force_rgba and self._tensor.shape[1] != 4:
+            self._force_alpha()
+
+        self.set_padding(padding)
+
+    def _force_alpha(self) -> None:
+        B, C, H, W = self._tensor.shape
+        if C == 4:
+            self._forced_alpha = False
+            return
+        alpha = torch.ones(
+            (B, 1, H, W),
+            device=self._tensor.device,
+            dtype=self._tensor.dtype,
+        )
+        if C == 1:
+            rgb = self._tensor.repeat(1, 3, 1, 1)
+            self._tensor = torch.cat([rgb, alpha], dim=1)
+        elif C == 3:
+            self._tensor = torch.cat([self._tensor, alpha], dim=1)
+        else:
+            raise ValueError(f"Cannot force RGBA from {C} channels.")
+        self._forced_alpha = True
+
+    def _from_numpy(self, arr: np.ndarray) -> None:
+        if arr.ndim == 2:
+            arr = np.stack([arr, arr, arr], axis=-1)
+        if arr.ndim == 3:
+            arr = arr[np.newaxis]
+        if arr.ndim != 4:
+            raise ValueError(f"Expected 2D-4D numpy array, got shape {arr.shape}.")
+        C = arr.shape[3]
+        if C not in (1, 3, 4):
+            raise ValueError(f"Expected 1, 3, or 4 channels, got {C}.")
+        self._tensor = torch.from_numpy(arr).permute(0, 3, 1, 2).float() / 255.0
+
+    def _from_tensor(self, t: Tensor) -> None:
+        if t.ndim == 2:
+            t = t.unsqueeze(0).unsqueeze(0).expand(3, -1, -1, -1)
+        if t.ndim == 3:
+            C = t.shape[0]
+            if C in (1, 3, 4):
+                t = t.unsqueeze(0)
+            elif t.shape[2] in (1, 3, 4):
+                t = t.permute(2, 0, 1).unsqueeze(0)
+            else:
+                raise ValueError(
+                    f"Ambiguous 3D tensor shape {t.shape}; "
+                    f"expected CHW or HWC with C in (1, 3, 4)."
+                )
+        if t.ndim != 4:
+            raise ValueError(f"Expected 2D-4D tensor, got shape {t.shape}.")
+        C = t.shape[1]
+        if C not in (1, 3, 4):
+            raise ValueError(f"Expected 1, 3, or 4 channels, got {C}.")
+        self._tensor = t.float()
+
+    def _invalidate(self) -> None:
+        self._img_cache = None
+        self._pil_cache = None
+        self._np_cache = None
+        self._mask_cache.clear()
+
+    def update(
+        self,
+        img: _SplimageInput,
+        padding: Optional[Tuple[int, int, int, int]] = None,
+        force_rgba: Optional[bool] = None,
+        mask_mode: Optional[str] = None,
+    ) -> None:
+        """Replace the underlying image and invalidate all caches.
+
+        Args:
+            img: New image (numpy BHWC, PIL Image, torch BCHW tensor, or path-like).
+            padding: Optional implicit padding (top, bottom, left, right)
+                for the new image. If None, the current padding is kept.
+            force_rgba: If True, pad to 4 channels with alpha=1. If False,
+                leave the channel count as-is. If None, use the setting from
+                construction.
+            mask_mode: Optional override for the default mask
+                mode used by :meth:`mask`. If None, the existing setting
+                is kept.
+        """
+        if isinstance(img, np.ndarray):
+            self._from_numpy(img)
+        elif isinstance(img, Image.Image):
+            self._tensor = ImgUtils.pil2tensor(img)
+        elif isinstance(img, (list, tuple)):
+            self._tensor = ImgUtils.pil2tensor(img)
+        elif isinstance(img, Tensor):
+            self._from_tensor(img)
+        elif isinstance(img, (str, os.PathLike)):
+            self._tensor = ImgUtils.pil2tensor(Image.open(img))
+        else:
+            raise TypeError(f"Cannot update Splimage from {type(img).__name__}.")
+
+        self._forced_alpha = False
+        self._is_mask = self._tensor.shape[1] == 1
+        if not self._is_mask:
+            if force_rgba is None:
+                force_rgba = self._force_rgba_enabled
+            if force_rgba and self._tensor.shape[1] != 4:
+                self._force_alpha()
+
+        self._invalidate()
+        if padding is not None:
+            self.set_padding(padding)
+        if mask_mode is not None:
+            self._mask_mode = mask_mode
+
+    @property
+    def padding(self) -> Tuple[int, int, int, int]:
+        return self._padding
+
+    @padding.setter
+    def padding(self, value: Tuple[int, int, int, int]) -> None:
+        self.set_padding(value)
+
+    def set_padding(self, value: Tuple[int, int, int, int]) -> None:
+        """Set implicit padding (top, bottom, left, right).
+
+        The image is **not** padded; this only records metadata so
+        :meth:`uv_sample` can correctly interpret coordinates that fall
+        inside the border region.
+
+        Args:
+            value: Padding (top, bottom, left, right). Each entry is
+                clamped to ``[0, dim - 1]`` where ``dim`` is the
+                corresponding axis size.
+
+        Raises:
+            ValueError: If ``value`` does not have length 4 or has negative
+                entries.
+        """
+        if len(value) != 4:
+            raise ValueError(f"Padding must have length 4, got {value}.")
+        if any(v < 0 for v in value):
+            raise ValueError(f"Padding entries must be non-negative, got {value}.")
+        pt, pb, pl, pr = value
+        pt = min(pt, max(self.H - 1, 0))
+        pb = min(pb, max(self.H - pt - 1, 0))
+        pl = min(pl, max(self.W - 1, 0))
+        pr = min(pr, max(self.W - pl - 1, 0))
+        self._padding = (pt, pb, pl, pr)
+
+    def _hw_from_cache(self) -> Optional[Tuple[int, int]]:
+        """Return (H, W) from the first populated cache, else None."""
+        if self._img_cache is not None:
+            t = self._img_cache
+            return t.shape[2], t.shape[3]
+        if self._mask_cache:
+            t = next(iter(self._mask_cache.values()))
+            return t.shape[2], t.shape[3]
+        if self._pil_cache is not None:
+            pil = self._pil_cache
+            first = pil[0] if isinstance(pil, list) else pil
+            return first.size[1], first.size[0]
+        if self._np_cache is not None:
+            arr = self._np_cache
+            return arr.shape[1], arr.shape[2]
+        return None
+
+    @property
+    def H(self) -> int:
+        hw = self._hw_from_cache()
+        if hw is not None:
+            return hw[0]
+        return self._tensor.shape[2]
+
+    @property
+    def W(self) -> int:
+        hw = self._hw_from_cache()
+        if hw is not None:
+            return hw[1]
+        return self._tensor.shape[3]
+
+    @property
+    def C(self) -> int:
+        return self._tensor.shape[1]
+
+    @property
+    def shape(self) -> Tuple[int, int, int, int]:
+        return tuple(self._tensor.shape)
+
+    def same_size(self, *others: Splimage) -> bool:
+        """Check whether this image has the same H and W as the others.
+
+        Uses whatever representation is already cached on each Splimage
+        (avoiding any new tensor conversion) and falls back to the
+        underlying tensor when no cache is populated.
+
+        Args:
+            others: Other Splimage instances.
+
+        Returns:
+            True if all images have matching H and W.
+
+        Raises:
+            ValueError: If fewer than two images are provided.
+        """
+        images = (self, *others)
+        if len(images) < 2:
+            raise ValueError(
+                f"same_size requires a minimum of 2 images to compare, "
+                f"got {len(images)}."
+            )
+        ref = (images[0].H, images[0].W)
+        for img in images[1:]:
+            if (img.H, img.W) != ref:
+                return False
+        return True
+
+    @property
+    def device(self) -> torch.device:
+        return self._tensor.device
+
+    @property
+    def dtype(self) -> torch.dtype:
+        return self._tensor.dtype
+
+    def to(self, **kwargs) -> Splimage:
+        """Move/cast the underlying tensor. Returns a new Splimage.
+
+        Forwards all keyword arguments to ``Tensor.to`` (e.g. ``device``,
+        ``dtype``, ``non_blocking``, ``memory_format``).
+
+        Returns:
+            New Splimage with the converted tensor. Padding and
+            ``_forced_alpha`` are preserved.
+        """
+        new = Splimage.__new__(Splimage)
+        new._tensor = self._tensor.to(**kwargs)
+        new._padding = self._padding
+        new._forced_alpha = self._forced_alpha
+        new._force_rgba_enabled = self._force_rgba_enabled
+        new._mask_mode = self._mask_mode
+        new._img_cache = None
+        new._pil_cache = None
+        new._np_cache = None
+        new._mask_cache = {}
+        return new
+
+    def image(self) -> Float[Tensor, "B C H W"]:
+        """Return BCHW tensor. Cached after first call.
+
+        For mask-initialized Splimages, returns the canonical 1-channel
+        tensor directly (the mask **is** the image).
+        """
+        if self._img_cache is None:
+            self._img_cache = self._tensor
+        return self._img_cache
+
+    def mask(self, mode: Optional[str] = None) -> Float[Tensor, "B 1 H W"]:
+        """Return single-channel mask. Cached per mode.
+
+        Args:
+            mode: Reduction mode ("R", "G", "B", "A", "RGB", or "mean").
+                If None, the ``mask_mode`` set at construction is
+                used. When the image's alpha was forced by
+                ``force_rgba=True`` and the resolved mode is "mean", the
+                call is automatically routed through "RGB" so the
+                artificial alpha does not dilute the average. For
+                mask-initialized Splimages, the canonical 1-channel
+                tensor is returned directly regardless of ``mode``.
+        """
+        if self._is_mask:
+            return self._tensor
+        if mode is None:
+            mode = self._mask_mode
+        if mode == "mean" and self._forced_alpha:
+            mode = "RGB"
+        if mode not in self._mask_cache:
+            self._mask_cache[mode] = ImgUtils.tensor2mask(self._tensor, mode=mode)
+        return self._mask_cache[mode]
+
+    def to_pil(self) -> Union[Image.Image, List[Image.Image]]:
+        """Convert to PIL Image(s). Cached after first call."""
+        if self._pil_cache is None:
+            self._pil_cache = ImgUtils.tensor2pil(self._tensor)
+        return self._pil_cache
+
+    def to_numpy(self) -> np.ndarray:
+        """Convert to numpy BHWC uint8 array. Cached after first call."""
+        if self._np_cache is None:
+            img = ImgUtils.tensor2img(self._tensor, clamp=True)
+            self._np_cache = (img.cpu().numpy() * 255).astype(np.uint8)
+        return self._np_cache
+
+    def __add__(self, other: Union[Splimage, float, int, Tensor]) -> Splimage:
+        return self._apply_op(other, torch.add)
+
+    def __radd__(self, other: Union[Splimage, float, int, Tensor]) -> Splimage:
+        return self._apply_op(other, lambda a, b: torch.add(b, a))
+
+    def __iadd__(self, other: Union[Splimage, float, int, Tensor]) -> Splimage:
+        self._tensor = torch.add(self._tensor, self._resolve_tensor(other))
+        self._invalidate()
+        return self
+
+    def __sub__(self, other: Union[Splimage, float, int, Tensor]) -> Splimage:
+        return self._apply_op(other, torch.sub)
+
+    def __rsub__(self, other: Union[Splimage, float, int, Tensor]) -> Splimage:
+        return self._apply_op(other, lambda a, b: torch.sub(b, a))
+
+    def __isub__(self, other: Union[Splimage, float, int, Tensor]) -> Splimage:
+        self._tensor = torch.sub(self._tensor, self._resolve_tensor(other))
+        self._invalidate()
+        return self
+
+    def __mul__(self, other: Union[Splimage, float, int, Tensor]) -> Splimage:
+        return self._apply_op(other, torch.mul)
+
+    def __rmul__(self, other: Union[Splimage, float, int, Tensor]) -> Splimage:
+        return self._apply_op(other, lambda a, b: torch.mul(b, a))
+
+    def __imul__(self, other: Union[Splimage, float, int, Tensor]) -> Splimage:
+        self._tensor = torch.mul(self._tensor, self._resolve_tensor(other))
+        self._invalidate()
+        return self
+
+    def __truediv__(self, other: Union[Splimage, float, int, Tensor]) -> Splimage:
+        return self._apply_op(other, torch.div)
+
+    def __rtruediv__(self, other: Union[Splimage, float, int, Tensor]) -> Splimage:
+        return self._apply_op(other, lambda a, b: torch.div(b, a))
+
+    def __itruediv__(self, other: Union[Splimage, float, int, Tensor]) -> Splimage:
+        self._tensor = torch.div(self._tensor, self._resolve_tensor(other))
+        self._invalidate()
+        return self
+
+    def _resolve_tensor(self, other: Union[Splimage, float, int, Tensor]) -> Tensor:
+        if isinstance(other, Splimage):
+            return other._tensor
+        return other
+
+    def _apply_op(
+        self, other: Union[Splimage, float, int, Tensor], op: Callable
+    ) -> Splimage:
+        result = op(self._tensor, self._resolve_tensor(other))
+        new = Splimage(result)
+        new._padding = self._padding
+        return new
+
+    def cos(self) -> Splimage:
+        """Element-wise cosine. Returns new Splimage."""
+        return self._unary(torch.cos)
+
+    def cos_(self) -> Splimage:
+        """Element-wise cosine in-place."""
+        return self._unary_(torch.cos)
+
+    def abs(self) -> Splimage:
+        """Element-wise absolute value. Returns new Splimage."""
+        return self._unary(torch.abs)
+
+    def abs_(self) -> Splimage:
+        """Element-wise absolute value in-place."""
+        return self._unary_(torch.abs)
+
+    def clamp(self, min: float = 0.0, max: float = 1.0) -> Splimage:
+        """Clamp values. Returns new Splimage."""
+        new = Splimage(torch.clamp(self._tensor, min, max))
+        new._padding = self._padding
+        return new
+
+    def clamp_(self, min: float = 0.0, max: float = 1.0) -> Splimage:
+        """Clamp values in-place."""
+        self._tensor = torch.clamp(self._tensor, min, max)
+        self._invalidate()
+        return self
+
+    def exp(self) -> Splimage:
+        """Element-wise exponential. Returns new Splimage."""
+        return self._unary(torch.exp)
+
+    def exp_(self) -> Splimage:
+        """Element-wise exponential in-place."""
+        return self._unary_(torch.exp)
+
+    def _unary(self, fn: Callable) -> Splimage:
+        new = Splimage(fn(self._tensor))
+        new._padding = self._padding
+        return new
+
+    def _unary_(self, fn: Callable) -> Splimage:
+        self._tensor = fn(self._tensor)
+        self._invalidate()
+        return self
+
+    def blur(self, sigma: float, kernel_size: Optional[int] = None) -> Splimage:
+        """Apply a Gaussian blur via convolution. Returns new Splimage.
+
+        Args:
+            sigma: Standard deviation for the Gaussian kernel.
+            kernel_size: Kernel side length. Defaults to ``2 * ceil(3*sigma) + 1``
+                (covers ``±3σ``).
+
+        Returns:
+            New Splimage with blurred tensor. Padding metadata is preserved.
+        """
+        if kernel_size is None:
+            kernel_size = 2 * math.ceil(3 * sigma) + 1
+        if kernel_size < 1:
+            raise ValueError(f"kernel_size must be positive, got {kernel_size}.")
+        kernel = ImgUtils.gaussian_kernel([kernel_size], [sigma])
+        blurred = ImgUtils.convolve(self._tensor, kernel, match_channels=True)
+        new = Splimage(blurred, padding=self._padding)
+        return new
+
+    def blur_(self, sigma: float, kernel_size: Optional[int] = None) -> Splimage:
+        """Apply a Gaussian blur in-place.
+
+        Args:
+            sigma: Standard deviation for the Gaussian kernel.
+            kernel_size: Kernel side length. Defaults to ``2 * ceil(3*sigma) + 1``.
+        """
+        if kernel_size is None:
+            kernel_size = 2 * math.ceil(3 * sigma) + 1
+        if kernel_size < 1:
+            raise ValueError(f"kernel_size must be positive, got {kernel_size}.")
+        kernel = ImgUtils.gaussian_kernel([kernel_size], [sigma])
+        self._tensor = ImgUtils.convolve(self._tensor, kernel, match_channels=True)
+        self._invalidate()
+        return self
+
+    def resize(
+        self,
+        H: int,
+        W: int,
+        mode: str = "bilinear",
+        align_corners: Optional[bool] = None,
+        antialias: bool = False,
+    ) -> Splimage:
+        """Resize image. Returns new Splimage.
+
+        Args:
+            H: Target height.
+            W: Target width.
+            mode: Interpolation mode.
+            align_corners: Optional align_corners for F.interpolate.
+            antialias: Apply antialiasing on downscaling.
+        """
+        new = Splimage(
+            ImgUtils.resize(
+                self._tensor,
+                H,
+                W,
+                mode=mode,
+                align_corners=align_corners,
+                antialias=antialias,
+            )
+        )
+        new._padding = self._padding
+        return new
+
+    def resize_(
+        self,
+        H: int,
+        W: int,
+        mode: str = "bilinear",
+        align_corners: Optional[bool] = None,
+        antialias: bool = False,
+    ) -> Splimage:
+        """Resize image in-place.
+
+        Args:
+            H: Target height.
+            W: Target width.
+            mode: Interpolation mode.
+            align_corners: Optional align_corners for F.interpolate.
+            antialias: Apply antialiasing on downscaling.
+        """
+        self._tensor = ImgUtils.resize(
+            self._tensor,
+            H,
+            W,
+            mode=mode,
+            align_corners=align_corners,
+            antialias=antialias,
+        )
+        self._invalidate()
+        return self
+
+    def convolve(
+        self,
+        kernel: Float[Tensor, "C G KH KW"],
+        match_channels: bool = False,
+        stride: int = 1,
+        padding: str = "same",
+    ) -> Splimage:
+        """Convolve with kernel. Returns new Splimage.
+
+        Args:
+            kernel: Convolution kernel.
+            match_channels: Expand kernel to match input channels.
+            stride: Convolution stride.
+            padding: Padding mode ("same" or "valid").
+        """
+        new = Splimage(
+            ImgUtils.convolve(
+                self._tensor,
+                kernel,
+                match_channels=match_channels,
+                stride=stride,
+                padding=padding,
+            )
+        )
+        new._padding = self._padding
+        return new
+
+    def SSIM(
+        self,
+        other: Splimage,
+        kernel: Float[Tensor, "1 1 KH KW"],
+        eps1: float = 0.0004,
+        eps2: float = 0.0036,
+    ) -> Float[Tensor, "B C H W"]:
+        """Compute SSIM between this and another Splimage.
+
+        Args:
+            other: Other image.
+            kernel: Gaussian kernel.
+            eps1: Stability constant for means.
+            eps2: Stability constant for variances.
+
+        Returns:
+            SSIM map (B, C, H, W).
+        """
+        return ImgUtils.SSIM(self._tensor, other._tensor, kernel, eps1=eps1, eps2=eps2)
+
+    def image_sample(
+        self,
+        uv_co: Float[Tensor, "N 2"],
+    ) -> Float[Tensor, "B N C"]:
+        """Bilinearly sample the full image at normalized coordinates.
+
+        UV ``[0, 1]`` maps to the logical (unpadded) frame; values outside
+        that range sample the implicit padding region.
+
+        Args:
+            uv_co: Normalized coordinates (N, 2) in pixel-center convention.
+
+        Returns:
+            Sampled values (B, N, C).
+        """
+        return ImgUtils.uv_sample(self._tensor, uv_co, padding=self._padding)
+
+    def mask_sample(
+        self,
+        uv_co: Float[Tensor, "N 2"],
+        mode: Optional[str] = None,
+    ) -> Float[Tensor, "B N 1"]:
+        """Bilinearly sample the mask at normalized coordinates.
+
+        UV ``[0, 1]`` maps to the logical (unpadded) frame; values outside
+        that range sample the implicit padding region.
+
+        Args:
+            uv_co: Normalized coordinates (N, 2) in pixel-center convention.
+            mode: Reduction mode passed to :meth:`mask`. If None, uses the
+                instance's ``mask_mode``.
+
+        Returns:
+            Sampled mask values (B, N, 1).
+        """
+        mask = self.mask(mode)
+        sampled = ImgUtils.uv_sample(mask, uv_co, padding=self._padding)
+        return sampled
+
+    @torch.no_grad()
+    def sample_px_coords(
+        self,
+        N: int,
+        mode: Optional[str] = None,
+        noise: bool = False,
+    ) -> Float[Tensor, "N 2"]:
+        """Sample N pixel coordinates weighted by the mask.
+
+        Args:
+            N: Number of coordinates to sample.
+            mode: Reduction mode passed to :meth:`mask`. If None, uses the
+                instance's ``mask_mode``.
+            noise: If True, jitter each sampled coordinate uniformly within
+                half a pixel on either side of its pixel center.
+
+        Returns:
+            Sampled coordinates (N, 2) in pixel-center convention.
+
+        Notes:
+            - Sampling uses ``torch.multinomial`` with replacement, so
+              coordinates may repeat.
+            - Coordinates follow the pixel-center convention of
+              :meth:`ImgUtils.gen_px_coords` (centered at ``(i + 0.5) / D``).
+            - With ``noise=True``, jitter is uniform in ``[-0.5/H, 0.5/H]``
+              for y and ``[-0.5/W, 0.5/W]`` for x.
+        """
+        return ImgUtils.sample_px_coords(self.mask(mode), N, noise=noise)
+
+    def extract_image_patches(
+        self,
+        patch_size: Optional[int],
+        padding_mode: str = "replicate",
+    ) -> Float[Tensor, "B P S C"]:
+        """Extract non-overlapping patches.
+
+        Args:
+            patch_size: Patch size. None falls back to a single patch.
+            padding_mode: Padding mode for F.pad.
+
+        Returns:
+            Image patches (B, P, S, C).
+        """
+        return ImgUtils.extract_image_patches(
+            self._tensor,
+            patch_size,
+            padding_mode=padding_mode,
+        )
+
+    def pad(
+        self,
+        padding: Tuple[int, int, int, int],
+        mode: Literal["constant", "reflect", "replicate", "circular"] = "replicate",
+    ) -> Splimage:
+        """Pad the image and update padding metadata. Returns new Splimage.
+
+        Args:
+            padding: Padding to add (top, bottom, left, right).
+            mode: Padding mode passed to ``F.pad``. One of ``"constant"``,
+                ``"reflect"``, ``"replicate"``, ``"circular"``.
+
+        Returns:
+            New Splimage with the padded tensor and updated padding.
+        """
+        new = self._pad_impl(padding, mode)
+        return new
+
+    def pad_(
+        self,
+        padding: Tuple[int, int, int, int],
+        mode: Literal["constant", "reflect", "replicate", "circular"] = "replicate",
+    ) -> Splimage:
+        """Pad the image in-place and update padding metadata.
+
+        Args:
+            padding: Padding to add (top, bottom, left, right).
+            mode: Padding mode passed to ``F.pad``. One of ``"constant"``,
+                ``"reflect"``, ``"replicate"``, ``"circular"``.
+        """
+        pt, pb, pl, pr = padding
+        self._tensor = F.pad(self._tensor, (pl, pr, pt, pb), mode=mode)
+        self._padding = (
+            self._padding[0] + pt,
+            self._padding[1] + pb,
+            self._padding[2] + pl,
+            self._padding[3] + pr,
+        )
+        self._invalidate()
+        return self
+
+    def _pad_impl(
+        self,
+        padding: Tuple[int, int, int, int],
+        mode: Literal["constant", "reflect", "replicate", "circular"] = "replicate",
+    ) -> Splimage:
+        pt, pb, pl, pr = padding
+        padded = F.pad(self._tensor, (pl, pr, pt, pb), mode=mode)
+        new = Splimage(padded)
+        new._padding = (
+            self._padding[0] + pt,
+            self._padding[1] + pb,
+            self._padding[2] + pl,
+            self._padding[3] + pr,
+        )
+        return new
+
+    def erode(self, padding: Tuple[int, int, int, int]) -> Splimage:
+        """Crop the image by (top, bottom, left, right). Returns new Splimage.
+
+        The inverse of :meth:`pad`: each entry trims that many pixels off
+        the corresponding edge and the metadata is reduced accordingly.
+
+        Args:
+            padding: Amount to erode (top, bottom, left, right). Each
+                entry must be ``>= 0`` and not exceed the current
+                dimension minus the other axis entries.
+
+        Raises:
+            ValueError: If any entry is negative or exceeds the available
+                pixels.
+        """
+        pt, pb, pl, pr = padding
+        H, W = self.H, self.W
+        if pt < 0 or pb < 0 or pl < 0 or pr < 0:
+            raise ValueError(f"erode entries must be non-negative, got {padding}.")
+        if pt + pb >= H:
+            raise ValueError(
+                f"Vertical erode {pt + pb} would consume the entire height {H}."
+            )
+        if pl + pr >= W:
+            raise ValueError(
+                f"Horizontal erode {pl + pr} would consume the entire width {W}."
+            )
+        cropped = self._tensor[:, :, pt : H - pb, pl : W - pr]
+        new = Splimage(cropped)
+        new._padding = (
+            max(self._padding[0] - pt, 0),
+            max(self._padding[1] - pb, 0),
+            max(self._padding[2] - pl, 0),
+            max(self._padding[3] - pr, 0),
+        )
+        return new
+
+    def erode_(self, padding: Tuple[int, int, int, int]) -> Splimage:
+        """Erode in-place.
+
+        Args:
+            padding: Amount to erode (top, bottom, left, right). Each
+                entry must be ``>= 0`` and not exceed the current
+                dimension minus the other axis entries.
+
+        Raises:
+            ValueError: If any entry is negative or exceeds the available
+                pixels.
+        """
+        pt, pb, pl, pr = padding
+        H, W = self.H, self.W
+        if pt < 0 or pb < 0 or pl < 0 or pr < 0:
+            raise ValueError(f"erode entries must be non-negative, got {padding}.")
+        if pt + pb >= H:
+            raise ValueError(
+                f"Vertical erode {pt + pb} would consume the entire height {H}."
+            )
+        if pl + pr >= W:
+            raise ValueError(
+                f"Horizontal erode {pl + pr} would consume the entire width {W}."
+            )
+        self._tensor = self._tensor[:, :, pt : H - pb, pl : W - pr]
+        self._padding = (
+            max(self._padding[0] - pt, 0),
+            max(self._padding[1] - pb, 0),
+            max(self._padding[2] - pl, 0),
+            max(self._padding[3] - pr, 0),
+        )
+        self._invalidate()
+        return self

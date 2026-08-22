@@ -8,7 +8,7 @@ from torch import Tensor
 
 if TYPE_CHECKING:
     from ..primitives import Primitive
-from ..utils.img import ImgUtils
+from ..utils.img import ImgUtils, Splimage
 from .rasterizers.base import Rasterizer
 from .rasterizers.weighted import WeightedRasterizer
 
@@ -166,3 +166,14 @@ class Sampler:
         finally:
             if saved is not None:
                 self.max_batch = saved
+
+    def render(
+        self,
+        p: Primitive,
+        max_batch: Optional[int] = None,
+        low_vram: Optional[bool] = None,
+        verbose: bool = False,
+    ) -> Splimage:
+        return Splimage(
+            self.rasterize(p, max_batch=max_batch, low_vram=low_vram, verbose=verbose)
+        )

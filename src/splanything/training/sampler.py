@@ -10,7 +10,7 @@ from ..primitives.base import Primitive
 from ..rendering.rasterizers.base import Rasterizer
 from ..rendering.rasterizers.weighted import WeightedRasterizer
 from ..rendering.sampler import Sampler
-from ..utils.img import ImgUtils
+from ..utils.img import Splimage, ImgUtils
 
 
 class TrainSampler(Sampler):
@@ -39,35 +39,24 @@ class TrainSampler(Sampler):
 
     def __init__(
         self,
-        target: Float[Tensor, "B C H W"],
+        target: Splimage,
         patch_size: Optional[int] = None,
         max_batch: Optional[int] = None,
-        sampling_map: Optional[Float[Tensor, "B 1 H W"]] = None,
+        sampling_map: Optional[Splimage] = None,
         rasterizer: Optional[Rasterizer] = None,
         low_vram: bool = False,
         epoch_size: Optional[int] = None,
     ):
-        self.device = target.device
         self.sampling_map = sampling_map
         self.max_batch = max_batch
         self.epoch_size = epoch_size
         self.low_vram = low_vram
         self.rasterizer = WeightedRasterizer() if rasterizer is None else rasterizer
         self.H, self.W = target.shape[-2:]
-        self.patch_size = patch_size
         self.target_img = target
-        self.target_patches = ImgUtils.extract_image_patches(
-            target, patch_size, padding_mode="replicate"
-        ).squeeze(0)  # (B, P, S, C) -> (P, S, C)
-        self.co_patches, self.co_centers = ImgUtils.get_patches(
-            self.H, self.W, device=self.device, patch_size=patch_size
-        )
-        if sampling_map is not None:
-            self.set_sampling_map(sampling_map, patch_size=patch_size)
+        self.set_target(target, patch_size=patch_size)
 
-    def set_target(
-        self, target: Float[Tensor, "B C H W"], patch_size: Optional[int] = None
-    ):
+    def set_target(self, target: Splimage, patch_size: Optional[int] = None):
         """Re-initialise target image and patch grids.
 
         Args:
@@ -79,8 +68,8 @@ class TrainSampler(Sampler):
         if patch_size is not None:
             self.patch_size = patch_size
         self.target_img = target
-        self.target_patches = ImgUtils.extract_image_patches(
-            target, self.patch_size, padding_mode="replicate"
+        self.target_patches = target.extract_image_patches(
+            patch_size, padding_mode="replicate"
         ).squeeze(0)  # (B, P, S, C) -> (P, S, C)
         self.co_patches, self.co_centers = ImgUtils.get_patches(
             self.H, self.W, device=self.device, patch_size=self.patch_size
@@ -90,7 +79,7 @@ class TrainSampler(Sampler):
 
     def set_sampling_map(
         self,
-        sampling_map: Float[Tensor, "B 1 H W"],
+        sampling_map: Splimage,
         patch_size: Optional[int] = None,
         epoch_size: Optional[int] = None,
     ):
@@ -106,16 +95,16 @@ class TrainSampler(Sampler):
         """
         if patch_size is None:
             patch_size = self.patch_size
-        if not ImgUtils.same_size(sampling_map, self.target_img):
-            sampling_map = ImgUtils.resize(sampling_map, self.H, self.W)
+        if not self.target_img.same_size(sampling_map):
+            sampling_map = sampling_map.resize(self.H, self.W)
         e_size = self.epoch_size if epoch_size is None else epoch_size
         self.sampling_map = sampling_map
         self.sampling_patches = (
-            ImgUtils.extract_image_patches(
-                sampling_map, patch_size, padding_mode="constant"
+            self.sampling_map.extract_image_patches(
+                patch_size=patch_size, padding_mode="constant"
             )
-            .squeeze(-1)  # drop channel (1) -> (B, P, S)
-            .squeeze(0)  # drop batch (1) -> (P, S)
+            .squeeze(-1)
+            .squeeze(0)
         )
         if e_size is not None:
             total = self.sampling_patches.sum()
