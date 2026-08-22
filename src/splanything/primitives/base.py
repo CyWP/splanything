@@ -732,10 +732,10 @@ class Primitive(nn.Module):
                 ),
                 co=co,
             )
-        co = self._co_transform(co)
+        co_t = self._co_transform(co)
         with self.cache_properties():
-            rgb = self.sample_rgb(co)
-            weights = self.sample_weights(co)
+            rgb = self.sample_rgb(co_t)
+            weights = self.sample_weights(co_t)
         sample = SampleOutput(rgb=rgb, weights=weights, co=co)
         for proc in self._sample_processors:
             sample = proc(sample, self)

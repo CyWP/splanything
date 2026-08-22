@@ -294,6 +294,7 @@ class MetaPrimitive(Primitive):
                 ),
                 co=co,
             )
+        co_t = self._co_transform(co)
         with self.cache_properties():
             Nc = co.shape[0]
             N = len(self)
@@ -302,7 +303,7 @@ class MetaPrimitive(Primitive):
                 torch.einsum(
                     "nij,cnj->cni",
                     self.transforms_inverse,
-                    co[:, None, :] - self.centroids[None],
+                    co_t[:, None, :] - self.centroids[None],
                 )
                 + 0.5
             )

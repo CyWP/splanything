@@ -211,12 +211,7 @@ def generate():
     prim.load(run_folder / "primitive.pt")
     prim.requires_grad_(False)
     prim = prim.to(device)
-    gp = gen_padding
-    msk_img = ImageOps.expand(
-        get_target().resize((gen_W // 8, gen_H // 8)),
-        border=(gp[2] // 8, gp[1] // 8, gp[3] // 8, gp[0] // 8),
-        fill=(0, 0, 0, 0),
-    )
+    msk_img = get_target().resize((gen_W, gen_H))
     msk_tensor = ImgUtils.pil2map(msk_img, mode="A").to(device)
     msk_img_blur100 = msk_img.filter(ImageFilter.GaussianBlur(radius=100))
     msk_tensor_blur100 = ImgUtils.pil2map(msk_img_blur100, mode="A").to(device)
@@ -259,8 +254,8 @@ def generate():
     # Rasterizer
     rast = MultiRasterizer(
         [
-            (WeightedRasterizer(), msk_tensor),
-            (ProbabilisticRasterizer(top_k=5), 1 - msk_tensor),
+            (WeightedRasterizer(), msk_tensor_blur100),
+            (ProbabilisticRasterizer(top_k=5), 1 - msk_tensor_blur100),
         ]
     )
 

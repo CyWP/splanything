@@ -4,7 +4,9 @@
 # Images
 *.png
 
+#Test runs
 test_runs/
+test_runs/*
 
 # Pytorch saves
 *.pt
