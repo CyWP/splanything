@@ -7,7 +7,6 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from pathlib import Path
 
-from PIL import Image, ImageFilter
 from splanything.training import Trainer, TrainSampler, OptimizerWrapper
 from splanything.primitives import (
     MultiPrimitive,
@@ -34,9 +33,13 @@ from splanything.training.refinement.rules import (
     PrimitiveFloor,
 )
 from splanything.training.losses import L2Loss
-from splanything.training.regularizers import AttributeProximity, AttributeRange
+from splanything.training.regularizers import (
+    AttributeProximity,
+    AttributeRange,
+    AttributeAttractor,
+)
 from splanything.training.refinement.processors import MapCriterionProcessor
-from splanything.utils.img import ImgUtils
+from splanything.utils.img import ImgUtils, Splimage
 from splanything.rendering import Sampler, SampleOutput
 from splanything.rendering.processors import (
     FlexibleSampleProcessor,
@@ -68,41 +71,37 @@ class ThetaZero(Initializer):
 
 def get_primitive():
     # cubic = CubicFanPrimitive(size=10).to(device)
-    msk_img = get_target()
-    msk_img_blur40 = msk_img.filter(ImageFilter.GaussianBlur(radius=40))
-    msk_tensor_blur40 = ImgUtils.pil2mask(msk_img_blur40, mode="A").to(device)
-    init_map = msk_tensor_blur40 * 0.75 + 0.25
+    msk = Splimage("../assets/bra_nor_offside_masked.png", mask_mode="A", as_mask=True)
     radial = RadialFreqPrimitive(
-        size=150,
-        initializers={"thetas": ThetaZero(), "centroids": MappedInitializer(init_map)},
+        size=1500,
+        initializers={
+            "thetas": ThetaZero(),
+            "centroids": MappedInitializer(msk.blur(40) * 0.5 + 0.1),
+        },
         param_defs={"thetas": ParamDef(batched=True, trainable=False)},
     ).to(device)
     star = StarPrimitive(
-        size=80,
+        size=800,
         n_axes=2,
-        initializers={"thetas": ThetaZero(), "centroids": MappedInitializer(init_map)},
+        initializers={
+            "thetas": ThetaZero(),
+            "centroids": MappedInitializer(msk.blur(100) * 0.3 + 0.2),
+        },
         param_defs={"thetas": ParamDef(batched=True, trainable=False)},
     ).to(device)
     multi = MultiPrimitive({"star": star, "radial": radial})
     return multi
 
 
-def get_target():
-    return Image.open("../assets/bra_nor_offside_masked.png")
-
-
 def train():
     prev_H = 1080
     prev_W = 1080
     # Images
-    tgt = ImgUtils.pil2tensor(
-        Image.open("../assets/bra_nor_offside.png").convert("RGBA")
+    tgt = Splimage("../assets/bra_nor_offside.png").to(device)
+    msk = Splimage(
+        "../assets/bra_nor_offside_masked.png", mask_mode="A", as_mask=True
     ).to(device)
-    tgt_H, tgt_W = tgt.shape[2:]
-    msk_img = get_target()
-    msk_img_blur10 = msk_img.filter(ImageFilter.GaussianBlur(radius=10))
-    msk_tensor_blur10 = ImgUtils.pil2mask(msk_img_blur10, mode="A").to(device)
-
+    msk_blur10 = msk.blur(10)
     # primitive
     prim = get_primitive()
 
@@ -112,7 +111,7 @@ def train():
     grad_split_hi = GradSplit(threshold=0.02, interval=173, attr_names=["centroids"])
     area_split = ThresholdFilter(attr_name="areas", threshold=0.1, interval=87)
     area_filter = ThresholdFilter(attr_name="areas", threshold=2e-4, interval=69)
-    map_split = MapSplit(msk_tensor_blur10 * 0.1 + 0.02, interval=307)
+    map_split = MapSplit(msk_blur10 * 0.1 + 0.02, interval=307)
     ceiling = PrimitiveCeiling(10000)
     prim.add_split_rule(map_split)
     prim.add_filter_rule(alpha_cull)
@@ -123,7 +122,7 @@ def train():
     prim.add_filter_rule(ceiling)
 
     # Rule processors
-    map_proc = MapCriterionProcessor(msk_tensor_blur10 * 0.6 + 0.4)
+    map_proc = MapCriterionProcessor(msk_blur10 * 0.6 + 0.4)
     grad_split_lo.add_processor(map_proc)
     grad_split_hi.add_processor(map_proc)
 
@@ -132,16 +131,16 @@ def train():
         target=tgt,
         patch_size=128,
         max_batch=1000000,
-        sampling_map=msk_tensor_blur10 * 0.2 + 0.05,
+        sampling_map=msk_blur10 * 0.2 + 0.05,
         low_vram=True,
     )
 
     # Callbacks
-    H_pad = (prev_H - tgt_H) // 2
-    W_pad = (prev_W - tgt_W) // 2
+    H_pad = (prev_H - tgt.H) // 2
+    W_pad = (prev_W - tgt.W) // 2
     vis_sampler = Sampler(
-        H=tgt_H,
-        W=tgt_W,
+        H=tgt.H,
+        W=tgt.W,
         patch_size=256,
         max_batch=1000000,
         padding=(H_pad, H_pad, W_pad, W_pad),
@@ -185,6 +184,22 @@ def train():
     #     AttributeProximity(["scales_1", "scales_2"], mode="RATIO", ratio=0.5),
     #     weight=5.0,
     # )
+    prim["radial"].add_regularizer(
+        "Dark Test 1",
+        AttributeRange("color_1", target=0.0, weight_map=msk_blur10),
+        weight=1000000,
+    )
+    prim["radial"].add_regularizer(
+        "Dark Test 2",
+        AttributeRange("color_2", target=0.0, weight_map=msk_blur10),
+        weight=1000000,
+    )
+
+    prim["star"].add_regularizer(
+        "Dark Test 3",
+        AttributeRange("color", target=0.0, weight_map=msk_blur10),
+        weight=1000000,
+    )
 
     # Trainer
     trainer = Trainer(
@@ -211,12 +226,9 @@ def generate():
     prim.load(run_folder / "primitive.pt")
     prim.requires_grad_(False)
     prim = prim.to(device)
-    msk_img = get_target().resize((gen_W, gen_H))
-    msk_tensor = ImgUtils.pil2mask(msk_img, mode="A").to(device)
-    msk_img_blur100 = msk_img.filter(ImageFilter.GaussianBlur(radius=100))
-    msk_tensor_blur100 = ImgUtils.pil2mask(msk_img_blur100, mode="A").to(device)
-    msk_img_blur40 = msk_img.filter(ImageFilter.GaussianBlur(radius=40))
-    msk_tensor_blur40 = ImgUtils.pil2mask(msk_img_blur40, mode="A").to(device)
+    msk = Splimage(
+        "../assets/bra_nor_offside_masked.png", mask_mode="A", as_mask=True
+    ).resize(gen_H, gen_W)
 
     # Sample processor
     sample_proc = FlexibleSampleProcessor(
@@ -236,8 +248,8 @@ def generate():
     )
     multi_proc = MultiSampleProcessor(
         [
-            (sample_proc, msk_tensor_blur40),
-            (dist_proc, 1 - msk_tensor_blur40),
+            (sample_proc, msk.blur(40)),
+            (dist_proc, 1 - msk.blur(40)),
             (vec_proc, 3),
         ],
         normalize_weights=True,
@@ -254,8 +266,8 @@ def generate():
     # Rasterizer
     rast = MultiRasterizer(
         [
-            (WeightedRasterizer(), msk_tensor_blur100),
-            (ProbabilisticRasterizer(top_k=5), 1 - msk_tensor_blur100),
+            (WeightedRasterizer(), msk.blur(100)),
+            (ProbabilisticRasterizer(top_k=5), 1 - msk.blur(100)),
         ]
     )
 
