@@ -12,6 +12,9 @@ from PIL import Image
 from torch import Tensor
 
 
+MaskMode = Literal["R", "G", "B", "A", "RGB", "mean"]
+
+
 class ImgUtils:
     """Image processing utilities for tensor operations.
 
@@ -105,7 +108,7 @@ class ImgUtils:
     @staticmethod
     def tensor2mask(
         x: Float[Tensor, "B C H W"],
-        mode: str = "mean",
+        mode: MaskMode = "mean",
     ) -> Float[Tensor, "B 1 H W"]:
         """Reduce a multi-channel image tensor to a single-channel mask.
 
@@ -566,7 +569,7 @@ class ImgUtils:
                     f"Cannot match channels for kernel with non-singleton dimensions.\nKernel shape: {kernel.shape}"
                 )
             kernel = kernel.expand(Ci, Ci, -1, -1)
-        return F.conv2d(img, kernel, stride=stride, padding=padding)
+        return F.conv2d(img, kernel.to(img.device), stride=stride, padding=padding)
 
     @staticmethod
     def SSIM(
@@ -934,15 +937,17 @@ class Splimage:
     _mask_cache: dict
     _forced_alpha: bool
     _force_rgba_enabled: bool
-    _mask_mode: str
+    _mask_mode: MaskMode
     _is_mask: bool
+    _as_mask_enabled: bool
 
     def __init__(
         self,
         img: _SplimageInput,
         padding: Tuple[int, int, int, int] = (0, 0, 0, 0),
         force_rgba: bool = True,
-        mask_mode: str = "mean",
+        mask_mode: MaskMode = "mean",
+        as_mask: bool = False,
     ) -> None:
         """
         Args:
@@ -965,6 +970,12 @@ class Splimage:
             mask_mode: Mode used by :meth:`mask` when called
                 without an explicit ``mode`` argument. Persists across
                 :meth:`update` calls.
+            as_mask: If True, the input is reduced to a single-channel
+                mask via ``mask_mode`` and stored as the canonical tensor.
+                The resulting Splimage behaves like a mask-initialized one:
+                ``_is_mask=True``, all tensor ops target the mask, and
+                ``mask()`` returns it directly. ``force_rgba`` is bypassed
+                in this case. No-op for inputs that are already 1-channel.
         """
         self._img_cache = None
         self._pil_cache = None
@@ -974,6 +985,7 @@ class Splimage:
         self._is_mask = False
         self._force_rgba_enabled = force_rgba
         self._mask_mode = mask_mode
+        self._as_mask_enabled = as_mask
 
         if isinstance(img, np.ndarray):
             self._from_numpy(img)
@@ -988,7 +1000,10 @@ class Splimage:
         else:
             raise TypeError(f"Cannot construct Splimage from {type(img).__name__}.")
 
-        if self._tensor.shape[1] == 1:
+        if as_mask and self._tensor.shape[1] != 1:
+            self._tensor = ImgUtils.tensor2mask(self._tensor, mode=mask_mode)
+            self._is_mask = True
+        elif self._tensor.shape[1] == 1:
             self._is_mask = True
         elif force_rgba and self._tensor.shape[1] != 4:
             self._force_alpha()
@@ -1053,12 +1068,33 @@ class Splimage:
         self._np_cache = None
         self._mask_cache.clear()
 
+    def copy(self) -> Splimage:
+        """Return a deep copy of this Splimage.
+
+        The underlying tensor is cloned, padding/mode metadata is
+        duplicated, and caches start empty.
+        """
+        new = Splimage.__new__(Splimage)
+        new._tensor = self._tensor.clone()
+        new._padding = self._padding
+        new._forced_alpha = self._forced_alpha
+        new._is_mask = self._is_mask
+        new._force_rgba_enabled = self._force_rgba_enabled
+        new._mask_mode = self._mask_mode
+        new._as_mask_enabled = self._as_mask_enabled
+        new._img_cache = None
+        new._pil_cache = None
+        new._np_cache = None
+        new._mask_cache = {}
+        return new
+
     def update(
         self,
         img: _SplimageInput,
         padding: Optional[Tuple[int, int, int, int]] = None,
         force_rgba: Optional[bool] = None,
-        mask_mode: Optional[str] = None,
+        mask_mode: Optional[MaskMode] = None,
+        as_mask: Optional[bool] = None,
     ) -> None:
         """Replace the underlying image and invalidate all caches.
 
@@ -1072,6 +1108,9 @@ class Splimage:
             mask_mode: Optional override for the default mask
                 mode used by :meth:`mask`. If None, the existing setting
                 is kept.
+            as_mask: If True, reduce the new input to a 1-channel mask via
+                ``mask_mode`` and store as the canonical tensor. If None,
+                use the setting from construction.
         """
         if isinstance(img, np.ndarray):
             self._from_numpy(img)
@@ -1087,12 +1126,18 @@ class Splimage:
             raise TypeError(f"Cannot update Splimage from {type(img).__name__}.")
 
         self._forced_alpha = False
-        self._is_mask = self._tensor.shape[1] == 1
-        if not self._is_mask:
-            if force_rgba is None:
-                force_rgba = self._force_rgba_enabled
-            if force_rgba and self._tensor.shape[1] != 4:
-                self._force_alpha()
+        if as_mask is None:
+            as_mask = self._as_mask_enabled
+        if as_mask and self._tensor.shape[1] != 1:
+            self._tensor = ImgUtils.tensor2mask(self._tensor, mode=self._mask_mode)
+            self._is_mask = True
+        else:
+            self._is_mask = self._tensor.shape[1] == 1
+            if not self._is_mask:
+                if force_rgba is None:
+                    force_rgba = self._force_rgba_enabled
+                if force_rgba and self._tensor.shape[1] != 4:
+                    self._force_alpha()
 
         self._invalidate()
         if padding is not None:
@@ -1210,7 +1255,7 @@ class Splimage:
     def dtype(self) -> torch.dtype:
         return self._tensor.dtype
 
-    def to(self, **kwargs) -> Splimage:
+    def to(self, *args, **kwargs) -> Splimage:
         """Move/cast the underlying tensor. Returns a new Splimage.
 
         Forwards all keyword arguments to ``Tensor.to`` (e.g. ``device``,
@@ -1221,11 +1266,13 @@ class Splimage:
             ``_forced_alpha`` are preserved.
         """
         new = Splimage.__new__(Splimage)
-        new._tensor = self._tensor.to(**kwargs)
+        new._tensor = self._tensor.to(*args, **kwargs)
         new._padding = self._padding
         new._forced_alpha = self._forced_alpha
+        new._is_mask = self._is_mask
         new._force_rgba_enabled = self._force_rgba_enabled
         new._mask_mode = self._mask_mode
+        new._as_mask_enabled = self._as_mask_enabled
         new._img_cache = None
         new._pil_cache = None
         new._np_cache = None
@@ -1242,7 +1289,7 @@ class Splimage:
             self._img_cache = self._tensor
         return self._img_cache
 
-    def mask(self, mode: Optional[str] = None) -> Float[Tensor, "B 1 H W"]:
+    def mask(self, mode: Optional[MaskMode] = None) -> Float[Tensor, "B 1 H W"]:
         """Return single-channel mask. Cached per mode.
 
         Args:
@@ -1277,6 +1324,24 @@ class Splimage:
             img = ImgUtils.tensor2img(self._tensor, clamp=True)
             self._np_cache = (img.cpu().numpy() * 255).astype(np.uint8)
         return self._np_cache
+
+    def show(self) -> None:
+        """Display the image via PIL's default viewer.
+
+        For batched images (B > 1), opens each frame in sequence. 1-channel
+        tensors are broadcast to RGB for display. The viewer is
+        platform-dependent; in headless environments this may raise an error.
+        """
+        if self._tensor.shape[1] == 1:
+            rgb = self._tensor.repeat(1, 3, 1, 1)
+            pil = ImgUtils.tensor2pil(rgb)
+        else:
+            pil = self.to_pil()
+        if isinstance(pil, list):
+            for img in pil:
+                img.show()
+        else:
+            pil.show()
 
     def __add__(self, other: Union[Splimage, float, int, Tensor]) -> Splimage:
         return self._apply_op(other, torch.add)
@@ -1381,37 +1446,41 @@ class Splimage:
         self._invalidate()
         return self
 
-    def blur(self, sigma: float, kernel_size: Optional[int] = None) -> Splimage:
+    def blur(self, kernel_size: int, sigma: Optional[float] = None) -> Splimage:
         """Apply a Gaussian blur via convolution. Returns new Splimage.
 
         Args:
-            sigma: Standard deviation for the Gaussian kernel.
-            kernel_size: Kernel side length. Defaults to ``2 * ceil(3*sigma) + 1``
-                (covers ``±3σ``).
+            kernel_size: Kernel side length. Must be a positive odd integer.
+            sigma: Standard deviation for the Gaussian kernel. Defaults to
+                ``0.3 * ((kernel_size - 1) * 0.5 - 1) + 0.8`` (OpenCV
+                heuristic), which falls back to ``kernel_size / 6`` for
+                ``kernel_size >= 3``.
 
         Returns:
             New Splimage with blurred tensor. Padding metadata is preserved.
         """
-        if kernel_size is None:
-            kernel_size = 2 * math.ceil(3 * sigma) + 1
         if kernel_size < 1:
             raise ValueError(f"kernel_size must be positive, got {kernel_size}.")
+        if sigma is None:
+            sigma = 0.3 * ((kernel_size - 1) * 0.5 - 1) + 0.8
         kernel = ImgUtils.gaussian_kernel([kernel_size], [sigma])
         blurred = ImgUtils.convolve(self._tensor, kernel, match_channels=True)
         new = Splimage(blurred, padding=self._padding)
         return new
 
-    def blur_(self, sigma: float, kernel_size: Optional[int] = None) -> Splimage:
+    def blur_(self, kernel_size: int, sigma: Optional[float] = None) -> Splimage:
         """Apply a Gaussian blur in-place.
 
         Args:
-            sigma: Standard deviation for the Gaussian kernel.
-            kernel_size: Kernel side length. Defaults to ``2 * ceil(3*sigma) + 1``.
+            kernel_size: Kernel side length. Must be a positive odd integer.
+            sigma: Standard deviation for the Gaussian kernel. Defaults to
+                ``0.3 * ((kernel_size - 1) * 0.5 - 1) + 0.8`` (OpenCV
+                heuristic).
         """
-        if kernel_size is None:
-            kernel_size = 2 * math.ceil(3 * sigma) + 1
         if kernel_size < 1:
             raise ValueError(f"kernel_size must be positive, got {kernel_size}.")
+        if sigma is None:
+            sigma = 0.3 * ((kernel_size - 1) * 0.5 - 1) + 0.8
         kernel = ImgUtils.gaussian_kernel([kernel_size], [sigma])
         self._tensor = ImgUtils.convolve(self._tensor, kernel, match_channels=True)
         self._invalidate()
@@ -1542,7 +1611,7 @@ class Splimage:
     def mask_sample(
         self,
         uv_co: Float[Tensor, "N 2"],
-        mode: Optional[str] = None,
+        mode: Optional[MaskMode] = None,
     ) -> Float[Tensor, "B N 1"]:
         """Bilinearly sample the mask at normalized coordinates.
 
@@ -1565,7 +1634,7 @@ class Splimage:
     def sample_px_coords(
         self,
         N: int,
-        mode: Optional[str] = None,
+        mode: Optional[MaskMode] = None,
         noise: bool = False,
     ) -> Float[Tensor, "N 2"]:
         """Sample N pixel coordinates weighted by the mask.
@@ -1589,6 +1658,49 @@ class Splimage:
               for y and ``[-0.5/W, 0.5/W]`` for x.
         """
         return ImgUtils.sample_px_coords(self.mask(mode), N, noise=noise)
+
+    @torch.no_grad()
+    def sample_points(
+        self,
+        num_points: int,
+        mode: Optional[MaskMode] = None,
+        noise: bool = False,
+    ) -> Float[Tensor, "B num_points 2"]:
+        """Sample point coordinates per batch element from the mask.
+
+        Each pixel is treated as a Bernoulli trial whose success
+        probability is the mask value. ``num_points`` coordinates are
+        sampled per batch element (with replacement) and returned in the
+        pixel-center convention used by :meth:`ImgUtils.gen_px_coords`.
+
+        Args:
+            num_points: Number of coordinates to sample per batch element.
+            mode: Reduction mode passed to :meth:`mask`. If None, uses the
+                instance's ``mask_mode``.
+            noise: If True, jitter each sampled coordinate uniformly
+                within half a pixel on either side of its center.
+
+        Returns:
+            Sampled coordinates (B, ``num_points``, 2) in pixel-center
+            convention.
+
+        Raises:
+            ValueError: If the resolved mask contains negative values.
+        """
+        mask = self.mask(mode)  # (B, 1, H, W)
+        B, _, H, W = mask.shape
+        if (mask < 0).any():
+            raise ValueError("sample_points expects non-negative mask values.")
+        weights = mask.reshape(B, -1)  # (B, H*W)
+        indices = torch.multinomial(weights, num_points, replacement=True)  # (B, num_points)
+        co = ImgUtils.gen_px_coords(H, W, mask.device)  # (2, H, W)
+        co_flat = co.reshape(2, -1).T  # (H*W, 2)
+        sampled = co_flat[indices]  # (B, num_points, 2)
+        if noise:
+            sampled = sampled.clone()
+            sampled[..., 0].add_((torch.rand(B, num_points, device=mask.device) - 0.5) / H)
+            sampled[..., 1].add_((torch.rand(B, num_points, device=mask.device) - 0.5) / W)
+        return sampled
 
     def extract_image_patches(
         self,

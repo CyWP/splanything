@@ -58,6 +58,9 @@ device = torch.device("cuda:0")
 run_name = "NorVBra"
 base_folder = Path("../test_runs").resolve()
 run_folder = base_folder / run_name
+seed = None
+if seed is not None:
+    torch.manual_seed(seed)
 
 
 class ThetaZero(Initializer):

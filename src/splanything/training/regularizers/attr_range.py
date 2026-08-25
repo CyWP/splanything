@@ -57,23 +57,26 @@ class AttributeRange(Regularizer):
         self.max = max.unsqueeze(0) if isinstance(max, Tensor) else max
         self.target = target.unsqueeze(0) if isinstance(target, Tensor) else target
 
-    def compute(self, primitive: Primitive) -> Float[Tensor, ""]:
+    def compute(self, primitive: Primitive) -> Float[Tensor, " N"]:
         """Compute the range regularization.
 
         Args:
             primitive: Primitive whose named attribute is regularized.
 
         Returns:
-            Scalar regularization tensor.
+            Per-primitive regularization tensor of shape ``(N,)``;
+            ``forward`` reduces it to a scalar by averaging across
+            primitives (after the optional ``weight_map`` sampling).
         """
         val = getattr(primitive, self.attr_name)
-        loss = val.new_zeros(())
+        reduce_dims = tuple(range(1, val.ndim))
+        loss = val.new_zeros(val.shape[:1])
         if self.min is not None:
             sqdist = (val - self.min) ** 2
-            loss = loss + torch.where(val < self.min, sqdist, 0).mean()
+            loss = loss + torch.where(val < self.min, sqdist, 0).mean(dim=reduce_dims)
         if self.max is not None:
             sqdist = (val - self.max) ** 2
-            loss = loss + torch.where(val > self.max, sqdist, 0).mean()
+            loss = loss + torch.where(val > self.max, sqdist, 0).mean(dim=reduce_dims)
         if self.target is not None:
-            loss = loss + ((val - self.target) ** 2).mean()
+            loss = loss + ((val - self.target) ** 2).mean(dim=reduce_dims)
         return loss

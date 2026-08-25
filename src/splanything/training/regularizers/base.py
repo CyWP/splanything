@@ -16,8 +16,11 @@ class Regularizer(nn.Module):
     spread or attribute range).
 
     Notes:
-        - Subclasses must implement
-          ``compute(primitive) -> Float[Tensor, ""]``.
+        - Subclasses must implement ``compute(primitive)`` returning a
+          per-primitive tensor of shape ``Float[Tensor, " N"]`` (one
+          value per primitive). ``forward`` reduces to a scalar by
+          averaging across primitives (after the optional
+          ``weight_map`` sampling).
         - Optional spatial weighting via ``weight_map``: when set, the
           map is sampled at the primitive's centroids (or at an
           explicit ``co`` if provided) and the sampled values
@@ -46,14 +49,16 @@ class Regularizer(nn.Module):
         self.weight_map = weight_map
         self._coords_attr = coords_attr
 
-    def compute(self, primitive: Primitive) -> Float[Tensor, ""]:
-        """Compute unweighted regularization value.
+    def compute(self, primitive: Primitive) -> Float[Tensor, " N"]:
+        """Compute unweighted per-primitive regularization values.
 
         Args:
             primitive: Primitive whose parameters are evaluated.
 
         Returns:
-            Regularization scalar tensor.
+            Per-primitive regularization tensor of shape ``(N,)``.
+            ``forward`` reduces this to a scalar by averaging across
+            primitives (after the optional ``weight_map`` sampling).
         """
         raise NotImplementedError()
 
@@ -61,6 +66,7 @@ class Regularizer(nn.Module):
         self,
         primitive: Primitive,
         co: Optional[Float[Tensor, "N 2"]] = None,
+        weight_map: Optional[Splimage] = None,
         **kwargs,
     ) -> Float[Tensor, ""]:
         """Compute the regularization, optionally weighted by ``weight_map``.
@@ -81,5 +87,5 @@ class Regularizer(nn.Module):
         out = self.compute(primitive)
         if self.weight_map is not None:
             sample_at = getattr(primitive, self._coords_attr) if co is None else co
-            return out * self.map.mask_sample(sample_at)[0].squeeze(-1)
-        return out
+            out = out * self.weight_map.mask_sample(sample_at)[0].squeeze(-1)
+        return out.mean()

@@ -70,25 +70,36 @@ class AttributeProximity(Regularizer):
                     "`mode == 'RATIO'` requires at least two attribute names."
                 )
 
-    def compute(self, primitive: Primitive) -> Float[Tensor, ""]:
+    def _ensure_dim(self, data: Float[Tensor, "N ..."]) -> Float[Tensor, "N ..."]:
+        if data.ndim == 1:
+            return data.unsqueeze(-1)
+        return data
+
+    def compute(self, primitive: Primitive) -> Float[Tensor, " N"]:
         """Compute the proximity regularization.
 
         Args:
             primitive: Primitive whose named attributes are compared.
 
         Returns:
-            Scalar regularization tensor.
+            Per-primitive regularization tensor of shape ``(N,)``;
+            ``forward`` reduces it to a scalar by averaging across
+            primitives (after the optional ``weight_map`` sampling).
         """
         if self.mode == "RATIO":
             first = getattr(primitive, self.attr_names[0])
             second = getattr(primitive, self.attr_names[1])
-            return ((first - self.ratio * second) ** 2).mean()
-        vals = torch.cat([getattr(primitive, name) for name in self.attr_names], dim=-1)
+            sqdev = (first - self.ratio * second) ** 2
+            return sqdev.mean(dim=tuple(range(1, sqdev.ndim)))
+        vals = torch.cat(
+            [self._ensure_dim(getattr(primitive, name)) for name in self.attr_names],
+            dim=-1,
+        )
         dist = (vals - vals.mean(dim=-1, keepdim=True)) ** 2
         if self.mode == "PUSH":
-            return torch.exp(-dist).mean()
+            return torch.exp(-dist).mean(dim=-1)
         if self.mode == "ATTRACT":
-            return dist.mean()
+            return dist.mean(dim=-1)
         raise AttributeError(
             "Attribute 'mode' must be one of 'PUSH', 'ATTRACT', 'RATIO'."
         )

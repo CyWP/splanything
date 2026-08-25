@@ -39,7 +39,9 @@ class TrainSampler(Sampler):
 
     def __init__(
         self,
-        target: Splimage,
+        target: Optional[Splimage] = None,
+        H: Optional[int] = None,
+        W: Optional[int] = None,
         patch_size: Optional[int] = None,
         max_batch: Optional[int] = None,
         sampling_map: Optional[Splimage] = None,
@@ -47,12 +49,17 @@ class TrainSampler(Sampler):
         low_vram: bool = False,
         epoch_size: Optional[int] = None,
     ):
+        if target is None and (H is None or W is None):
+            raise ValueError(
+                "Either 'target' or generation dimensions ('H', 'W') must be set upon initialization."
+            )
         self.sampling_map = sampling_map
         self.max_batch = max_batch
         self.epoch_size = epoch_size
         self.low_vram = low_vram
         self.rasterizer = WeightedRasterizer() if rasterizer is None else rasterizer
-        self.H, self.W = target.shape[-2:]
+        self.H = target.H if H is None else H
+        self.W = target.W if W is None else W
         self.target_img = target
         self.set_target(target, patch_size=patch_size)
 

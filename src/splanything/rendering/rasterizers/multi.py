@@ -26,7 +26,7 @@ class MultiRasterizer(Rasterizer):
             )
         for r, w in zip(self._rasterizers, self._weights):
             rasterized = r(sample)
-            if isinstance(w, torch.Tensor) and w.ndim == 4:
+            if isinstance(w, Splimage):
                 weight = w.mask_sample(sample.co)
             else:
                 weight = w

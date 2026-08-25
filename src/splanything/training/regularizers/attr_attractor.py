@@ -9,7 +9,7 @@ from ...primitives.base import Primitive
 from .base import Regularizer
 
 
-class AttrAttractor(Regularizer):
+class AttributeAttractor(Regularizer):
     """Weight primitive attribute deviations by distance to a set of target points.
 
     The selected coordinate attribute (default ``"centroids"``) defines one
@@ -121,7 +121,7 @@ class AttrAttractor(Regularizer):
         """
         return torch.exp(-d)
 
-    def compute(self, primitive: Primitive) -> Float[Tensor, ""]:
+    def compute(self, primitive: Primitive) -> Float[Tensor, " N"]:
         """Compute the attractor-based regularization.
 
         Args:
@@ -129,19 +129,21 @@ class AttrAttractor(Regularizer):
                 attributes are evaluated.
 
         Returns:
-            Scalar regularization tensor.
+            Per-primitive regularization tensor of shape ``(N,)``;
+            ``forward`` reduces it to a scalar by averaging across
+            primitives (after the optional ``weight_map`` sampling).
         """
         co = getattr(primitive, self.coord_attr)
         f = self.f.to(dtype=co.dtype, device=co.device)
         if co.shape[0] == 0 or f.shape[0] == 0:
-            return co.new_zeros(())
+            return co.new_zeros(co.shape[:1])
 
         dists = torch.cdist(co, f)  # (N, M)
         d = self._aggregate(dists)
 
         force = self.compute_force(d)  # (N,)
 
-        loss = co.new_zeros(())
+        loss = co.new_zeros(co.shape[:1])
         for name, target in self.attrs.items():
             val = getattr(primitive, name)
             loss = loss + self._attr_penalty(val, target, force)
@@ -179,7 +181,7 @@ class AttrAttractor(Regularizer):
         val: Float[Tensor, "N ..."],
         target: Float[Tensor, "1 ..."] | float,
         force: Float[Tensor, " N"],
-    ) -> Float[Tensor, ""]:
+    ) -> Float[Tensor, " N"]:
         """Compute a single attribute's contribution to the loss.
 
         Args:
@@ -189,15 +191,16 @@ class AttrAttractor(Regularizer):
             force: Per-primitive force weight (N,).
 
         Returns:
-            Scalar penalty.
+            Per-primitive penalty tensor of shape ``(N,)``.
         """
         sqdev = (val - target) ** 2  # (N, ...)
+        reduce_dims = tuple(range(1, sqdev.ndim))
         if self.mode == "ATTRACT":
-            return (force[:, None] * sqdev).mean()  # ()
+            return (force[:, None] * sqdev).mean(dim=reduce_dims)  # (N,)
         if self.mode == "PUSH":
-            return (force[:, None] * torch.exp(-sqdev)).mean()  # ()
+            return (force[:, None] * torch.exp(-sqdev)).mean(dim=reduce_dims)  # (N,)
         if self.mode == "NEITHER":
-            return sqdev.mean()  # ()
+            return sqdev.mean(dim=reduce_dims)  # (N,)
         raise ValueError(
             f"Unknown mode '{self.mode}'; expected one of 'ATTRACT', 'PUSH', 'NEITHER'."
         )
