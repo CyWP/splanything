@@ -8,7 +8,7 @@ import torch
 from PIL import Image
 
 from ...rendering.sampler import Sampler
-from ...utils.img import ImgUtils
+from ...utils.img import Splimage
 from ..trainer import Trainer
 from ..stages import EPOCH_END
 from .base import Callback
@@ -76,24 +76,26 @@ class PreviewWindow(Callback):
         if trainer.epoch % self.frequency != 0:
             return
         with torch.no_grad():
-            img = trainer.last_image(
-                max_batch=self.max_batch,
-                low_vram=self.low_vram,
-                sampler=self.sampler,
+            img = Splimage(
+                trainer.last_image(
+                    max_batch=self.max_batch,
+                    low_vram=self.low_vram,
+                    sampler=self.sampler,
+                )
             )
         if self.H is not None and self.W is not None:
             cur_H, cur_W = img.shape[-2:]
             if cur_H != self.H or cur_W != self.W:
-                img = ImgUtils.resize(img, self.H, self.W)
+                img = img.resize(self.H, self.W)
         if self.show_target:
             tgt_img = trainer.sampler.target_img
             t_H, t_W = tgt_img.shape[-2:]
             i_H, i_W = img.shape[-2:]
             if t_H != i_H or t_W != i_W:
-                tgt_img = ImgUtils.resize(tgt_img, i_H, i_W)
-            img = torch.cat([img, tgt_img], dim=3)
+                tgt_img = tgt_img.resize(i_H, i_W)
+            img = img.stack(tgt_img, dim="W")
         window = get_window(self.window_title)
-        pil_img = ImgUtils.tensor2pil(img)
+        pil_img = img.to_pil()
         if self.save_folder is not None:
             pil_img.save(self.save_folder / f"{trainer.epoch:07}.png")
         try:

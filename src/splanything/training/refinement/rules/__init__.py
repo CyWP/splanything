@@ -3,6 +3,7 @@
 Exposes:
 - ThresholdFilter
 - ThresholdGradFilter
+- ThresholdSplit
 - BoundsFilter
 - GradSplit
 - IsoSplit
@@ -16,6 +17,7 @@ Exposes:
 
 from .threshold_filter import ThresholdFilter
 from .threshold_grad_filter import ThresholdGradFilter
+from .threshold_split import ThresholdSplit
 from .bounds_filter import BoundsFilter
 from .grad_split import GradSplit
 from .iso_split import IsoSplit
@@ -28,6 +30,7 @@ from .primitive_floor import PrimitiveFloor
 __all__ = [
     "ThresholdFilter",
     "ThresholdGradFilter",
+    "ThresholdSplit",
     "BoundsFilter",
     "GradSplit",
     "IsoSplit",

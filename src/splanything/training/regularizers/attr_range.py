@@ -69,14 +69,19 @@ class AttributeRange(Regularizer):
             primitives (after the optional ``weight_map`` sampling).
         """
         val = getattr(primitive, self.attr_name)
-        reduce_dims = tuple(range(1, val.ndim))
         loss = val.new_zeros(val.shape[:1])
         if self.min is not None:
-            sqdist = (val - self.min) ** 2
-            loss = loss + torch.where(val < self.min, sqdist, 0).mean(dim=reduce_dims)
+            overshoot = torch.where(val < self.min, (val - self.min) ** 2, 0)
+            loss = loss + self._reduce(overshoot)
         if self.max is not None:
-            sqdist = (val - self.max) ** 2
-            loss = loss + torch.where(val > self.max, sqdist, 0).mean(dim=reduce_dims)
+            overshoot = torch.where(val > self.max, (val - self.max) ** 2, 0)
+            loss = loss + self._reduce(overshoot)
         if self.target is not None:
-            loss = loss + ((val - self.target) ** 2).mean(dim=reduce_dims)
+            loss = loss + self._reduce((val - self.target) ** 2)
         return loss
+
+    @staticmethod
+    def _reduce(x: Tensor) -> Tensor:
+        if x.ndim > 1:
+            return x.mean(dim=tuple(range(1, x.ndim)))
+        return x

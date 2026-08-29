@@ -58,10 +58,11 @@ class TrainSampler(Sampler):
         self.epoch_size = epoch_size
         self.low_vram = low_vram
         self.rasterizer = WeightedRasterizer() if rasterizer is None else rasterizer
-        self.H = target.H if H is None else H
-        self.W = target.W if W is None else W
+        self.H = H
+        self.W = W
         self.target_img = target
-        self.set_target(target, patch_size=patch_size)
+        if target is not None:
+            self.set_target(target, patch_size=patch_size)
 
     def set_target(self, target: Splimage, patch_size: Optional[int] = None):
         """Re-initialise target image and patch grids.
@@ -263,7 +264,6 @@ class TrainSampler(Sampler):
         self,
         p: Primitive,
         max_batch: Optional[int] = None,
-        low_vram: Optional[bool] = None,
     ) -> Float[Tensor, "B C H W"]:
         """Render the full primitive image over all patches (no subsampling).
 
@@ -280,7 +280,6 @@ class TrainSampler(Sampler):
                 f"Sampler and primitive must be on same device. "
                 f"Currently: {self.device}, {p.device}."
             )
-        lv = self.low_vram if low_vram is None else low_vram
         P, S, _ = self.co_patches.shape
         patch_size_int = int(S**0.5) if P != 1 else S
         patch_masks = p.patch_mask(
@@ -298,8 +297,6 @@ class TrainSampler(Sampler):
             if budget is None or pm_count == 0 or pm_count * co_i.shape[0] <= budget:
                 with p.masked(pm):
                     out = self.rasterizer(p(co_i))  # (S, 4)
-                if lv:
-                    out = out.cpu()
                 gen[i] = out
                 continue
             chunk = max(1, budget // pm_count)
@@ -310,10 +307,8 @@ class TrainSampler(Sampler):
                 e = min(s + chunk, N)
                 with p.masked(pm):
                     part = self.rasterizer(p(co_i[s:e]))  # (n, 4)
-                if lv:
-                    part = part.cpu()
                 parts.append(part)
                 s = e
             gen[i] = torch.cat(parts, dim=0)
         full = torch.stack(gen, dim=0)  # (P, S, 4)
-        return ImgUtils.assemble_patches(full, self.H, self.W)
+        return ImgUtils.assemble_patches(full, self.H, self.W), self.target_img

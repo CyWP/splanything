@@ -10,6 +10,8 @@ from jaxtyping import Float
 
 from ..primitives.base import Primitive
 from ..rendering.sampler import Sampler
+from ..utils.img import Splimage
+from .losses.base import ImageLoss
 from .optimizer import OptimizerWrapper
 from .sampler import TrainSampler
 from .stages import (
@@ -157,6 +159,16 @@ class Trainer:
         self.optimizer = optimizer
         self.losses = losses
         self.callbacks = callbacks
+
+        has_image = any(isinstance(fn, ImageLoss) for fn, _ in losses.values())
+        has_sample = any(not isinstance(fn, ImageLoss) for fn, _ in losses.values())
+        if has_image and has_sample:
+            _logger.warning(
+                "Mixed loss types: losses contain both Loss and ImageLoss. "
+                "ImageLoss expects full BCHW images while Loss expects "
+                "per-sample patches. This may produce incorrect results."
+            )
+        self._use_image_losses = has_image
         self.scheduler = scheduler
         self.logs: Dict[int, Dict[str, Any]] = dict()
         self.epoch: int = 0
@@ -260,18 +272,19 @@ class Trainer:
 
         Runs: zero_grad -> forward -> compute losses -> backward -> step.
         Triggers callbacks at EPOCH_START, PRE_STEP, EPOCH_END.
+
+        Dispatches to per-sample or full-image path depending on whether
+        any loss is an :class:`ImageLoss`.
         """
         self.last_epoch_image = None
         self.last_losses = {name: 0.0 for name in self.losses.keys()}
         self.last_regularizers = {}
         self.epoch_backward_passes = 0
         self.call_back(EPOCH_START)
-        for gen, target, batch_co in self.sampler.samples(self.primitive):
-            self.call_back(BATCH_START)
-            self.last_output = gen
-            self.last_target = target
-            self._compute_losses(co=batch_co)
-            self.call_back(BATCH_END)
+        if self._use_image_losses:
+            self._exec_epoch_image()
+        else:
+            self._exec_epoch_sample()
         self.call_back(PRE_STEP)
         with self._apply_refinements():
             self._compute_regularizers()
@@ -282,9 +295,34 @@ class Trainer:
         with torch.no_grad():
             self.call_back(EPOCH_END)
 
-    def _compute_losses(self, co: Float[Tensor, "B 2"]):
+    def _exec_epoch_sample(self):
+        """Per-sample training loop.
+
+        Iterates over sampler patches, computing losses on each batch.
+        """
+        for gen, target, batch_co in self.sampler.samples(self.primitive):
+            self.call_back(BATCH_START)
+            self.last_output = gen
+            self.last_target = target
+            self._compute_losses(co=batch_co)
+            self.call_back(BATCH_END)
+
+    def _exec_epoch_image(self):
+        """Full-image training loop.
+
+        Renders the complete image, sets ``last_output`` and
+        ``last_target`` as BCHW tensors, and computes losses once.
+        """
+        gen, target = self.sampler.rasterize(self.primitive)
+        self.last_output = gen
+        self.last_target = target.image()
+        self.call_back(BATCH_START)
+        self._compute_losses()
+        self.call_back(BATCH_END)
+
+    def _compute_losses(self, co: Optional[Float[Tensor, "B 2"]] = None):
         last_losses = {
-            name: weight * loss_fn(self, co=co)
+            name: weight * loss_fn(self.last_output, self.last_target, co=co)
             for name, (loss_fn, weight) in self.losses.items()
         }
         last_loss = sum(last_losses.values())
@@ -307,7 +345,7 @@ class Trainer:
         low_vram: Optional[bool] = None,
         sampler: Optional[Sampler] = None,
         force_grad: bool = False,
-    ) -> Float[Tensor, "B C H W"]:
+    ) -> Splimage:
         """Get the last rendered image, optionally recomputing it.
 
         Args:
@@ -320,7 +358,7 @@ class Trainer:
                 graph.
 
         Returns:
-            Rendered image tensor (B, C, H, W).
+            Rendered image Splimage object.
         """
         lv = self.low_vram if low_vram is None else low_vram
         if (

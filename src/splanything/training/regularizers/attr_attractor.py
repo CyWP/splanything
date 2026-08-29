@@ -194,13 +194,14 @@ class AttributeAttractor(Regularizer):
             Per-primitive penalty tensor of shape ``(N,)``.
         """
         sqdev = (val - target) ** 2  # (N, ...)
-        reduce_dims = tuple(range(1, sqdev.ndim))
+        if sqdev.ndim > 1:
+            sqdev = sqdev.mean(dim=tuple(range(1, sqdev.ndim)))
         if self.mode == "ATTRACT":
-            return (force[:, None] * sqdev).mean(dim=reduce_dims)  # (N,)
+            return force * sqdev  # (N,)
         if self.mode == "PUSH":
-            return (force[:, None] * torch.exp(-sqdev)).mean(dim=reduce_dims)  # (N,)
+            return force * torch.exp(-sqdev)  # (N,)
         if self.mode == "NEITHER":
-            return sqdev.mean(dim=reduce_dims)  # (N,)
+            return sqdev  # (N,)
         raise ValueError(
             f"Unknown mode '{self.mode}'; expected one of 'ATTRACT', 'PUSH', 'NEITHER'."
         )

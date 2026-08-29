@@ -323,7 +323,6 @@ class Primitive(nn.Module):
 
     @nomask
     @torch.no_grad()
-    @torch.no_grad()
     def adjust_to_canvas(self, H: int, W: int) -> Primitive:
         target_ar = torch.tensor(H / W, device=self._aspect_ratio.device)
         current_ar = self._aspect_ratio.item()

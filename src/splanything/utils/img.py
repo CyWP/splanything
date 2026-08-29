@@ -13,6 +13,7 @@ from torch import Tensor
 
 
 MaskMode = Literal["R", "G", "B", "A", "RGB", "mean"]
+ExpandMode = Literal["LINEAR", "COSINE"]
 
 
 class ImgUtils:
@@ -901,6 +902,116 @@ class ImgUtils:
         x_delta = _reduce(x_diff).reshape(1, 1, H, W)
         return y_delta, x_delta
 
+    @staticmethod
+    def expand(
+        mask: Float[Tensor, "B 1 H W"],
+        distance: int,
+        mode: ExpandMode = "COSINE",
+    ) -> Float[Tensor, "B 1 H W"]:
+        """Expand a mask outward or inward via separable1D convolution.
+
+        Positive *distance* expands high-value regions outward (dilation);
+        negative distance expands low-value regions inward (erosion). The
+        effect is achieved by convolving with a symmetric1D kernel whose
+        shape is chosen by *mode*.
+
+        Args:
+            mask: Input mask tensor ``(B, 1, H, W)``.
+            distance: Pixel distance. Positive expands high values
+                outward; negative expands low values inward (erodes).
+            mode: Kernel window shape. ``"LINEAR"`` uses a triangular
+                (Bartlett) window; ``"COSINE"`` uses a raised-cosine
+                (Hann) window.
+
+        Returns:
+            Expanded mask with the same shape and dtype.
+
+        Raises:
+            ValueError: If *mode* is not recognised.
+        """
+        if distance == 0:
+            return mask
+
+        invert = distance < 0
+        d = abs(distance)
+        half = d
+        size = 2 * half + 1
+
+        if mode == "LINEAR":
+            kernel = torch.arange(1, half + 2, dtype=torch.float32, device=mask.device)
+            kernel = torch.cat([kernel, kernel[:-1].flip(0)])
+        elif mode == "COSINE":
+            t = torch.arange(size, dtype=torch.float32, device=mask.device)
+            kernel = 0.5 * (1.0 - torch.cos(2.0 * math.pi * t / (size - 1)))
+        else:
+            raise ValueError(
+                f"Unknown expand mode '{mode}'; expected 'LINEAR' or 'COSINE'."
+            )
+
+        kernel = kernel / kernel.sum()
+        kernel_h = kernel.view(1, 1, 1, -1)
+        kernel_v = kernel.view(1, 1, -1, 1)
+
+        result = mask.float()
+        if invert:
+            result = 1.0 - result
+        result = F.pad(result, (half, half, 0, 0), mode="replicate")
+        result = F.conv2d(result, kernel_h)
+        result = F.pad(result, (0, 0, half, half), mode="replicate")
+        result = F.conv2d(result, kernel_v)
+        if invert:
+            result = 1.0 - result
+
+        original = mask.float()
+        if invert:
+            result = torch.min(result, original)
+        else:
+            result = torch.max(result, original)
+
+        return result.to(mask.dtype)
+
+    @staticmethod
+    def stack(
+        *imgs: Float[Tensor, "B C H W"],
+        dim: Literal["H", "W"],
+    ) -> Float[Tensor, "B C H' W'"]:
+        """Concatenate images along a spatial axis.
+
+        All tensors must share the same batch and channel dimensions and
+        the *other* spatial dimension (i.e. stacking along H requires
+        equal W, and vice-versa).
+
+        Args:
+            *imgs: Two or more BCHW tensors.
+            dim: ``"H"`` to stack vertically (top-to-bottom), ``"W"``
+                to stack horizontally (left-to-right).
+
+        Returns:
+            Concatenated tensor.
+
+        Raises:
+            ValueError: Fewer than two images or mismatched shapes.
+        """
+        if len(imgs) < 2:
+            raise ValueError(
+                f"stack requires at least 2 images, got {len(imgs)}."
+            )
+        cat_dim = 2 if dim == "H" else 3
+        other_dim = 3 if dim == "H" else 2
+        ref_B, ref_C = imgs[0].shape[:2]
+        ref_other = imgs[0].shape[other_dim]
+        for i, img in enumerate(imgs):
+            if img.shape[0] != ref_B or img.shape[1] != ref_C:
+                raise ValueError(
+                    f"Image {i} has shape {img.shape}; expected B={ref_B}, C={ref_C}."
+                )
+            if img.shape[other_dim] != ref_other:
+                raise ValueError(
+                    f"Image {i} has {dim}={img.shape[other_dim]}; "
+                    f"expected {ref_other} (from image 0)."
+                )
+        return torch.cat(imgs, dim=cat_dim)
+
 
 _SplimageInput = Union[
     np.ndarray,
@@ -1246,6 +1357,33 @@ class Splimage:
             if (img.H, img.W) != ref:
                 return False
         return True
+
+    def stack(
+        self,
+        *others: Splimage,
+        dim: Literal["H", "W"],
+    ) -> Splimage:
+        """Concatenate this image with others along a spatial axis.
+
+        All images must share the same batch and channel dimensions and
+        the *other* spatial dimension (stacking along H requires equal W,
+        and vice-versa).
+
+        Args:
+            *others: One or more additional Splimage instances.
+            dim: ``"H"`` to stack vertically (top-to-bottom), ``"W"``
+                to stack horizontally (left-to-right).
+
+        Returns:
+            New Splimage containing the concatenated result.
+
+        Raises:
+            ValueError: Fewer than two total images or mismatched shapes.
+        """
+        all_imgs = (self, *others)
+        tensors = [s._tensor for s in all_imgs]
+        stacked = ImgUtils.stack(*tensors, dim=dim)
+        return Splimage(stacked)
 
     @property
     def device(self) -> torch.device:
@@ -1847,5 +1985,51 @@ class Splimage:
             max(self._padding[2] - pl, 0),
             max(self._padding[3] - pr, 0),
         )
+        self._invalidate()
+        return self
+
+    def expand(
+        self,
+        distance: int,
+        mode: ExpandMode = "COSINE",
+    ) -> Splimage:
+        """Expand the mask outward or inward. Returns new Splimage.
+
+        Positive *distance* expands high-value regions outward (dilation);
+        negative distance expands low-value regions inward (erosion).
+
+        Args:
+            distance: Pixel distance. Positive expands outward; negative
+                expands inward (erodes).
+            mode: Kernel window shape. ``"LINEAR"`` for a triangular
+                window, ``"COSINE"`` for a raised-cosine window.
+
+        Returns:
+            New Splimage with the expanded mask.
+        """
+        new_mask = ImgUtils.expand(self.mask(), distance, mode=mode)
+        new = Splimage(new_mask)
+        new._padding = self._padding
+        new._mask_mode = self._mask_mode
+        return new
+
+    def expand_(
+        self,
+        distance: int,
+        mode: ExpandMode = "COSINE",
+    ) -> Splimage:
+        """Expand the mask in-place.
+
+        Args:
+            distance: Pixel distance. Positive expands outward; negative
+                expands inward (erodes).
+            mode: Kernel window shape. ``"LINEAR"`` for a triangular
+                window, ``"COSINE"`` for a raised-cosine window.
+
+        Returns:
+            ``self``, with the tensor replaced by the expanded mask.
+        """
+        self._tensor = ImgUtils.expand(self.mask(), distance, mode=mode)
+        self._is_mask = True
         self._invalidate()
         return self

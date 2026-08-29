@@ -90,7 +90,9 @@ class AttributeProximity(Regularizer):
             first = getattr(primitive, self.attr_names[0])
             second = getattr(primitive, self.attr_names[1])
             sqdev = (first - self.ratio * second) ** 2
-            return sqdev.mean(dim=tuple(range(1, sqdev.ndim)))
+            if sqdev.ndim > 1:
+                sqdev = sqdev.mean(dim=tuple(range(1, sqdev.ndim)))
+            return sqdev
         vals = torch.cat(
             [self._ensure_dim(getattr(primitive, name)) for name in self.attr_names],
             dim=-1,

@@ -1,556 +1,265 @@
 {
-  "10": {
+  "52": {
     "msg": [
-      "[INFO] [epoch 10] BoundsFilter: 0 primitives marked for filtering."
+      "[Epoch 52][INFO] [epoch 52] ThresholdFilter: 0 primitives marked for filtering."
     ]
   },
-  "15": {
+  "83": {
     "msg": [
-      "[INFO] [epoch 15] AreaSplit: 1 primitives marked for splitting.",
-      "[INFO] [epoch 15] Combined split: 1 marked for splitting."
+      "[Epoch 83][INFO] [epoch 83] ThresholdSplit: 44 primitives marked for splitting.",
+      "[Epoch 83][INFO] [epoch 83] Combined split: 44 marked for splitting."
     ]
   },
-  "20": {
+  "104": {
     "msg": [
-      "[INFO] [epoch 20] BoundsFilter: 0 primitives marked for filtering."
+      "[Epoch 104][INFO] [epoch 104] ThresholdFilter: 0 primitives marked for filtering."
     ]
   },
-  "30": {
+  "156": {
     "msg": [
-      "[INFO] [epoch 30] BoundsFilter: 0 primitives marked for filtering.",
-      "[INFO] [epoch 30] AreaSplit: 3 primitives marked for splitting.",
-      "[INFO] [epoch 30] Combined split: 3 marked for splitting."
+      "[Epoch 156][INFO] [epoch 156] ThresholdFilter: 0 primitives marked for filtering."
     ]
   },
-  "40": {
+  "166": {
     "msg": [
-      "[INFO] [epoch 40] BoundsFilter: 0 primitives marked for filtering."
+      "[Epoch 166][INFO] [epoch 166] ThresholdSplit: 54 primitives marked for splitting.",
+      "[Epoch 166][INFO] [epoch 166] Combined split: 54 marked for splitting."
     ]
   },
-  "45": {
+  "201": {
     "msg": [
-      "[INFO] [epoch 45] AreaSplit: 11 primitives marked for splitting.",
-      "[INFO] [epoch 45] Combined split: 11 marked for splitting."
+      "[Epoch 201][INFO] [epoch 201] GradSplit: 0 primitives marked for splitting."
     ]
   },
-  "47": {
+  "208": {
     "msg": [
-      "[INFO] [epoch 47] AlphaFilter: 0 primitives marked for filtering."
+      "[Epoch 208][INFO] [epoch 208] ThresholdFilter: 0 primitives marked for filtering."
     ]
   },
-  "50": {
+  "249": {
     "msg": [
-      "[INFO] [epoch 50] BoundsFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "60": {
-    "msg": [
-      "[INFO] [epoch 60] BoundsFilter: 0 primitives marked for filtering.",
-      "[INFO] [epoch 60] AreaSplit: 6 primitives marked for splitting.",
-      "[INFO] [epoch 60] Combined split: 6 marked for splitting."
-    ]
-  },
-  "70": {
-    "msg": [
-      "[INFO] [epoch 70] BoundsFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "75": {
-    "msg": [
-      "[INFO] [epoch 75] AreaSplit: 6 primitives marked for splitting.",
-      "[INFO] [epoch 75] Combined split: 6 marked for splitting."
-    ]
-  },
-  "80": {
-    "msg": [
-      "[INFO] [epoch 80] BoundsFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "90": {
-    "msg": [
-      "[INFO] [epoch 90] BoundsFilter: 0 primitives marked for filtering.",
-      "[INFO] [epoch 90] AreaSplit: 5 primitives marked for splitting.",
-      "[INFO] [epoch 90] Combined split: 5 marked for splitting."
-    ]
-  },
-  "94": {
-    "msg": [
-      "[INFO] [epoch 94] AlphaFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "100": {
-    "msg": [
-      "[INFO] [epoch 100] BoundsFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "103": {
-    "msg": [
-      "[INFO] [epoch 103] GradSplit: 38 primitives marked for splitting.",
-      "[INFO] [epoch 103] Combined split: 38 marked for splitting."
-    ]
-  },
-  "105": {
-    "msg": [
-      "[INFO] [epoch 105] AreaSplit: 2 primitives marked for splitting.",
-      "[INFO] [epoch 105] Combined split: 2 marked for splitting."
-    ]
-  },
-  "110": {
-    "msg": [
-      "[INFO] [epoch 110] BoundsFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "120": {
-    "msg": [
-      "[INFO] [epoch 120] BoundsFilter: 0 primitives marked for filtering.",
-      "[INFO] [epoch 120] AreaSplit: 11 primitives marked for splitting.",
-      "[INFO] [epoch 120] Combined split: 11 marked for splitting."
-    ]
-  },
-  "130": {
-    "msg": [
-      "[INFO] [epoch 130] BoundsFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "135": {
-    "msg": [
-      "[INFO] [epoch 135] AreaSplit: 5 primitives marked for splitting.",
-      "[INFO] [epoch 135] Combined split: 5 marked for splitting."
-    ]
-  },
-  "140": {
-    "msg": [
-      "[INFO] [epoch 140] BoundsFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "141": {
-    "msg": [
-      "[INFO] [epoch 141] AlphaFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "150": {
-    "msg": [
-      "[INFO] [epoch 150] BoundsFilter: 0 primitives marked for filtering.",
-      "[INFO] [epoch 150] AreaSplit: 6 primitives marked for splitting.",
-      "[INFO] [epoch 150] Combined split: 6 marked for splitting."
-    ]
-  },
-  "160": {
-    "msg": [
-      "[INFO] [epoch 160] BoundsFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "165": {
-    "msg": [
-      "[INFO] [epoch 165] AreaSplit: 3 primitives marked for splitting.",
-      "[INFO] [epoch 165] Combined split: 3 marked for splitting."
-    ]
-  },
-  "170": {
-    "msg": [
-      "[INFO] [epoch 170] BoundsFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "180": {
-    "msg": [
-      "[INFO] [epoch 180] BoundsFilter: 0 primitives marked for filtering.",
-      "[INFO] [epoch 180] AreaSplit: 3 primitives marked for splitting.",
-      "[INFO] [epoch 180] Combined split: 3 marked for splitting."
-    ]
-  },
-  "187": {
-    "msg": [
-      "[INFO] [epoch 187] MapSplit: 37 primitives marked for splitting.",
-      "[INFO] [epoch 187] Combined split: 37 marked for splitting."
-    ]
-  },
-  "188": {
-    "msg": [
-      "[INFO] [epoch 188] AlphaFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "190": {
-    "msg": [
-      "[INFO] [epoch 190] BoundsFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "195": {
-    "msg": [
-      "[INFO] [epoch 195] AreaSplit: 1 primitives marked for splitting.",
-      "[INFO] [epoch 195] Combined split: 1 marked for splitting."
-    ]
-  },
-  "200": {
-    "msg": [
-      "[INFO] [epoch 200] BoundsFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "206": {
-    "msg": [
-      "[INFO] [epoch 206] GradSplit: 79 primitives marked for splitting.",
-      "[INFO] [epoch 206] Combined split: 79 marked for splitting."
-    ]
-  },
-  "210": {
-    "msg": [
-      "[INFO] [epoch 210] BoundsFilter: 0 primitives marked for filtering.",
-      "[INFO] [epoch 210] AreaSplit: 0 primitives marked for splitting."
-    ]
-  },
-  "220": {
-    "msg": [
-      "[INFO] [epoch 220] BoundsFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "225": {
-    "msg": [
-      "[INFO] [epoch 225] AreaSplit: 4 primitives marked for splitting.",
-      "[INFO] [epoch 225] Combined split: 4 marked for splitting."
-    ]
-  },
-  "230": {
-    "msg": [
-      "[INFO] [epoch 230] BoundsFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "235": {
-    "msg": [
-      "[INFO] [epoch 235] AlphaFilter: 1 primitives marked for filtering.",
-      "[INFO] [epoch 235] Combined filter: 1 marked for filtering."
-    ]
-  },
-  "240": {
-    "msg": [
-      "[INFO] [epoch 240] BoundsFilter: 0 primitives marked for filtering.",
-      "[INFO] [epoch 240] AreaSplit: 3 primitives marked for splitting.",
-      "[INFO] [epoch 240] Combined split: 3 marked for splitting."
-    ]
-  },
-  "250": {
-    "msg": [
-      "[INFO] [epoch 250] BoundsFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "255": {
-    "msg": [
-      "[INFO] [epoch 255] AreaSplit: 3 primitives marked for splitting.",
-      "[INFO] [epoch 255] Combined split: 3 marked for splitting."
+      "[Epoch 249][INFO] [epoch 249] ThresholdSplit: 37 primitives marked for splitting.",
+      "[Epoch 249][INFO] [epoch 249] Combined split: 37 marked for splitting."
     ]
   },
   "260": {
     "msg": [
-      "[INFO] [epoch 260] BoundsFilter: 0 primitives marked for filtering."
+      "[Epoch 260][INFO] [epoch 260] ThresholdFilter: 0 primitives marked for filtering."
     ]
   },
-  "270": {
+  "307": {
     "msg": [
-      "[INFO] [epoch 270] BoundsFilter: 0 primitives marked for filtering.",
-      "[INFO] [epoch 270] AreaSplit: 4 primitives marked for splitting.",
-      "[INFO] [epoch 270] Combined split: 4 marked for splitting."
+      "[Epoch 307][INFO] [epoch 307] MapSplit: 22 primitives marked for splitting.",
+      "[Epoch 307][INFO] [epoch 307] Combined split: 22 marked for splitting."
     ]
   },
-  "280": {
+  "312": {
     "msg": [
-      "[INFO] [epoch 280] BoundsFilter: 0 primitives marked for filtering."
+      "[Epoch 312][INFO] [epoch 312] ThresholdFilter: 0 primitives marked for filtering."
     ]
   },
-  "282": {
+  "332": {
     "msg": [
-      "[INFO] [epoch 282] AlphaFilter: 0 primitives marked for filtering."
+      "[Epoch 332][INFO] [epoch 332] ThresholdSplit: 27 primitives marked for splitting.",
+      "[Epoch 332][INFO] [epoch 332] Combined split: 27 marked for splitting."
     ]
   },
-  "285": {
+  "364": {
     "msg": [
-      "[INFO] [epoch 285] AreaSplit: 6 primitives marked for splitting.",
-      "[INFO] [epoch 285] Combined split: 6 marked for splitting."
+      "[Epoch 364][INFO] [epoch 364] ThresholdFilter: 0 primitives marked for filtering."
     ]
   },
-  "290": {
+  "402": {
     "msg": [
-      "[INFO] [epoch 290] BoundsFilter: 0 primitives marked for filtering."
+      "[Epoch 402][INFO] [epoch 402] GradSplit: 0 primitives marked for splitting."
     ]
   },
-  "300": {
+  "415": {
     "msg": [
-      "[INFO] [epoch 300] BoundsFilter: 0 primitives marked for filtering.",
-      "[INFO] [epoch 300] AreaSplit: 7 primitives marked for splitting.",
-      "[INFO] [epoch 300] Combined split: 7 marked for splitting."
+      "[Epoch 415][INFO] [epoch 415] ThresholdSplit: 22 primitives marked for splitting.",
+      "[Epoch 415][INFO] [epoch 415] Combined split: 22 marked for splitting."
     ]
   },
-  "309": {
+  "416": {
     "msg": [
-      "[INFO] [epoch 309] GradSplit: 166 primitives marked for splitting.",
-      "[INFO] [epoch 309] Combined split: 166 marked for splitting."
+      "[Epoch 416][INFO] [epoch 416] ThresholdFilter: 0 primitives marked for filtering."
     ]
   },
-  "310": {
+  "468": {
     "msg": [
-      "[INFO] [epoch 310] BoundsFilter: 1 primitives marked for filtering.",
-      "[INFO] [epoch 310] Combined filter: 1 marked for filtering."
+      "[Epoch 468][INFO] [epoch 468] ThresholdFilter: 0 primitives marked for filtering."
     ]
   },
-  "315": {
+  "498": {
     "msg": [
-      "[INFO] [epoch 315] AreaSplit: 1 primitives marked for splitting.",
-      "[INFO] [epoch 315] Combined split: 1 marked for splitting."
-    ]
-  },
-  "320": {
-    "msg": [
-      "[INFO] [epoch 320] BoundsFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "329": {
-    "msg": [
-      "[INFO] [epoch 329] AlphaFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "330": {
-    "msg": [
-      "[INFO] [epoch 330] BoundsFilter: 0 primitives marked for filtering.",
-      "[INFO] [epoch 330] AreaSplit: 7 primitives marked for splitting.",
-      "[INFO] [epoch 330] Combined split: 7 marked for splitting."
-    ]
-  },
-  "340": {
-    "msg": [
-      "[INFO] [epoch 340] BoundsFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "345": {
-    "msg": [
-      "[INFO] [epoch 345] AreaSplit: 7 primitives marked for splitting.",
-      "[INFO] [epoch 345] Combined split: 7 marked for splitting."
-    ]
-  },
-  "350": {
-    "msg": [
-      "[INFO] [epoch 350] BoundsFilter: 1 primitives marked for filtering.",
-      "[INFO] [epoch 350] Combined filter: 1 marked for filtering."
-    ]
-  },
-  "360": {
-    "msg": [
-      "[INFO] [epoch 360] BoundsFilter: 1 primitives marked for filtering.",
-      "[INFO] [epoch 360] Combined filter: 1 marked for filtering.",
-      "[INFO] [epoch 360] AreaSplit: 6 primitives marked for splitting.",
-      "[INFO] [epoch 360] Combined split: 6 marked for splitting."
-    ]
-  },
-  "370": {
-    "msg": [
-      "[INFO] [epoch 370] BoundsFilter: 1 primitives marked for filtering.",
-      "[INFO] [epoch 370] Combined filter: 1 marked for filtering."
-    ]
-  },
-  "374": {
-    "msg": [
-      "[INFO] [epoch 374] MapSplit: 122 primitives marked for splitting.",
-      "[INFO] [epoch 374] Combined split: 122 marked for splitting."
-    ]
-  },
-  "375": {
-    "msg": [
-      "[INFO] [epoch 375] AreaSplit: 1 primitives marked for splitting.",
-      "[INFO] [epoch 375] Combined split: 1 marked for splitting."
-    ]
-  },
-  "376": {
-    "msg": [
-      "[INFO] [epoch 376] AlphaFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "380": {
-    "msg": [
-      "[INFO] [epoch 380] BoundsFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "390": {
-    "msg": [
-      "[INFO] [epoch 390] BoundsFilter: 1 primitives marked for filtering.",
-      "[INFO] [epoch 390] Combined filter: 1 marked for filtering.",
-      "[INFO] [epoch 390] AreaSplit: 9 primitives marked for splitting.",
-      "[INFO] [epoch 390] Combined split: 9 marked for splitting."
-    ]
-  },
-  "400": {
-    "msg": [
-      "[INFO] [epoch 400] BoundsFilter: 2 primitives marked for filtering.",
-      "[INFO] [epoch 400] Combined filter: 2 marked for filtering."
-    ]
-  },
-  "405": {
-    "msg": [
-      "[INFO] [epoch 405] AreaSplit: 6 primitives marked for splitting.",
-      "[INFO] [epoch 405] Combined split: 6 marked for splitting."
-    ]
-  },
-  "410": {
-    "msg": [
-      "[INFO] [epoch 410] BoundsFilter: 1 primitives marked for filtering.",
-      "[INFO] [epoch 410] Combined filter: 1 marked for filtering."
-    ]
-  },
-  "412": {
-    "msg": [
-      "[INFO] [epoch 412] GradSplit: 325 primitives marked for splitting.",
-      "[INFO] [epoch 412] Combined split: 325 marked for splitting."
-    ]
-  },
-  "413": {
-    "msg": [
-      "[INFO] [epoch 413] PrimitiveCeiling: 185 primitives marked for filtering.",
-      "[INFO] [epoch 413] Combined filter: 185 marked for filtering."
-    ]
-  },
-  "420": {
-    "msg": [
-      "[INFO] [epoch 420] BoundsFilter: 2 primitives marked for filtering.",
-      "[INFO] [epoch 420] Combined filter: 2 marked for filtering.",
-      "[INFO] [epoch 420] AreaSplit: 1 primitives marked for splitting.",
-      "[INFO] [epoch 420] Combined split: 1 marked for splitting."
-    ]
-  },
-  "423": {
-    "msg": [
-      "[INFO] [epoch 423] AlphaFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "430": {
-    "msg": [
-      "[INFO] [epoch 430] BoundsFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "435": {
-    "msg": [
-      "[INFO] [epoch 435] AreaSplit: 6 primitives marked for splitting.",
-      "[INFO] [epoch 435] Combined split: 6 marked for splitting."
-    ]
-  },
-  "436": {
-    "msg": [
-      "[INFO] [epoch 436] PrimitiveCeiling: 5 primitives marked for filtering.",
-      "[INFO] [epoch 436] Combined filter: 5 marked for filtering."
-    ]
-  },
-  "440": {
-    "msg": [
-      "[INFO] [epoch 440] BoundsFilter: 1 primitives marked for filtering.",
-      "[INFO] [epoch 440] Combined filter: 1 marked for filtering."
-    ]
-  },
-  "450": {
-    "msg": [
-      "[INFO] [epoch 450] BoundsFilter: 0 primitives marked for filtering.",
-      "[INFO] [epoch 450] AreaSplit: 7 primitives marked for splitting.",
-      "[INFO] [epoch 450] Combined split: 7 marked for splitting."
-    ]
-  },
-  "451": {
-    "msg": [
-      "[INFO] [epoch 451] PrimitiveCeiling: 6 primitives marked for filtering.",
-      "[INFO] [epoch 451] Combined filter: 6 marked for filtering."
-    ]
-  },
-  "460": {
-    "msg": [
-      "[INFO] [epoch 460] BoundsFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "465": {
-    "msg": [
-      "[INFO] [epoch 465] AreaSplit: 5 primitives marked for splitting.",
-      "[INFO] [epoch 465] Combined split: 5 marked for splitting."
-    ]
-  },
-  "466": {
-    "msg": [
-      "[INFO] [epoch 466] PrimitiveCeiling: 5 primitives marked for filtering.",
-      "[INFO] [epoch 466] Combined filter: 5 marked for filtering."
-    ]
-  },
-  "470": {
-    "msg": [
-      "[INFO] [epoch 470] AlphaFilter: 0 primitives marked for filtering.",
-      "[INFO] [epoch 470] BoundsFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "480": {
-    "msg": [
-      "[INFO] [epoch 480] BoundsFilter: 0 primitives marked for filtering.",
-      "[INFO] [epoch 480] AreaSplit: 13 primitives marked for splitting.",
-      "[INFO] [epoch 480] Combined split: 13 marked for splitting."
-    ]
-  },
-  "481": {
-    "msg": [
-      "[INFO] [epoch 481] PrimitiveCeiling: 13 primitives marked for filtering.",
-      "[INFO] [epoch 481] Combined filter: 13 marked for filtering."
-    ]
-  },
-  "490": {
-    "msg": [
-      "[INFO] [epoch 490] BoundsFilter: 1 primitives marked for filtering.",
-      "[INFO] [epoch 490] Combined filter: 1 marked for filtering."
-    ]
-  },
-  "495": {
-    "msg": [
-      "[INFO] [epoch 495] AreaSplit: 7 primitives marked for splitting.",
-      "[INFO] [epoch 495] Combined split: 7 marked for splitting."
-    ]
-  },
-  "496": {
-    "msg": [
-      "[INFO] [epoch 496] PrimitiveCeiling: 6 primitives marked for filtering.",
-      "[INFO] [epoch 496] Combined filter: 6 marked for filtering."
-    ]
-  },
-  "500": {
-    "msg": [
-      "[INFO] [epoch 500] BoundsFilter: 0 primitives marked for filtering."
-    ]
-  },
-  "510": {
-    "msg": [
-      "[INFO] [epoch 510] BoundsFilter: 0 primitives marked for filtering.",
-      "[INFO] [epoch 510] AreaSplit: 10 primitives marked for splitting.",
-      "[INFO] [epoch 510] Combined split: 10 marked for splitting."
-    ]
-  },
-  "511": {
-    "msg": [
-      "[INFO] [epoch 511] PrimitiveCeiling: 10 primitives marked for filtering.",
-      "[INFO] [epoch 511] Combined filter: 10 marked for filtering."
-    ]
-  },
-  "515": {
-    "msg": [
-      "[INFO] [epoch 515] GradSplit: 405 primitives marked for splitting.",
-      "[INFO] [epoch 515] Combined split: 405 marked for splitting."
-    ]
-  },
-  "516": {
-    "msg": [
-      "[INFO] [epoch 516] PrimitiveCeiling: 405 primitives marked for filtering.",
-      "[INFO] [epoch 516] Combined filter: 405 marked for filtering."
-    ]
-  },
-  "517": {
-    "msg": [
-      "[INFO] [epoch 517] AlphaFilter: 0 primitives marked for filtering."
+      "[Epoch 498][INFO] [epoch 498] ThresholdSplit: 23 primitives marked for splitting.",
+      "[Epoch 498][INFO] [epoch 498] Combined split: 23 marked for splitting."
     ]
   },
   "520": {
     "msg": [
-      "[INFO] [epoch 520] BoundsFilter: 2 primitives marked for filtering.",
-      "[INFO] [epoch 520] Combined filter: 2 marked for filtering.",
-      "[INFO] [epoch 520] Preview closed, stopping training."
+      "[Epoch 520][INFO] [epoch 520] ThresholdFilter: 0 primitives marked for filtering."
     ]
   },
-  "521": {
+  "572": {
     "msg": [
-      "[INFO] [epoch 521] Checkpoint saved to /home/cyvv/Repos/splanything/test_runs/PorVCro/PorVCro"
+      "[Epoch 572][INFO] [epoch 572] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "581": {
+    "msg": [
+      "[Epoch 581][INFO] [epoch 581] ThresholdSplit: 22 primitives marked for splitting.",
+      "[Epoch 581][INFO] [epoch 581] Combined split: 22 marked for splitting."
+    ]
+  },
+  "603": {
+    "msg": [
+      "[Epoch 603][INFO] [epoch 603] GradSplit: 0 primitives marked for splitting."
+    ]
+  },
+  "614": {
+    "msg": [
+      "[Epoch 614][INFO] [epoch 614] MapSplit: 23 primitives marked for splitting.",
+      "[Epoch 614][INFO] [epoch 614] Combined split: 23 marked for splitting."
+    ]
+  },
+  "624": {
+    "msg": [
+      "[Epoch 624][INFO] [epoch 624] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "664": {
+    "msg": [
+      "[Epoch 664][INFO] [epoch 664] ThresholdSplit: 30 primitives marked for splitting.",
+      "[Epoch 664][INFO] [epoch 664] Combined split: 30 marked for splitting."
+    ]
+  },
+  "676": {
+    "msg": [
+      "[Epoch 676][INFO] [epoch 676] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "728": {
+    "msg": [
+      "[Epoch 728][INFO] [epoch 728] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "747": {
+    "msg": [
+      "[Epoch 747][INFO] [epoch 747] ThresholdSplit: 19 primitives marked for splitting.",
+      "[Epoch 747][INFO] [epoch 747] Combined split: 19 marked for splitting."
+    ]
+  },
+  "780": {
+    "msg": [
+      "[Epoch 780][INFO] [epoch 780] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "804": {
+    "msg": [
+      "[Epoch 804][INFO] [epoch 804] GradSplit: 0 primitives marked for splitting."
+    ]
+  },
+  "830": {
+    "msg": [
+      "[Epoch 830][INFO] [epoch 830] ThresholdSplit: 17 primitives marked for splitting.",
+      "[Epoch 830][INFO] [epoch 830] Combined split: 17 marked for splitting."
+    ]
+  },
+  "832": {
+    "msg": [
+      "[Epoch 832][INFO] [epoch 832] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "884": {
+    "msg": [
+      "[Epoch 884][INFO] [epoch 884] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "913": {
+    "msg": [
+      "[Epoch 913][INFO] [epoch 913] ThresholdSplit: 17 primitives marked for splitting.",
+      "[Epoch 913][INFO] [epoch 913] Combined split: 17 marked for splitting."
+    ]
+  },
+  "921": {
+    "msg": [
+      "[Epoch 921][INFO] [epoch 921] MapSplit: 38 primitives marked for splitting.",
+      "[Epoch 921][INFO] [epoch 921] Combined split: 38 marked for splitting."
+    ]
+  },
+  "936": {
+    "msg": [
+      "[Epoch 936][INFO] [epoch 936] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "988": {
+    "msg": [
+      "[Epoch 988][INFO] [epoch 988] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "996": {
+    "msg": [
+      "[Epoch 996][INFO] [epoch 996] ThresholdSplit: 18 primitives marked for splitting.",
+      "[Epoch 996][INFO] [epoch 996] Combined split: 18 marked for splitting."
+    ]
+  },
+  "1005": {
+    "msg": [
+      "[Epoch 1005][INFO] [epoch 1005] GradSplit: 0 primitives marked for splitting."
+    ]
+  },
+  "1040": {
+    "msg": [
+      "[Epoch 1040][INFO] [epoch 1040] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1079": {
+    "msg": [
+      "[Epoch 1079][INFO] [epoch 1079] ThresholdSplit: 17 primitives marked for splitting.",
+      "[Epoch 1079][INFO] [epoch 1079] Combined split: 17 marked for splitting."
+    ]
+  },
+  "1092": {
+    "msg": [
+      "[Epoch 1092][INFO] [epoch 1092] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1144": {
+    "msg": [
+      "[Epoch 1144][INFO] [epoch 1144] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1162": {
+    "msg": [
+      "[Epoch 1162][INFO] [epoch 1162] ThresholdSplit: 33 primitives marked for splitting.",
+      "[Epoch 1162][INFO] [epoch 1162] Combined split: 33 marked for splitting."
+    ]
+  },
+  "1196": {
+    "msg": [
+      "[Epoch 1196][INFO] [epoch 1196] ThresholdFilter: 0 primitives marked for filtering."
+    ]
+  },
+  "1206": {
+    "msg": [
+      "[Epoch 1206][INFO] [epoch 1206] GradSplit: 0 primitives marked for splitting."
+    ]
+  },
+  "1228": {
+    "msg": [
+      "[Epoch 1228][INFO] [epoch 1228] MapSplit: 55 primitives marked for splitting.",
+      "[Epoch 1228][INFO] [epoch 1228] Combined split: 55 marked for splitting."
+    ]
+  },
+  "1230": {
+    "msg": [
+      "[Epoch 1230][INFO] [epoch 1230] Preview closed, stopping training."
+    ]
+  },
+  "1231": {
+    "msg": [
+      "[Epoch 1231][INFO] [epoch 1231] Checkpoint saved to /home/cyvv/Repos/splanything/test_runs/PorVCro"
     ]
   }
 }

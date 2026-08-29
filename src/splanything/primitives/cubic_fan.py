@@ -83,7 +83,7 @@ class CubicFanPrimitive(Primitive):
         Returns:
             Tensor of shape (N,) with area values (range_1 * range_2 * 2).
         """
-        return self.range_1 * self.range_2 * 2
+        return self.range_1**2 + self.range_2**2
 
     @cached_property
     def scales(self) -> Tuple[Float[Tensor, "N"], Float[Tensor, "N"]]:

@@ -4,7 +4,7 @@ import math
 from typing import Tuple
 from jaxtyping import Float
 from torch import Tensor
-from torch.optim import AdamW
+from torch.optim import AdamW, SGD
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from pathlib import Path
 
@@ -26,6 +26,7 @@ from splanything.training.callbacks import (
 )
 from splanything.training.refinement.rules import (
     ThresholdFilter,
+    ThresholdSplit,
     GradSplit,
     IsoSplit,
     MapSplit,
@@ -38,6 +39,7 @@ from splanything.training.regularizers import (
     AttributeProximity,
     AttributeRange,
     AttributeAttractor,
+    AttributeMap,
 )
 from splanything.training.refinement.processors import MapCriterionProcessor
 from splanything.utils.img import ImgUtils, Splimage
@@ -81,29 +83,30 @@ def get_primitive():
     msk = Splimage(
         "../assets/por_cro_offside_masked.png", mask_mode="A", as_mask=True
     ).to(device)
-    msk_body = Splimage(
-        "../assets/por_cro_offside_masked_body.png", mask_mode="A", as_mask=True
-    ).to(device)
+    # msk_body = Splimage(
+    #     "../assets/por_cro_offside_masked_body.png", mask_mode="A", as_mask=True
+    # ).to(device)
     cubic = CubicFanPrimitive(
         size=80,
         initializers={
-            "thetas": ThetaSet(-math.pi / 4),
-            "centroids": MappedInitializer(msk.blur(50)),
+            # "thetas": ThetaSet(0.0),
+            "centroids": MappedInitializer(msk.expand(100)),
         },
-        param_defs={"thetas": ParamDef(batched=True, trainable=False)},
+        # param_defs={"thetas": ParamDef(batched=True, trainable=False)},
     ).to(device)
-    radial = RadialFreqPrimitive(
-        size=50,
-        initializers={
-            "thetas": ThetaSet(0),
-            "centroids": MappedInitializer(msk_body),
-        },
-        param_defs={"thetas": ParamDef(batched=True, trainable=False)},
-    ).to(device)
-    cubic.scale(0.4)
-    radial.scale(0.05)
-    prim = MultiPrimitive({"cubic": cubic, "radial": radial})
-    return prim
+    # radial = RadialFreqPrimitive(
+    #     size=50,
+    #     initializers={
+    #         "thetas": ThetaSet(0.0),
+    #         "centroids": MappedInitializer(msk_body),
+    #     },
+    #     param_defs={"thetas": ParamDef(batched=True, trainable=False)},
+    # ).to(device)
+    # cubic.scale(0.4)
+    # radial.scale(0.05)
+    # prim = MultiPrimitive({"cubic": cubic, "radial": radial})
+    # return prim
+    return cubic
 
 
 def train():
@@ -114,35 +117,43 @@ def train():
     msk = Splimage(
         "../assets/por_cro_offside_masked.png", mask_mode="A", as_mask=True
     ).to(device)
+    theta_msk = Splimage(
+        "../assets/por_cro_offside_theta_mask.png", mask_mode="mean", as_mask=True
+    ).to(device)
     # primitive
     prim = get_primitive()
 
     # Rules
     alpha_cull = ThresholdFilter(
-        attr_name="alphas", threshold=0.1, interval=17, comparison="OVER"
+        attr_name="alphas", threshold=0.1, interval=52, comparison="OVER"
     )
-    area_limit = ThresholdFilter(threshold=0.08, interval=73, attr_name="areas")
-    grad_split_lo = GradSplit(threshold=0.005, interval=201, attr_names=["centroids"])
+    # area_limit = ThresholdFilter(
+    #     threshold=0.0005, interval=73, attr_name="areas", comparison="OVER"
+    # )
+    area_split = ThresholdSplit("areas", 0.03, interval=83, comparison="OVER")
+    grad_split_lo = GradSplit(threshold=0.05, interval=201, attr_names=["centroids"])
     grad_split_hi = GradSplit(threshold=0.02, interval=173, attr_names=["centroids"])
     map_split = MapSplit(msk.blur(10) * 0.1 + 0.02, interval=307)
     ceiling = PrimitiveCeiling(2500)
-    prim.add_split_rule(area_limit)
+    # prim.add_split_rule(area_limit)
     prim.add_split_rule(map_split)
     prim.add_filter_rule(alpha_cull)
     prim.add_filter_rule(ceiling)
     prim.add_split_rule(grad_split_lo)
-    prim["radial"].add_split_rule(grad_split_hi)
+    prim.add_split_rule(area_split)
+    # prim["radial"].add_split_rule(grad_split_hi)
 
     # Rule processors
-    # map_proc = MapCriterionProcessor(msk_blur10 * 0.6 + 0.4)
+    map_proc = MapCriterionProcessor(msk.expand(20) * 0.6 + 0.4)
+    area_split.add_processor(map_proc)
     # grad_split_lo.add_processor(map_proc)
     # grad_split_hi.add_processor(map_proc)
 
     # Sampler
     sampler = TrainSampler(
         target=tgt.resize(200, 360),
-        patch_size=128,
-        max_batch=100000,
+        patch_size=64,
+        max_batch=500000,
         sampling_map=msk.blur(30) * 0.2 + 1e-5,
         low_vram=True,
     )
@@ -160,7 +171,7 @@ def train():
     )
     train_callbacks = [
         PreviewWindow(
-            frequency=3,
+            frequency=10,
             show_target=True,
             sampler=vis_sampler,
             # save_folder=run_folder / "train_preview",
@@ -175,7 +186,7 @@ def train():
     )
     losses = {
         "L2": (L2ImageLoss(msk.expand(150) * 2), 1.0),
-        "SSIM": (SSIMImageLoss(msk.expand(300) * 2 + 0.001), 0.1),
+        "SSIM": (SSIMImageLoss(1 - msk.expand(50)), 0.05),
     }
     # Regularizers
     prim.add_regularizer(
@@ -183,13 +194,15 @@ def train():
         AttributeProximity(["color_1", "color_2"], mode="PUSH"),
         weight=0.05,
     )
-    prim["radial"].add_regularizer(
-        "Area penalty", AttributeRange("areas", max=0.08), weight=10.0
-    )
-    prim["radial"].add_regularizer(
-        "Freqmaxx", AttributeRange("freq", min=10.0), weight=10
-    )
+    prim.add_regularizer("Area penalty", AttributeRange("areas", max=0.08), weight=10.0)
+    # prim.add_regularizer("Freqmaxx", AttributeRange("freq", min=4.0), weight=10.0)
     prim.add_regularizer("Alpha Target", AttributeRange("alphas", min=0.6), weight=12.0)
+    prim.add_regularizer(
+        "Theta Map",
+        AttributeMap(theta_msk, "thetas"),
+        weight=1000.0,
+    )
+
     # prim["star"].add_regularizer(
     #     "Vertical skew",
     #     AttributeProximity(["scales_1", "scales_2"], mode="RATIO", ratio=0.5),

@@ -128,7 +128,7 @@ class RadialFreqPrimitive(Primitive):
         deltas = co[:, None, :] - centroids[None, :, :]
         dists = deltas.norm(dim=-1)
         angles = torch.atan2(deltas[..., 1], deltas[..., 0])
-        phase = (2 * math.pi * self.thetas)[None, :] + freq[None, :] * angles
+        phase = (self.thetas)[None, :] + freq[None, :] * angles
         modulation = (0.5 * torch.sin(phase) + 0.5) * (1 - floor) + floor
         gauss = torch.exp(-(dists**2) / (2 * sigma**2 + 1e-8))
         return gauss * modulation * alpha[None, :]

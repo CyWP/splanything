@@ -2,7 +2,6 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
-from ..trainer import Trainer
 from .base import Loss
 
 
@@ -12,17 +11,18 @@ class L1Loss(Loss):
     Computes the mean absolute difference between target and output pixels.
     """
 
-    def compute(self, trainer: Trainer) -> Float[Tensor, ""]:
-        """Compute L1 loss between current patch output and target.
+    def compute(
+        self,
+        x: Float[Tensor, "..."],
+        target: Float[Tensor, "..."],
+    ) -> Float[Tensor, ""]:
+        """Compute L1 loss between output and target.
 
         Args:
-            trainer: Current trainer state.
+            x: Model output.
+            target: Ground truth target.
 
         Returns:
             Mean absolute error scalar.
-
-        Notes:
-            - Uses trainer.last_output and trainer.last_target, both (S, C).
-            - Patch losses are accumulated over the sampler loop.
         """
-        return torch.abs(trainer.last_target - trainer.last_output).mean()
+        return torch.abs(target - x).mean()
