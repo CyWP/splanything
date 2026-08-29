@@ -211,10 +211,13 @@ def generate():
     gen_H = 3072
     gen_W = 1024
     gen_padding = (1536, 1024, 1024, 1024)
+    full_H = gen_H + gen_padding[0] + gen_padding[1]
+    full_W = gen_W + gen_padding[2] + gen_padding[3]
     prim = get_primitive()
     prim.load(run_folder / "primitive.pt")
     prim.requires_grad_(False)
     prim = prim.to(device)
+    prim.adjust_to_canvas(full_H, full_W)
     msk = (
         Splimage("../assets/bra_nor_offside_masked.png", mask_mode="A", as_mask=True)
         .to(device)
