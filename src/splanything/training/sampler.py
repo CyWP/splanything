@@ -48,6 +48,7 @@ class TrainSampler(Sampler):
         rasterizer: Optional[Rasterizer] = None,
         low_vram: bool = False,
         epoch_size: Optional[int] = None,
+        jitter_coords: bool = False,
     ):
         if target is None and (H is None or W is None):
             raise ValueError(
@@ -61,6 +62,7 @@ class TrainSampler(Sampler):
         self.H = H
         self.W = W
         self.target_img = target
+        self.jitter_coords = jitter_coords
         if target is not None:
             self.set_target(target, patch_size=patch_size)
 
@@ -118,6 +120,20 @@ class TrainSampler(Sampler):
             total = self.sampling_patches.sum()
             self.sampling_patches = self.sampling_patches / total * e_size
 
+    def jitter_target(
+        self,
+    ) -> Tuple[Float[Tensor[Float, "P S 2"]], Float[Tensor, "P S 4"]]:
+        H_step = 1 / self.H
+        W_step = 1 / self.W
+        device = self.co_patches.device
+        H_jitter = torch.rand(tuple(), device=device) * H_step - H_step / 2
+        W_jitter = torch.rand(tuple(), device=device) * W_step - W_step / 2
+        co_patches[:, :, 0] += H_jitter
+        co_patches[:, :, 1] += W_jitter
+        return co_patches, self.target_img.extract_image_patches(
+            self.patch_size, jitter=(H_jitter, W_jitter)
+        ).squeeze(0)
+
     def set_patch_size(self, patch_size: int):
         if self.target_img is not None:
             self.set_target(self.target_img, patch_size)
@@ -153,7 +169,11 @@ class TrainSampler(Sampler):
                 f"Currently: {self.device}, {p.device}."
             )
 
-        P, S, _ = self.co_patches.shape
+        co_patches, target_patches = (
+            self.jitter_target() if self.jitter_coords else self.co_patches,
+            self.target_patches,
+        )
+        P, S, _ = co_patches.shape
         has_sampling_map = self.sampling_patches is not None
 
         with torch.no_grad():
@@ -168,12 +188,12 @@ class TrainSampler(Sampler):
                     keep = torch.ones(S, dtype=torch.bool, device=p.device)
                 n_i = int(keep.sum().item())
                 if n_i == 0:
-                    per_co.append(self.co_patches[i][0:0])
-                    per_tgt.append(self.target_patches[i][0:0])
+                    per_co.append(co_patches[i][0:0])
+                    per_tgt.append(target_patches[i][0:0])
                     counts.append(0)
                     continue
-                per_co.append(self.co_patches[i][keep])  # (n_i, 2)
-                per_tgt.append(self.target_patches[i][keep])  # (n_i, C)
+                per_co.append(co_patches[i][keep])  # (n_i, 2)
+                per_tgt.append(target_patches[i][keep])  # (n_i, C)
                 counts.append(n_i)
 
             patch_size_int = int(S**0.5) if P != 1 else S

@@ -341,6 +341,7 @@ class ImgUtils:
         img: Float[Tensor, "B C H W"],
         patch_size: Optional[int],
         padding_mode: str = "replicate",
+        jitter: Optional[Tuple[float, float]] = None,
     ) -> Float[Tensor, "B P S C"]:
         """Extract image patches matching the layout of get_patches coordinates.
 
@@ -352,6 +353,11 @@ class ImgUtils:
             patch_size: Size of square patches. If None or larger than both H and W,
                 returns a single patch containing all H*W pixels.
             padding_mode: Padding mode for F.pad (default "replicate").
+            jitter: Optional sub-pixel shift ``(shift_H, shift_W)`` in
+                pixels applied to the image before patch extraction. The
+                shift is performed via bilinear sampling so fractional
+                values are supported. Out-of-bounds regions are filled
+                according to *padding_mode*.
 
         Returns:
             Image patches (B, P, S, C). S is patch_size**2 normally, or H*W in
@@ -364,6 +370,22 @@ class ImgUtils:
         """
         if patch_size is not None and patch_size < 1:
             raise Exception("Patch size must be strictly positive integer.")
+
+        if jitter is not None:
+            jh, jw = jitter
+            if jh != 0.0 or jw != 0.0:
+                B, C, H, W = img.shape
+                theta = torch.tensor(
+                    [[[1.0, 0.0, 2.0 * jw / W],
+                      [0.0, 1.0, -2.0 * jh / H]]],
+                    device=img.device,
+                    dtype=img.dtype,
+                ).expand(B, -1, -1)
+                grid = F.affine_grid(theta, img.size(), align_corners=False)
+                img = F.grid_sample(
+                    img, grid, mode="bilinear", padding_mode="border",
+                    align_corners=False,
+                )
 
         B, C, H, W = img.shape
 
@@ -1574,6 +1596,38 @@ class Splimage:
         """Element-wise exponential in-place."""
         return self._unary_(torch.exp)
 
+    def normalize(self) -> Splimage:
+        """Min-max normalise to [0, 1]. Returns new Splimage.
+
+        Rescales so the minimum value maps to 0 and the maximum to 1.
+        If the tensor is constant, returns all zeros.
+        """
+        t = self._tensor
+        mn, mx = t.min(), t.max()
+        if mn.item() == mx.item():
+            new_t = torch.zeros_like(t)
+        else:
+            new_t = (t - mn) / (mx - mn)
+        new = Splimage(new_t)
+        new._padding = self._padding
+        new._is_mask = self._is_mask
+        new._mask_mode = self._mask_mode
+        return new
+
+    def normalize_(self) -> Splimage:
+        """Min-max normalise to [0, 1] in-place.
+
+        If the tensor is constant, sets it to all zeros.
+        """
+        t = self._tensor
+        mn, mx = t.min(), t.max()
+        if mn.item() == mx.item():
+            self._tensor = torch.zeros_like(t)
+        else:
+            self._tensor = (t - mn) / (mx - mn)
+        self._invalidate()
+        return self
+
     def _unary(self, fn: Callable) -> Splimage:
         new = Splimage(fn(self._tensor))
         new._padding = self._padding
@@ -1844,12 +1898,15 @@ class Splimage:
         self,
         patch_size: Optional[int],
         padding_mode: str = "replicate",
+        jitter: Optional[Tuple[float, float]] = None,
     ) -> Float[Tensor, "B P S C"]:
         """Extract non-overlapping patches.
 
         Args:
             patch_size: Patch size. None falls back to a single patch.
             padding_mode: Padding mode for F.pad.
+            jitter: Optional sub-pixel shift ``(shift_H, shift_W)`` in
+                pixels applied before extraction.
 
         Returns:
             Image patches (B, P, S, C).
@@ -1858,6 +1915,7 @@ class Splimage:
             self._tensor,
             patch_size,
             padding_mode=padding_mode,
+            jitter=jitter,
         )
 
     def pad(

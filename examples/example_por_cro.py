@@ -89,8 +89,7 @@ def get_primitive():
     cubic = CubicFanPrimitive(
         size=80,
         initializers={
-            # "thetas": ThetaSet(0.0),
-            "centroids": MappedInitializer(msk.expand(100)),
+            "centroids": MappedInitializer(msk.expand(200) + 1e-4),
         },
         # param_defs={"thetas": ParamDef(batched=True, trainable=False)},
     ).to(device)
@@ -117,12 +116,16 @@ def train():
     msk = Splimage(
         "../assets/por_cro_offside_masked.png", mask_mode="A", as_mask=True
     ).to(device)
-    theta_msk = Splimage(
-        "../assets/por_cro_offside_theta_mask.png", mask_mode="mean", as_mask=True
-    ).to(device)
+    theta_msk = (
+        Splimage(
+            "../assets/por_cro_offside_theta_mask.png", mask_mode="mean", as_mask=True
+        ).to(device)
+        * math.pi
+        / 2
+        + math.pi / 6
+    )
     # primitive
     prim = get_primitive()
-
     # Rules
     alpha_cull = ThresholdFilter(
         attr_name="alphas", threshold=0.1, interval=52, comparison="OVER"
@@ -131,9 +134,9 @@ def train():
     #     threshold=0.0005, interval=73, attr_name="areas", comparison="OVER"
     # )
     area_split = ThresholdSplit("areas", 0.03, interval=83, comparison="OVER")
-    grad_split_lo = GradSplit(threshold=0.05, interval=201, attr_names=["centroids"])
+    grad_split_lo = GradSplit(threshold=0.04, interval=201, attr_names=["centroids"])
     grad_split_hi = GradSplit(threshold=0.02, interval=173, attr_names=["centroids"])
-    map_split = MapSplit(msk.blur(10) * 0.1 + 0.02, interval=307)
+    map_split = MapSplit(msk.blur(10) * 0.02 + 0.005, interval=137)
     ceiling = PrimitiveCeiling(2500)
     # prim.add_split_rule(area_limit)
     prim.add_split_rule(map_split)
@@ -153,37 +156,40 @@ def train():
     sampler = TrainSampler(
         target=tgt.resize(200, 360),
         patch_size=64,
-        max_batch=500000,
+        max_batch=100000,
         sampling_map=msk.blur(30) * 0.2 + 1e-5,
         low_vram=True,
+        jitter_coords=True,
     )
 
     # Callbacks
-    H_pad = (prev_H - tgt.H) // 2
-    W_pad = (prev_W - tgt.W) // 2
+    H_pad = int(prev_H - tgt.H)
+    W_pad = int(prev_W - tgt.W)
     vis_sampler = Sampler(
-        H=800,
-        W=1440,
+        H=prev_H - H_pad,
+        W=prev_W - W_pad,
         patch_size=256,
         max_batch=1000000,
-        padding=(H_pad, H_pad, W_pad, W_pad),
+        padding=(H_pad // 2, H_pad // 2, 0, W_pad),
         device=device,
     )
     train_callbacks = [
         PreviewWindow(
-            frequency=10,
-            show_target=True,
+            frequency=1,
+            show_target=False,
             sampler=vis_sampler,
-            # save_folder=run_folder / "train_preview",
+            save_folder=run_folder / "train_preview",
         ),
         StatsPanel(),
     ]
 
     # Optim
-    optimizer = OptimizerWrapper(prim, AdamW, lr=0.002)
+    optimizer = OptimizerWrapper(prim, AdamW, lr=0.005)
     scheduler = CosineAnnealingWarmRestarts(
-        optimizer._optimizer, T_0=1000, eta_min=0.001
+        optimizer._optimizer, T_0=200, eta_min=0.001
     )
+    for _ in range(100):
+        scheduler.step()
     losses = {
         "L2": (L2ImageLoss(msk.expand(150) * 2), 1.0),
         "SSIM": (SSIMImageLoss(1 - msk.expand(50)), 0.05),
@@ -200,7 +206,7 @@ def train():
     prim.add_regularizer(
         "Theta Map",
         AttributeMap(theta_msk, "thetas"),
-        weight=1000.0,
+        weight=1.0,
     )
 
     # prim["star"].add_regularizer(
@@ -222,76 +228,70 @@ def train():
         adjust_prim=True,
     )
     for _ in trainer.train():
-        pass
+        with torch.no_grad():
+            prim.update_parameters(
+                {
+                    "thetas": 0.005
+                    * theta_msk.mask_sample(prim.centroids)[0].squeeze(-1)
+                    + 0.995 * prim.thetas
+                }
+            )
 
 
 def generate():
     # Load primitive
-    gen_H = 3072
-    gen_W = 1024
-    gen_padding = (1536, 1024, 1024, 1024)
+    gen_H = 2040
+    gen_W = 3600
+    gen_padding = (1536, 1536, 512, 1536)
     full_H = gen_H + gen_padding[0] + gen_padding[1]
     full_W = gen_W + gen_padding[2] + gen_padding[3]
     prim = get_primitive()
     prim.load(run_folder / "primitive.pt")
     prim.requires_grad_(False)
     prim = prim.to(device)
-    prim.adjust_to_canvas(full_H, full_W)
+    prim.adjust_to_canvas(gen_H, gen_W)
     msk = (
         Splimage("../assets/por_cro_offside_masked.png", mask_mode="A", as_mask=True)
         .to(device)
         .resize(gen_H, gen_W)
     )
+    theta_msk = (
+        Splimage(
+            "../assets/por_cro_offside_theta_mask.png", mask_mode="mean", as_mask=True
+        ).to(device)
+        * math.pi
+        / 2
+        + math.pi / 6
+    )
+    prim.thetas.weight = theta_msk.mask_sample(prim.centroids)[0].squeeze(-1)
+    areas = prim.areas
+    areas_weight = 1 - ((areas - areas.min()) / (areas.max() - areas.min())) * 0.5 + 0.5
+    prim.alphas.weight = prim.alphas * areas_weight
 
-    # Sample processor
-    sample_proc = FlexibleSampleProcessor(
-        lambda s, p: SampleOutput(s.rgb, s.weights**1.08, s.co)
+    exp_proc = FlexibleSampleProcessor(
+        lambda s, p: SampleOutput(s.rgb, s.weights**1.5, s.co)
     )
-    dist_proc = DistanceSampleProcessor(
-        sample_proc,
-        proc_fn=lambda s, p, d: SampleOutput(
-            s.rgb, s.weights * (torch.sin(d * 10000) * 0.2 + 0.8), s.co
-        ),
-    )
-    diag_proc = VecSampleProcessor(
-        sample_proc,
-        lambda s, p, x, y: SampleOutput(
-            s.rgb,
-            s.weights * (torch.cos(x * 1000) * torch.sin(y * 7000) * 0.5 + 0.5) ** 2,
-            s.co,
-        ),
-    )
-    vert_proc = VecSampleProcessor(
-        sample_proc,
-        lambda s, p, x, y: SampleOutput(
-            s.rgb,
-            s.weights * (torch.sin(y * 7000) * 0.5 + 0.5) ** 2,
-            s.co,
-        ),
-    )
-    multi_proc = MultiSampleProcessor(
-        [
-            (sample_proc, msk.blur(40)),
-            (dist_proc, 1 - msk.blur(40)),
-            (diag_proc, msk.blur(100) * 3),
-            (vert_proc, (1 - (msk.blur(100))) * 3),
-        ],
-        normalize_weights=True,
-    )
-    prim.add_sample_processor(multi_proc)
+    reg_proc = FlexibleSampleProcessor(lambda s, p: s)
     color_proc = ColorSkewSampleProcessor(
-        torch.tensor([[1.0, 0.5, 0.0], [1.0, 0.9, 0.6], [0.0, 0.0, 0.0]]).to(device),
-        sigma=3.0,
+        torch.tensor(
+            [[1.0, 0.65, 0.0], [0.25, 0.0, 1.0], [0.95, 0.8, 0.65], [0.0, 0.0, 0.0]]
+        ).to(device),
+        sigma=4.0,
         reduction="MIN",
         rescale=True,
     )
-    prim.add_sample_processor(color_proc)
+
+    proc = MultiSampleProcessor(
+        [(exp_proc, msk.blur(40)), (reg_proc, 1 - msk.blur(40)), (color_proc, 2.0)],
+        normalize_weights=True,
+    )
+    prim.add_sample_processor(proc)
 
     # Rasterizer
     rast = MultiRasterizer(
         [
-            (WeightedRasterizer(), msk.blur(700)),
-            (ProbabilisticRasterizer(top_k=5), 1 - msk.blur(700)),
+            (WeightedRasterizer(), msk.expand(60)),
+            (ProbabilisticRasterizer(top_k=50), 1 - msk.expand(60)),
         ]
     )
 
@@ -299,7 +299,7 @@ def generate():
     sampler = Sampler(
         gen_H,
         gen_W,
-        patch_size=382,
+        patch_size=756,
         max_batch=10000000,
         rasterizer=rast,
         padding=gen_padding,
