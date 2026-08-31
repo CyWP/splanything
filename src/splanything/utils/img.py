@@ -13,7 +13,6 @@ from torch import Tensor
 
 
 MaskMode = Literal["R", "G", "B", "A", "RGB", "mean"]
-ExpandMode = Literal["LINEAR", "COSINE"]
 
 
 class ImgUtils:
@@ -928,67 +927,40 @@ class ImgUtils:
     def expand(
         mask: Float[Tensor, "B 1 H W"],
         distance: int,
-        mode: ExpandMode = "COSINE",
     ) -> Float[Tensor, "B 1 H W"]:
-        """Expand a mask outward or inward via separable1D convolution.
+        """Expand a mask outward or inward via iterative dilation.
 
-        Positive *distance* expands high-value regions outward (dilation);
-        negative distance expands low-value regions inward (erosion). The
-        effect is achieved by convolving with a symmetric1D kernel whose
-        shape is chosen by *mode*.
+        Positive *distance* expands high-value regions outward; negative
+        distance expands low-value regions inward (erodes). Each
+        iteration dilates with a3×3 max-pool and applies exponential
+        decay, producing a smooth gradient from the original boundary.
 
         Args:
             mask: Input mask tensor ``(B, 1, H, W)``.
             distance: Pixel distance. Positive expands high values
-                outward; negative expands low values inward (erodes).
-            mode: Kernel window shape. ``"LINEAR"`` uses a triangular
-                (Bartlett) window; ``"COSINE"`` uses a raised-cosine
-                (Hann) window.
+                outward; negative expands low values inward.
 
         Returns:
             Expanded mask with the same shape and dtype.
-
-        Raises:
-            ValueError: If *mode* is not recognised.
         """
         if distance == 0:
             return mask
 
         invert = distance < 0
         d = abs(distance)
-        half = d
-        size = 2 * half + 1
-
-        if mode == "LINEAR":
-            kernel = torch.arange(1, half + 2, dtype=torch.float32, device=mask.device)
-            kernel = torch.cat([kernel, kernel[:-1].flip(0)])
-        elif mode == "COSINE":
-            t = torch.arange(size, dtype=torch.float32, device=mask.device)
-            kernel = 0.5 * (1.0 - torch.cos(2.0 * math.pi * t / (size - 1)))
-        else:
-            raise ValueError(
-                f"Unknown expand mode '{mode}'; expected 'LINEAR' or 'COSINE'."
-            )
-
-        kernel = kernel / kernel.sum()
-        kernel_h = kernel.view(1, 1, 1, -1)
-        kernel_v = kernel.view(1, 1, -1, 1)
+        decay = math.exp(-3.0 / d)
 
         result = mask.float()
         if invert:
             result = 1.0 - result
-        result = F.pad(result, (half, half, 0, 0), mode="replicate")
-        result = F.conv2d(result, kernel_h)
-        result = F.pad(result, (0, 0, half, half), mode="replicate")
-        result = F.conv2d(result, kernel_v)
+
+        for _ in range(d):
+            padded = F.pad(result, (1, 1, 1, 1), mode="replicate")
+            pooled = F.max_pool2d(padded, kernel_size=3, stride=1, padding=0)
+            result = torch.max(result, pooled * decay)
+
         if invert:
             result = 1.0 - result
-
-        original = mask.float()
-        if invert:
-            result = torch.min(result, original)
-        else:
-            result = torch.max(result, original)
 
         return result.to(mask.dtype)
 
@@ -2049,23 +2021,20 @@ class Splimage:
     def expand(
         self,
         distance: int,
-        mode: ExpandMode = "COSINE",
     ) -> Splimage:
         """Expand the mask outward or inward. Returns new Splimage.
 
-        Positive *distance* expands high-value regions outward (dilation);
-        negative distance expands low-value regions inward (erosion).
+        Positive *distance* expands high-value regions outward; negative
+        distance expands low-value regions inward (erodes).
 
         Args:
             distance: Pixel distance. Positive expands outward; negative
                 expands inward (erodes).
-            mode: Kernel window shape. ``"LINEAR"`` for a triangular
-                window, ``"COSINE"`` for a raised-cosine window.
 
         Returns:
             New Splimage with the expanded mask.
         """
-        new_mask = ImgUtils.expand(self.mask(), distance, mode=mode)
+        new_mask = ImgUtils.expand(self.mask(), distance)
         new = Splimage(new_mask)
         new._padding = self._padding
         new._mask_mode = self._mask_mode
@@ -2074,20 +2043,17 @@ class Splimage:
     def expand_(
         self,
         distance: int,
-        mode: ExpandMode = "COSINE",
     ) -> Splimage:
         """Expand the mask in-place.
 
         Args:
             distance: Pixel distance. Positive expands outward; negative
                 expands inward (erodes).
-            mode: Kernel window shape. ``"LINEAR"`` for a triangular
-                window, ``"COSINE"`` for a raised-cosine window.
 
         Returns:
             ``self``, with the tensor replaced by the expanded mask.
         """
-        self._tensor = ImgUtils.expand(self.mask(), distance, mode=mode)
+        self._tensor = ImgUtils.expand(self.mask(), distance)
         self._is_mask = True
         self._invalidate()
         return self

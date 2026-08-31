@@ -87,9 +87,9 @@ def get_primitive():
     #     "../assets/por_cro_offside_masked_body.png", mask_mode="A", as_mask=True
     # ).to(device)
     cubic = CubicFanPrimitive(
-        size=80,
+        size=20,
         initializers={
-            "centroids": MappedInitializer(msk.expand(200) + 1e-4),
+            "centroids": MappedInitializer(msk.expand(200) + 1e-3),
         },
         # param_defs={"thetas": ParamDef(batched=True, trainable=False)},
     ).to(device)
@@ -130,14 +130,11 @@ def train():
     alpha_cull = ThresholdFilter(
         attr_name="alphas", threshold=0.1, interval=52, comparison="OVER"
     )
-    # area_limit = ThresholdFilter(
-    #     threshold=0.0005, interval=73, attr_name="areas", comparison="OVER"
-    # )
     area_split = ThresholdSplit("areas", 0.03, interval=83, comparison="OVER")
     grad_split_lo = GradSplit(threshold=0.04, interval=201, attr_names=["centroids"])
     grad_split_hi = GradSplit(threshold=0.02, interval=173, attr_names=["centroids"])
     map_split = MapSplit(msk.blur(10) * 0.02 + 0.005, interval=137)
-    ceiling = PrimitiveCeiling(2500)
+    ceiling = PrimitiveCeiling(1000)
     # prim.add_split_rule(area_limit)
     prim.add_split_rule(map_split)
     prim.add_filter_rule(alpha_cull)
@@ -159,7 +156,7 @@ def train():
         max_batch=100000,
         sampling_map=msk.blur(30) * 0.2 + 1e-5,
         low_vram=True,
-        jitter_coords=True,
+        jitter_coords=False,
     )
 
     # Callbacks
@@ -170,7 +167,7 @@ def train():
         W=prev_W - W_pad,
         patch_size=256,
         max_batch=1000000,
-        padding=(H_pad // 2, H_pad // 2, 0, W_pad),
+        padding=(H_pad // 2, H_pad // 2, W_pad // 3, W_pad * 2 // 3),
         device=device,
     )
     train_callbacks = [
@@ -191,22 +188,26 @@ def train():
     for _ in range(100):
         scheduler.step()
     losses = {
-        "L2": (L2ImageLoss(msk.expand(150) * 2), 1.0),
-        "SSIM": (SSIMImageLoss(1 - msk.expand(50)), 0.05),
+        "L2": (L2ImageLoss(msk.blur(40)), 1.0),
+        "SSIM": (SSIMImageLoss(msk.blur(200)), 0.1),
     }
     # Regularizers
     prim.add_regularizer(
         "Color Push",
         AttributeProximity(["color_1", "color_2"], mode="PUSH"),
-        weight=0.05,
+        weight=1e-8,
     )
-    prim.add_regularizer("Area penalty", AttributeRange("areas", max=0.08), weight=10.0)
-    # prim.add_regularizer("Freqmaxx", AttributeRange("freq", min=4.0), weight=10.0)
+    # prim.add_regularizer(
+    #     "Range Similarity", AttributeProximity(["range_1", "range_2"]), weight=0.001
+    # )
     prim.add_regularizer("Alpha Target", AttributeRange("alphas", min=0.6), weight=12.0)
     prim.add_regularizer(
         "Theta Map",
         AttributeMap(theta_msk, "thetas"),
         weight=1.0,
+    )
+    prim.add_regularizer(
+        "Area_floor", AttributeRange("areas", min=1e-6, max=0.25), weight=1.0
     )
 
     # prim["star"].add_regularizer(
@@ -242,7 +243,7 @@ def generate():
     # Load primitive
     gen_H = 2040
     gen_W = 3600
-    gen_padding = (1536, 1536, 512, 1536)
+    gen_padding = (1536, 1536, 712, 800)
     full_H = gen_H + gen_padding[0] + gen_padding[1]
     full_W = gen_W + gen_padding[2] + gen_padding[3]
     prim = get_primitive()
@@ -269,7 +270,7 @@ def generate():
     prim.alphas.weight = prim.alphas * areas_weight
 
     exp_proc = FlexibleSampleProcessor(
-        lambda s, p: SampleOutput(s.rgb, s.weights**1.5, s.co)
+        lambda s, p: SampleOutput(s.rgb, s.weights**1.1, s.co)
     )
     reg_proc = FlexibleSampleProcessor(lambda s, p: s)
     color_proc = ColorSkewSampleProcessor(
@@ -285,13 +286,26 @@ def generate():
         [(exp_proc, msk.blur(40)), (reg_proc, 1 - msk.blur(40)), (color_proc, 2.0)],
         normalize_weights=True,
     )
-    prim.add_sample_processor(proc)
+
+    def _radius_proc(s, p, x, y):
+        ax_1, ax_2 = p.axes
+        ax = torch.where((p.range_1 > p.range_2)[:, None], ax_1, ax_2)  # [N, 2]
+        delta = torch.stack([x, y], dim=-1)  # [Nc, N, 2]
+        proj = (delta * ax).sum(dim=-1)  # [Nc, N]
+        W = s.weights * (torch.cos(proj * 3000) * 0.4 + 0.6)
+        return SampleOutput(s.rgb, W, s.co)
+
+    radius_proc = VecSampleProcessor(
+        proc,
+        _radius_proc,
+    )
+    prim.add_sample_processor(radius_proc)
 
     # Rasterizer
     rast = MultiRasterizer(
         [
-            (WeightedRasterizer(), msk.expand(60)),
-            (ProbabilisticRasterizer(top_k=50), 1 - msk.expand(60)),
+            (WeightedRasterizer(), msk.blur(200)),
+            (ProbabilisticRasterizer(top_k=50), 1 - msk.blur(200)),
         ]
     )
 
