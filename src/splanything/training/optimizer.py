@@ -1,3 +1,4 @@
+from collections import defaultdict
 from logging import getLogger
 from typing import Any, Dict, List
 
@@ -304,7 +305,9 @@ class OptimizerWrapper:
             )
 
         # --- state swap (safe version) ---
-        self._optimizer.state = new_state
+        # Keep a defaultdict so PyTorch optimizers can lazily initialize
+        # state (``state[p]`` -> ``{}``) for params not yet stepped.
+        self._optimizer.state = defaultdict(dict, new_state)
 
     def split(
         self,
@@ -414,4 +417,6 @@ class OptimizerWrapper:
             )
 
         # --- state swap ---
-        self._optimizer.state = new_state
+        # Keep a defaultdict so PyTorch optimizers can lazily initialize
+        # state (``state[p]`` -> ``{}``) for params not yet stepped.
+        self._optimizer.state = defaultdict(dict, new_state)

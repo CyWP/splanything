@@ -87,7 +87,8 @@ def test_masked_applies_to_all_batched_params(multi, device):
         c_keep = mask[n_radial:]
         assert radial.alphas.shape[0] == int(r_keep.sum())
         assert radial.centroids.shape[0] == int(r_keep.sum())
-        assert radial.color.shape[0] == int(r_keep.sum())
+        assert radial.color_1.shape[0] == int(r_keep.sum())
+        assert radial.color_2.shape[0] == int(r_keep.sum())
         assert cubic.alphas.shape[0] == int(c_keep.sum())
         assert cubic.centroids.shape[0] == int(c_keep.sum())
         assert cubic.color_1.shape[0] == int(c_keep.sum())

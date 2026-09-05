@@ -16,7 +16,7 @@ from pathlib import Path
 import torch
 
 from splanything.training.sampler import TrainSampler
-from splanything.utils.img import ImgUtils
+from splanything.utils.img import ImgUtils, Splimage
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 
@@ -38,7 +38,7 @@ def test_sampler_target_patch_count_equals_coord_patch_count():
     """
     H, W, ps = 64, 96, 16
     img = _toy_image(H, W, C=4)
-    sampler = TrainSampler(target=img, patch_size=ps)
+    sampler = TrainSampler(target=Splimage(img), patch_size=ps)
 
     n_target = sampler.target_patches.shape[0]
     n_co = sampler.co_patches.shape[0]
@@ -52,7 +52,7 @@ def test_sampler_batch_dim_collapsed_correctly():
     """After reshape, target_patches should be (P, S, C), not (B*P*C, S, C)."""
     H, W, ps = 64, 96, 16
     img = _toy_image(H, W, C=4)
-    sampler = TrainSampler(target=img, patch_size=ps)
+    sampler = TrainSampler(target=Splimage(img), patch_size=ps)
 
     P_expected = (H // ps) * (W // ps)
     S_expected = ps * ps
@@ -67,7 +67,7 @@ def test_sampler_target_patch_i_matches_coord_patch_i():
     spatial location described by co_patches[i, s]."""
     H, W, ps = 64, 96, 16
     img = _toy_image(H, W, C=4)
-    sampler = TrainSampler(target=img, patch_size=ps)
+    sampler = TrainSampler(target=Splimage(img), patch_size=ps)
 
     P, S, _ = sampler.co_patches.shape
     PW = W // ps
@@ -100,7 +100,7 @@ def test_sampler_rasterize_roundtrip_with_identity_target():
     """
     H, W, ps = 64, 96, 16
     img = _toy_image(H, W, C=4)
-    sampler = TrainSampler(target=img, patch_size=ps)
+    sampler = TrainSampler(target=Splimage(img), patch_size=ps)
     recon = ImgUtils.assemble_patches(sampler.target_patches, H, W)
     assert recon.shape == img.shape
     assert torch.equal(recon, img)
@@ -137,7 +137,9 @@ def test_sampler_sampling_patches_matches_coord_patch_count():
     H, W, ps = 64, 96, 16
     img = _toy_image(H, W, C=4)
     mp = _toy_map(H, W)
-    sampler = TrainSampler(target=img, patch_size=ps, sampling_map=mp)
+    sampler = TrainSampler(
+        target=Splimage(img), patch_size=ps, sampling_map=Splimage(mp)
+    )
 
     P_co = sampler.co_patches.shape[0]
     P_sp = sampler.sampling_patches.shape[0]
@@ -153,7 +155,9 @@ def test_sampler_sampling_patches_matches_coord_patch_slots():
     H, W, ps = 64, 96, 16
     img = _toy_image(H, W, C=4)
     mp = _toy_map(H, W)
-    sampler = TrainSampler(target=img, patch_size=ps, sampling_map=mp)
+    sampler = TrainSampler(
+        target=Splimage(img), patch_size=ps, sampling_map=Splimage(mp)
+    )
 
     S_co = sampler.co_patches.shape[1]
     S_sp = sampler.sampling_patches.shape[1]
@@ -173,7 +177,9 @@ def test_sampler_sampling_patches_in_unit_range():
     H, W, ps = 64, 96, 16
     img = _toy_image(H, W, C=4)
     mp = _toy_map(H, W)
-    sampler = TrainSampler(target=img, patch_size=ps, sampling_map=mp)
+    sampler = TrainSampler(
+        target=Splimage(img), patch_size=ps, sampling_map=Splimage(mp)
+    )
 
     sp = sampler.sampling_patches
     assert sp.min().item() >= 0.0
@@ -188,7 +194,9 @@ def test_sampler_sampling_patches_resized_when_map_size_mismatches():
     H, W, ps = 64, 96, 16
     img = _toy_image(H, W, C=4)
     mp = _toy_map(H * 2, W * 2)  # different resolution
-    sampler = TrainSampler(target=img, patch_size=ps, sampling_map=mp)
+    sampler = TrainSampler(
+        target=Splimage(img), patch_size=ps, sampling_map=Splimage(mp)
+    )
 
     assert sampler.sampling_patches.shape[0] == sampler.co_patches.shape[0]
     assert sampler.sampling_patches.shape[1] == sampler.co_patches.shape[1]

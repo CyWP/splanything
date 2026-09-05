@@ -190,16 +190,54 @@ class MultiPrimitive(Primitive):
 
         Args:
             co: Coordinates to sample at (N, 2).
-            rasterizer: Rasterizer Callable to aggregate rgb, a, weights.
 
         Returns:
             SampleOutput object.
 
         Notes:
-            - Returns zeros if len(self) == 0.
             - Uses masked batched parameters if context is active.
         """
         return SampleOutput.cat(*[p(co) for p in self.primitives.values()])
+
+    def sample_rgb(
+        self,
+        co: Float[Tensor, "Nc 2"],
+        **kwargs,
+    ) -> Float[Tensor, "Nc Np 3"]:
+        """Sample per-primitive RGB values at coordinates.
+
+        Delegates to each contained primitive (each mask-aware under an
+        active context) and concatenates along the primitive axis.
+
+        Args:
+            co: Coordinates to sample at (N, 2).
+
+        Returns:
+            RGB values (Nc, Np, 3), ``Np`` the (masked) primitive total.
+        """
+        return torch.cat(
+            [p.sample_rgb(co, **kwargs) for p in self.primitives.values()], dim=1
+        )
+
+    def sample_weights(
+        self,
+        co: Float[Tensor, "Nc 2"],
+        **kwargs,
+    ) -> Float[Tensor, "Nc Np"]:
+        """Sample per-primitive weights at coordinates.
+
+        Delegates to each contained primitive (each mask-aware under an
+        active context) and concatenates along the primitive axis.
+
+        Args:
+            co: Coordinates to sample at (N, 2).
+
+        Returns:
+            Weights (Nc, Np), ``Np`` the (masked) primitive total.
+        """
+        return torch.cat(
+            [p.sample_weights(co, **kwargs) for p in self.primitives.values()], dim=1
+        )
 
     @nomask
     @torch.no_grad()

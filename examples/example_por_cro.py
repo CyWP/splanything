@@ -4,41 +4,30 @@ import math
 from typing import Tuple
 from jaxtyping import Float
 from torch import Tensor
-from torch.optim import AdamW, SGD
+from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from pathlib import Path
 
 from splanything.training import Trainer, TrainSampler, OptimizerWrapper
 from splanything.primitives import (
-    MultiPrimitive,
-    MetaPrimitive,
-    RadialFreqPrimitive,
     CubicFanPrimitive,
-    StarPrimitive,
-    ParamDef,
 )
 from splanything.primitives.initializers import Initializer, MappedInitializer
 from splanything.training.callbacks import (
     PreviewWindow,
-    PrimitiveCheckpoint,
-    PrimitiveSave,
     StatsPanel,
 )
 from splanything.training.refinement.rules import (
     ThresholdFilter,
     ThresholdSplit,
     GradSplit,
-    IsoSplit,
     MapSplit,
-    BoundsFilter,
     PrimitiveCeiling,
-    PrimitiveFloor,
 )
 from splanything.training.losses import L2ImageLoss, SSIMImageLoss
 from splanything.training.regularizers import (
     AttributeProximity,
     AttributeRange,
-    AttributeAttractor,
     AttributeMap,
 )
 from splanything.training.refinement.processors import MapCriterionProcessor
@@ -46,7 +35,6 @@ from splanything.utils.img import ImgUtils, Splimage
 from splanything.rendering import Sampler, SampleOutput
 from splanything.rendering.processors import (
     FlexibleSampleProcessor,
-    DistanceSampleProcessor,
     MultiSampleProcessor,
     ColorSkewSampleProcessor,
     VecSampleProcessor,
@@ -79,32 +67,15 @@ class ThetaSet(Initializer):
 
 
 def get_primitive():
-    # cubic = CubicFanPrimitive(size=10).to(device)
     msk = Splimage(
         "../assets/por_cro_offside_masked.png", mask_mode="A", as_mask=True
     ).to(device)
-    # msk_body = Splimage(
-    #     "../assets/por_cro_offside_masked_body.png", mask_mode="A", as_mask=True
-    # ).to(device)
     cubic = CubicFanPrimitive(
         size=20,
         initializers={
             "centroids": MappedInitializer(msk.expand(200) + 1e-3),
         },
-        # param_defs={"thetas": ParamDef(batched=True, trainable=False)},
     ).to(device)
-    # radial = RadialFreqPrimitive(
-    #     size=50,
-    #     initializers={
-    #         "thetas": ThetaSet(0.0),
-    #         "centroids": MappedInitializer(msk_body),
-    #     },
-    #     param_defs={"thetas": ParamDef(batched=True, trainable=False)},
-    # ).to(device)
-    # cubic.scale(0.4)
-    # radial.scale(0.05)
-    # prim = MultiPrimitive({"cubic": cubic, "radial": radial})
-    # return prim
     return cubic
 
 
@@ -132,22 +103,17 @@ def train():
     )
     area_split = ThresholdSplit("areas", 0.03, interval=83, comparison="OVER")
     grad_split_lo = GradSplit(threshold=0.04, interval=201, attr_names=["centroids"])
-    grad_split_hi = GradSplit(threshold=0.02, interval=173, attr_names=["centroids"])
     map_split = MapSplit(msk.blur(10) * 0.02 + 0.005, interval=137)
     ceiling = PrimitiveCeiling(1000)
-    # prim.add_split_rule(area_limit)
     prim.add_split_rule(map_split)
     prim.add_filter_rule(alpha_cull)
     prim.add_filter_rule(ceiling)
     prim.add_split_rule(grad_split_lo)
     prim.add_split_rule(area_split)
-    # prim["radial"].add_split_rule(grad_split_hi)
 
     # Rule processors
     map_proc = MapCriterionProcessor(msk.expand(20) * 0.6 + 0.4)
     area_split.add_processor(map_proc)
-    # grad_split_lo.add_processor(map_proc)
-    # grad_split_hi.add_processor(map_proc)
 
     # Sampler
     sampler = TrainSampler(
@@ -197,9 +163,6 @@ def train():
         AttributeProximity(["color_1", "color_2"], mode="PUSH"),
         weight=1e-8,
     )
-    # prim.add_regularizer(
-    #     "Range Similarity", AttributeProximity(["range_1", "range_2"]), weight=0.001
-    # )
     prim.add_regularizer("Alpha Target", AttributeRange("alphas", min=0.6), weight=12.0)
     prim.add_regularizer(
         "Theta Map",
@@ -209,12 +172,6 @@ def train():
     prim.add_regularizer(
         "Area_floor", AttributeRange("areas", min=1e-6, max=0.25), weight=1.0
     )
-
-    # prim["star"].add_regularizer(
-    #     "Vertical skew",
-    #     AttributeProximity(["scales_1", "scales_2"], mode="RATIO", ratio=0.5),
-    #     weight=5.0,
-    # )
 
     # Trainer
     trainer = Trainer(
@@ -244,8 +201,6 @@ def generate():
     gen_H = 2040
     gen_W = 3600
     gen_padding = (1536, 1536, 712, 800)
-    full_H = gen_H + gen_padding[0] + gen_padding[1]
-    full_W = gen_W + gen_padding[2] + gen_padding[3]
     prim = get_primitive()
     prim.load(run_folder / "primitive.pt")
     prim.requires_grad_(False)

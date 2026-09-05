@@ -20,6 +20,7 @@ from splanything.primitives import RadialFreqPrimitive
 from splanything.training import Trainer, TrainSampler, OptimizerWrapper
 from splanything.training.losses import L2Loss
 from splanything.training.trainer import TrainerLogHandler
+from splanything.utils.img import Splimage
 
 
 # ---------------------------------------------------------------------------
@@ -37,10 +38,10 @@ def _make_minimal_trainer(device, name="probe"):
     target = torch.rand(1, 4, 8, 8, device=device)
     sampling_map = torch.full((1, 1, 8, 8), 1.0, device=device)
     sampler = TrainSampler(
-        target=target,
+        target=Splimage(target),
         patch_size=8,
         max_batch=10000,
-        sampling_map=sampling_map,
+        sampling_map=Splimage(sampling_map),
         low_vram=False,
     )
     optimizer = OptimizerWrapper(prim, AdamW, lr=0.01)
@@ -49,7 +50,7 @@ def _make_minimal_trainer(device, name="probe"):
         primitive=prim,
         sampler=sampler,
         optimizer=optimizer,
-        losses={"L2": L2Loss()},
+        losses={"L2": (L2Loss(), 1.0)},
         callbacks=[],
         base_folder="/tmp/splanything_log_handler",
     )

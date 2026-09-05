@@ -10,33 +10,25 @@ from pathlib import Path
 from splanything.training import Trainer, TrainSampler, OptimizerWrapper
 from splanything.primitives import (
     MultiPrimitive,
-    MetaPrimitive,
     RadialFreqPrimitive,
-    CubicFanPrimitive,
     StarPrimitive,
     ParamDef,
 )
 from splanything.primitives.initializers import Initializer, MappedInitializer
 from splanything.training.callbacks import (
     PreviewWindow,
-    PrimitiveCheckpoint,
-    PrimitiveSave,
     StatsPanel,
 )
 from splanything.training.refinement.rules import (
     ThresholdFilter,
     GradSplit,
-    IsoSplit,
     MapSplit,
-    BoundsFilter,
     PrimitiveCeiling,
-    PrimitiveFloor,
 )
 from splanything.training.losses import L2Loss
 from splanything.training.regularizers import (
     AttributeProximity,
     AttributeRange,
-    AttributeAttractor,
 )
 from splanything.training.refinement.processors import MapCriterionProcessor
 from splanything.utils.img import ImgUtils, Splimage
@@ -184,11 +176,6 @@ def train():
         AttributeProximity(["rng_1", "rng_2"], mode="RATIO", ratio=0.5),
         weight=5.0,
     )
-    # prim["star"].add_regularizer(
-    #     "Vertical skew",
-    #     AttributeProximity(["scales_1", "scales_2"], mode="RATIO", ratio=0.5),
-    #     weight=5.0,
-    # )
 
     # Trainer
     trainer = Trainer(

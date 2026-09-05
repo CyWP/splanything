@@ -173,7 +173,7 @@ def test_primitive_forward_under_mask(device):
     none = torch.zeros(4, dtype=torch.bool, device=device)
     co = torch.rand(10, 2, device=device)
     with p.masked(none):
-        out = p(co, WeightedRasterizer())
+        out = WeightedRasterizer()(p(co))
         assert out.shape == (10, 4)
         assert out.abs().sum() == 0
 
@@ -183,9 +183,14 @@ def test_primitive_forward_under_mask(device):
 # --------------------------------------------------------------------------- #
 
 
-def test_check_filter_mask_size_matches_under_outer_mask(device):
-    """``check_filter`` does ``torch.ones(len(self), ...)``; under an outer
-    mask, the combined-filter tensor must match the masked batched params."""
+def test_check_filter_mask_is_full_length_under_outer_mask(device):
+    """``check_filter`` is mask-independent: it evaluates filter rules against
+    the full, unmasked parameter set and returns a keep mask over ALL
+    primitives, even when called inside an active ``masked`` context.
+
+    Its consumers (``Primitive.filter``/``split`` and
+    ``OptimizerWrapper.filter``/``split``) operate on the full parameter
+    tensors, so a masked-row mask would be unusable downstream."""
     p = RadialFreqPrimitive(size=8).to(device)
     outer = torch.tensor([1, 1, 1, 1, 0, 0, 0, 0], dtype=torch.bool, device=device)
     from splanything.training.refinement.rules import ThresholdFilter
@@ -193,9 +198,8 @@ def test_check_filter_mask_size_matches_under_outer_mask(device):
     p.add_filter_rule(ThresholdFilter(attr_name="alphas", threshold=10.0, interval=1))
     with p.masked(outer):
         keep = p.check_filter()
-        # Under the outer mask, the combined mask is sized to the masked
-        # primitive length (4), not the full (8).
-        if keep is not None:
-            assert keep.shape[0] == len(p)
-            assert keep.shape[0] == 4
+        # The combined mask is sized to the full primitive length (8),
+        # NOT the masked length (4).
+        assert keep is not None
+        assert keep.shape[0] == 8
     assert len(p) == 8

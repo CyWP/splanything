@@ -653,11 +653,15 @@ class Primitive(nn.Module):
     def filter(self, idx: Bool[Tensor, "N"]) -> Primitive:
         """In-place index selection of batched elements.
 
-        Filters primitive parameters to keep only elements matching key.
+        Filters primitive parameters to keep only elements matching ``idx``.
         Modifies the primitive in-place.
 
         Args:
-            key: Boolean mask or integer indices to select.
+            idx: Boolean mask or integer indices to select. Must be sized
+                against the full, unmasked parameter set — never an active
+                mask context. Refinement rules provide such masks via
+                ``check_filter`` (which is likewise mask-independent) so the
+                same mask can also be applied to the optimizer state.
 
         Notes:
             - Only applies to batched parameters (shape[0] == len(self)).
@@ -667,20 +671,6 @@ class Primitive(nn.Module):
         for name, param in self.batched_parameters():
             updates[name] = param[idx]
         self.update_parameters(updates)
-        prev_msk = idx
-        new_context = []
-        for mask in self._context_masks[::-1]:
-            if mask.shape[0] == prev_msk.shape[0]:
-                new_context.insert(0, mask[prev_msk])
-            elif mask.sum().item() == prev_msk.shape[0]:
-                cull_idx = mask.nonzero()[prev_msk]
-                new_prev = mask.clone()
-                new_prev[cull_idx] = False
-                keep_mask = torch.ones_like(mask)
-                keep_mask[cull_idx] = False
-                new_context.insert(0, mask[keep_mask])
-                prev_msk = new_prev
-        self._context_masks = new_context
         return self
 
     @nomask
@@ -712,7 +702,6 @@ class Primitive(nn.Module):
 
         Args:
             co: Coordinates to sample at (N, 2).
-            rasterizer: Rasterizer Callable to aggregate rgb, a, weights.
 
         Returns:
             SampleOutput object.

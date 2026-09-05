@@ -362,7 +362,7 @@ def test_filter_preserves_defaultdict_state(device):
         "breaks AdamW.step()."
     )
 
-    keep = torch.tensor([True, False, True, False, True], device=device)
+    keep = torch.tensor([True, False, True], device=device)  # 3 rows remain
     prim.filter(keep)
     opt.filter(prim.param_groups(), keep)
 
