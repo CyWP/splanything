@@ -1,3 +1,5 @@
+"""Callback saving the primitive state at end of training."""
+
 import logging
 from typing import List
 

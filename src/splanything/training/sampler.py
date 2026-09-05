@@ -1,3 +1,5 @@
+"""Training-time sampler with target patch extraction and per-pixel subsampling."""
+
 from __future__ import annotations
 
 from typing import Iterator, Optional, Tuple
@@ -50,6 +52,32 @@ class TrainSampler(Sampler):
         epoch_size: Optional[int] = None,
         jitter_coords: bool = False,
     ):
+        """Configure the training sampler.
+
+        Does not call the parent constructor; state is set up directly
+        from ``target`` when provided.
+
+        Args:
+            target: Target image (B, C, H, W); enables patch extraction
+                when provided.
+            H: Canvas height used when ``target`` is None.
+            W: Canvas width used when ``target`` is None.
+            patch_size: Side length of the extracted patches (S = patch_size²).
+            max_batch: Compute budget per yielded batch
+                (mask_size × co_size ≤ max_batch).
+            sampling_map: Optional probability map (B, 1, H, W) in [0, 1]
+                for per-pixel Bernoulli subsampling.
+            rasterizer: Rasterizer aggregating per-primitive samples into
+                RGBA; defaults to ``WeightedRasterizer``.
+            low_vram: If True, intermediate render outputs are moved to CPU.
+            epoch_size: Optional expected number of sampled pixels per
+                epoch; rescales the sampling map probabilities.
+            jitter_coords: If True, jitter patch coordinates and re-extract
+                target patches on every ``samples()`` call.
+
+        Raises:
+            ValueError: If neither ``target`` nor both ``H`` and ``W`` are set.
+        """
         if target is None and (H is None or W is None):
             raise ValueError(
                 "Either 'target' or generation dimensions ('H', 'W') must be set upon initialization."
@@ -123,6 +151,12 @@ class TrainSampler(Sampler):
     def jitter_target(
         self,
     ) -> Tuple[Float[Tensor[Float, "P S 2"]], Float[Tensor, "P S 4"]]:
+        """Jitter patch coordinates and re-extract matching target patches.
+
+        Returns:
+            Jittered patch coordinates (P, S, 2) and target patches
+            (P, S, 4) extracted at the jittered positions.
+        """
         H_step = 1 / self.H
         W_step = 1 / self.W
         device = self.co_patches.device
@@ -135,6 +169,14 @@ class TrainSampler(Sampler):
         ).squeeze(0)
 
     def set_patch_size(self, patch_size: int):
+        """Update the patch size.
+
+        Re-extracts patch grids via ``set_target`` when a target image is
+        set; otherwise only stores the new size.
+
+        Args:
+            patch_size: New patch side length.
+        """
         if self.target_img is not None:
             self.set_target(self.target_img, patch_size)
         else:
@@ -142,6 +184,7 @@ class TrainSampler(Sampler):
 
     @property
     def num_patches(self) -> int:
+        """Number of patches (P) extracted from the target."""
         return self.target_patches.shape[0]
 
     def samples(
@@ -289,11 +332,11 @@ class TrainSampler(Sampler):
 
         Args:
             p: Primitive to sample.
-            max_batch: Override ``self.max_batch`` for this render.
-            low_vram: Override ``self.low_vram`` for this render.
+            max_batch: Compute budget for this render; defaults to
+                ``self.max_batch``.
 
         Returns:
-            Assembled image (B, C, H, W).
+            Tuple of (assembled image (B, C, H, W), target image).
         """
         if p.device != self.device:
             raise ValueError(

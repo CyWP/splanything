@@ -1,3 +1,5 @@
+"""Filter rule culling primitives near the image border."""
+
 from __future__ import annotations
 
 from typing import List, Optional
@@ -40,6 +42,14 @@ class BoundsFilter(FilterRule):
         use_areas: bool = False,
         coords_attr: str = "centroids",
     ):
+        """Build the internal border ``ThresholdFilter`` s.
+
+        Args:
+            margin: Width of the outer cull zone from the image border.
+            interval: Fire every N invocations of ``__call__``.
+            use_areas: Account for primitive extent in the border check.
+            coords_attr: Attribute name for primitive coordinates.
+        """
         super().__init__(interval=interval)
         self.margin = margin
         self.use_areas = use_areas

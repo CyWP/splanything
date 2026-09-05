@@ -1,3 +1,5 @@
+"""Regularizer matching a primitive attribute to a sampled spatial map."""
+
 from typing import Optional
 
 import torch

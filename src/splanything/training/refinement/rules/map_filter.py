@@ -1,3 +1,5 @@
+"""Filter rule sampling a spatial probability map at primitive coordinates."""
+
 from __future__ import annotations
 
 import torch

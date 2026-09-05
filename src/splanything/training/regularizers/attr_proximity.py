@@ -1,3 +1,5 @@
+"""Regularizer penalising or rewarding attribute proximity."""
+
 from typing import List, Literal, Optional
 
 import torch

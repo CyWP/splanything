@@ -1,3 +1,5 @@
+"""Weighted blending of multiple sample processors."""
+
 from __future__ import annotations
 from typing import List, Tuple, TYPE_CHECKING
 
@@ -12,11 +14,27 @@ if TYPE_CHECKING:
 
 
 class MultiSampleProcessor(SampleProcessor):
+    """Blends multiple sample processors with per-coordinate weights.
+
+    Each processor's output RGB and weights are weighted either by a
+    scalar or by per-coordinate weights sampled from a Splimage mask at
+    the sample coordinates, then summed (optionally normalized by the
+    weight sum).
+    """
+
     def __init__(
         self,
         processors: List[Tuple[SampleProcessor, float | Splimage]],
         normalize_weights: bool = False,
     ):
+        """Initialize the processor.
+
+        Args:
+            processors: List of (processor, weight) pairs; weight is a
+                float or a Splimage mask sampled at the sample coordinates.
+            normalize_weights: If True, divide the blended outputs by the
+                summed weights per coordinate.
+        """
         self._processors = [p for p, _ in processors]
         self._weights = [w for _, w in processors]
         self._normalize_weights = normalize_weights
@@ -26,6 +44,15 @@ class MultiSampleProcessor(SampleProcessor):
         sample: SampleOutput,
         primitive: Primitive,
     ) -> SampleOutput:
+        """Blend processor outputs by their weights.
+
+        Args:
+            sample: SampleOutput to transform.
+            primitive: Primitive the sample was generated from.
+
+        Returns:
+            Transformed SampleOutput blended across processors.
+        """
         rgb = torch.zeros_like(sample.rgb)
         weights = torch.zeros_like(sample.weights)
         if self._normalize_weights:

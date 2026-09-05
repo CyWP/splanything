@@ -1,3 +1,5 @@
+"""Training loop orchestration with losses, callbacks, and refinement."""
+
 import json
 import logging
 from contextlib import contextmanager
@@ -43,10 +45,24 @@ class TrainerLogFormatter(logging.Formatter):
     """
 
     def __init__(self, trainer: "Trainer", fmt: Optional[str] = None):
+        """Store the trainer reference and initialise the formatter.
+
+        Args:
+            trainer: Trainer whose ``self.epoch`` is injected into records.
+            fmt: Optional format string (see class docstring).
+        """
         super().__init__(fmt)
         self.trainer = trainer
 
     def format(self, record: logging.LogRecord) -> str:
+        """Inject the trainer's current epoch and format the record.
+
+        Args:
+            record: Log record to format.
+
+        Returns:
+            Formatted message string.
+        """
         if not hasattr(record, "epoch"):
             record.epoch = self.trainer.epoch
         return super().format(record)
@@ -84,6 +100,7 @@ class TrainerLogHandler(logging.Handler):
         fmt: Optional[str] = None,
         filter: Optional[logging.Filter] = None,
     ):
+        """Configure level, optional formatter, and optional filter."""
         super().__init__(level=level)
         self.trainer = trainer
         if fmt is not None:
@@ -92,6 +109,11 @@ class TrainerLogHandler(logging.Handler):
             self.addFilter(filter)
 
     def emit(self, record: logging.LogRecord) -> None:
+        """Format the record and forward it to ``Trainer.log``.
+
+        Args:
+            record: Log record to forward.
+        """
         try:
             msg = self.format(record)
             self.trainer.log(msg)
@@ -113,8 +135,8 @@ class Trainer:
     """Training orchestrator for primitive-based image reconstruction.
 
     Manages the optimization loop, computing losses, executing callbacks,
-    and yielding state for real-time inspection. Uses a generator pattern
-    to allow step-by-step execution with ComfyUI integration.
+    and saving state for inspection. Uses a generator pattern to allow
+    step-by-step execution.
 
     Attributes:
         target: Ground truth image tensor (B, C, H, W).
@@ -127,7 +149,8 @@ class Trainer:
         run_folder: Path to folder for this training run.
 
     Notes:
-        - Callbacks are triggered at TRAIN_START, TRAIN_END, EPOCH_START, EPOCH_END, PRE_STEP.
+        - Callbacks are triggered at TRAIN_START, TRAIN_END, EPOCH_START,
+          EPOCH_END, BATCH_START, BATCH_END, PRE_STEP.
         - Use `stop()` to halt training early (e.g., from interrupt callback).
     """
 
@@ -144,6 +167,25 @@ class Trainer:
         low_vram: bool = False,
         adjust_prim: bool = True,
     ):
+        """Initialise the trainer and create its run folder.
+
+        Args:
+            name: Run name; the run folder is ``base_folder / name``.
+            primitive: Trainable primitive to optimize.
+            sampler: TrainSampler providing target patches and coordinates.
+            optimizer: OptimizerWrapper updating the primitive's parameters.
+            losses: Dict mapping loss name to ``(loss_fn, weight)``.
+            callbacks: Callbacks invoked at each training stage.
+            base_folder: Base directory for checkpoints and logs.
+            scheduler: Optional LR scheduler stepped once per epoch.
+            low_vram: If True, rendering intermediates are moved to CPU.
+            adjust_prim: If True, resize the primitive to the sampler
+                canvas via ``adjust_to_canvas`` on init.
+
+        Notes:
+            - Warns when ``losses`` mixes per-sample ``Loss`` and
+              full-image ``ImageLoss`` entries.
+        """
 
         self.name = name
         self.base_folder = Path(base_folder) or Path(".")
@@ -246,7 +288,8 @@ class Trainer:
         """Run training loop as generator.
 
         Yields:
-            State dict with current epoch, loss, and output for inspection.
+            None after each completed epoch; inspect state via
+            ``state_dict()`` and ``last_image()``.
         """
         self.primitive.requires_grad_(True)
         self.should_continue = True
@@ -375,7 +418,7 @@ class Trainer:
     def _apply_refinements(self):
         """Filter rules are applied first, then split rules are computed on the
         filtered primitive and applied after.
-        Returned masks are sued to update optimizer.
+        Returned masks are used to update optimizer.
         """
         try:
             p = self.primitive
@@ -419,7 +462,9 @@ class Trainer:
         """Current training state for inspection.
 
         Returns:
-            Dict with epoch, loss, output tensor, and logs.
+            Dict with epoch, primitive count, learning rate, per-loss and
+            per-regularizer values, merged with the current epoch's
+            logged metrics.
         """
         stats = {
             "Epoch": self.epoch,

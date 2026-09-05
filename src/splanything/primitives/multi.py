@@ -1,3 +1,4 @@
+"""MultiPrimitive container grouping named child primitives."""
 from __future__ import annotations
 
 import logging
@@ -20,6 +21,26 @@ _logger = logging.getLogger(__name__)
 
 
 class MultiPrimitive(Primitive):
+    """Container holding named child primitives.
+
+    ``len()`` is the sum of the children's (mask-aware) lengths. The
+    ``masked`` context slices a single boolean mask spanning all children
+    (in ``self.primitives`` order) and enters each child's own ``masked``
+    context. Refinement rules, regularizers and sample processors are
+    broadcast to every child.
+
+    Attributes:
+        primitives (nn.ModuleDict): Child primitives by name.
+
+    Notes:
+        - ``forward`` concatenates child ``SampleOutput`` s along the
+          primitive axis; ``sample_rgb``/``sample_weights`` do the same.
+        - ``check_filter``/``check_split`` delegate to children and return
+          per-child masks keyed by child name; like the single-primitive
+          variants they are mask-independent (sized to each child's full
+          parameter set).
+    """
+
     def __init__(
         self,
         primitives: Dict[str, Primitive],
@@ -28,6 +49,14 @@ class MultiPrimitive(Primitive):
         sample_processors: Optional[List[SampleProcessor]] = None,
         regularizers: Optional[Dict[str, Tuple[Regularizer, float]]] = None,
     ):
+        """
+        Args:
+            primitives: Child primitives by name.
+            filter_rules: Filter rules broadcast to every child.
+            split_rules: Split rules broadcast to every child.
+            sample_processors: Sample processors broadcast to every child.
+            regularizers: Name -> (regularizer, weight) broadcast to every child.
+        """
         nn.Module.__init__(self)
         self._context_masks: List[Bool[Tensor, "N"]] = []
         self._param_defs: Dict[str, ParamDef] = {}
@@ -60,11 +89,13 @@ class MultiPrimitive(Primitive):
     def masked(self, mask: Bool[Tensor, "N"]):
         """Context manager for implicit masking of batched parameters.
 
-        When active, accessing batched parameters returns masked versions.
-        Supports nested contexts.
+        The mask is sliced by each child's (mask-aware) length, in
+        ``self.primitives`` order, and each child enters its own ``masked``
+        context. Supports nested contexts (inner masks compose with outer).
 
         Args:
-            masks: Dict of Boolean tensor where True=keep, False=remove.
+            mask: Boolean tensor spanning all children, where True=keep,
+                False=remove.
 
         Yields:
             None.
@@ -97,6 +128,7 @@ class MultiPrimitive(Primitive):
         yield
 
     def add_parameter(self, *args, **kwargs):
+        """Unsupported: parameters live in the contained primitives."""
         raise NotImplementedError(
             f"This class ('{self.__class__}') is meant as a container for primitives only. Add parameters directly in the contained primitives."
         )
@@ -137,6 +169,7 @@ class MultiPrimitive(Primitive):
             prim._validate_batched_sizes()
 
     def __getitem__(self, key: str) -> Primitive:
+        """Child primitive by name."""
         return self.primitives[key]
 
     @torch.no_grad()
@@ -247,6 +280,21 @@ class MultiPrimitive(Primitive):
         weight: float | Dict[str, float] = 0.0,
         ignore_exclusive: bool = False,
     ) -> MultiPrimitive:
+        """Append another MultiPrimitive's children in-place.
+
+        Children with matching keys are concatenated into the existing
+        child; unmatched children are added by name.
+
+        Args:
+            other: MultiPrimitive to append.
+            weight: Interpolation weight for non-batched (stable) params of
+                matching children. 0 = keep original, 1 = use new. A dict
+                maps child name to per-child weight.
+            ignore_exclusive: Skip unmatched children instead of adding them.
+
+        Returns:
+            out: Self, modified in-place.
+        """
         for key, prim in other.primitives.items():
             if key in self.primitives:
                 if isinstance(weight, Dict):
@@ -261,11 +309,20 @@ class MultiPrimitive(Primitive):
     @nomask
     @torch.no_grad()
     def adjust_to_canvas(self, H: int, W: int) -> MultiPrimitive:
+        """Adjust every child to the target aspect ratio (see ``Primitive.adjust_to_canvas``)."""
         for prim in self.primitives.values():
             prim.adjust_to_canvas(H, W)
 
     @nomask
     def param_groups(self) -> List[Dict[str, nn.Parameter | Any]]:
+        """Collect children's optimizer param groups.
+
+        Group names are prefixed with ``<child>$$`` so the optimizer can
+        align state with the correct primitive (see OptimizerWrapper).
+
+        Returns:
+            out: Children's param groups with prefixed names.
+        """
         groups = []
         for name, prim in self.primitives.items():
             pg = prim.param_groups()
@@ -277,47 +334,67 @@ class MultiPrimitive(Primitive):
         return groups
 
     def batched_parameters(self) -> ItemsView[str, Float[Tensor, "N ..."]]:
+        """Unsupported: access parameters directly in the contained primitives."""
         raise NotImplementedError(
             f"This class ('{self.__class__}') is meant as a container for primitives only. Access parameters directly in the contained primitives."
         )
 
     def stable_parameters(self) -> ItemsView[str, Float[Tensor, "N ..."]]:
+        """Unsupported: access parameters directly in the contained primitives."""
         raise NotImplementedError(
             f"This class ('{self.__class__}') is meant as a container for primitives only. Access parameters directly in the contained primitives."
         )
 
     def named_grads(self) -> ItemsView[str, Float[Tensor, "..."]]:
+        """Unsupported: access gradients directly in the contained primitives."""
         raise NotImplementedError(
             f"This class ('{self.__class__}') is meant as a container for primitives only. Access parameters directly in the contained primitives."
         )
 
     def batched_grads(self) -> ItemsView[str, Float[Tensor, "..."]]:
+        """Unsupported: access gradients directly in the contained primitives."""
         raise NotImplementedError(
             f"This class ('{self.__class__}') is meant as a container for primitives only. Access parameters directly in the contained primitives."
         )
 
     def stable_grads(self) -> ItemsView[str, Float[Tensor, "..."]]:
+        """Unsupported: access gradients directly in the contained primitives."""
         raise NotImplementedError(
             f"This class ('{self.__class__}') is meant as a container for primitives only. Access parameters directly in the contained primitives."
         )
 
     def add_split_rule(self, rule: SplitRule):
+        """Register the split rule with every child."""
         for prim in self.primitives.values():
             prim.add_split_rule(rule)
 
     def add_filter_rule(self, rule: FilterRule):
+        """Register the filter rule with every child."""
         for prim in self.primitives.values():
             prim.add_filter_rule(rule)
 
     def add_sample_processor(self, proc: SampleProcessor):
+        """Append the sample processor to every child."""
         for prim in self.primitives.values():
             prim.add_sample_processor(proc)
 
     def add_regularizer(self, name: str, reg: Regularizer, weight: float = 0.1):
+        """Attach the regularizer to every child.
+
+        Args:
+            name: Regularizer key (prefixed per child in ``compute_regularization``).
+            reg: Regularizer evaluated over each child.
+            weight: Loss weight multiplied onto each child's term.
+        """
         for prim in self.primitives.values():
             prim.add_regularizer(name, reg, weight)
 
     def compute_regularization(self) -> Dict[str, Float[Tensor, ""]]:
+        """Evaluate every child's regularizers.
+
+        Returns:
+            out: Weighted scalar term per ``<child>_<regularizer>`` key.
+        """
         regs = {}
         for p_name, prim in self.primitives.items():
             for r_name, r in prim.compute_regularization().items():
@@ -327,6 +404,14 @@ class MultiPrimitive(Primitive):
     @nomask
     @torch.no_grad()
     def check_filter(self) -> Optional[Dict[str, Bool[Tensor, "N"]]]:
+        """Run filter rules on every child.
+
+        Mask-independent: children evaluate on their full parameter sets.
+
+        Returns:
+            out: Per-child keep masks keyed by child name. None if nothing
+            to cull.
+        """
         filtered = {}
         for name, prim in self.primitives.items():
             f = prim.check_filter()
@@ -339,6 +424,14 @@ class MultiPrimitive(Primitive):
     @nomask
     @torch.no_grad()
     def check_split(self) -> Optional[Dict[Bool[Tensor, "N"]]]:
+        """Run split rules on every child.
+
+        Mask-independent: children evaluate on their full parameter sets.
+
+        Returns:
+            out: Per-child split masks keyed by child name. None if nothing
+            to split.
+        """
         split = {}
         for name, prim in self.primitives.items():
             s = prim.check_split()
@@ -350,6 +443,14 @@ class MultiPrimitive(Primitive):
 
     @nomask
     def state_dict(self, *args, **kwargs) -> Dict[str, Any]:
+        """State dict extended with per-child ParamDef metadata.
+
+        ParamDef fields are stored under ``<child>$$<param>`` keys so a
+        reload can rebuild parameter trainability and channels.
+
+        Returns:
+            out: State dict including ParamDef metadata.
+        """
         state = super().state_dict(*args, **kwargs)
         for name, prim in self.primitives.items():
             for p_name, p_def in prim._param_defs.items():

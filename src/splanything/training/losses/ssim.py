@@ -1,3 +1,5 @@
+"""SSIM image-level loss."""
+
 from typing import Literal, Optional
 
 from jaxtyping import Float

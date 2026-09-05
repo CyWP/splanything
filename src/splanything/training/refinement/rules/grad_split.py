@@ -1,3 +1,5 @@
+"""Split rule based on aggregated parameter gradient magnitudes."""
+
 import torch
 from jaxtyping import Bool, Float
 from torch import Tensor
@@ -28,6 +30,14 @@ class GradSplit(SplitRule):
         attr_names: str | list[str] | None = None,
         interval: int = 10,
     ):
+        """Store the split configuration.
+
+        Args:
+            threshold: Split threshold on the aggregated gradient.
+            attr_names: Attribute name(s) whose gradients are aggregated;
+                ``None`` aggregates all batched parameter gradients.
+            interval: Fire every N invocations of ``__call__``.
+        """
         super().__init__(interval=interval)
         self.threshold = threshold
         if isinstance(attr_names, str):
@@ -35,6 +45,15 @@ class GradSplit(SplitRule):
         self.attr_names = attr_names
 
     def criterion(self, primitive: Primitive, **kwargs) -> Float[Tensor, "N"]:
+        """Aggregate absolute gradient magnitudes, scaled by alpha.
+
+        Args:
+            primitive: Primitive to evaluate.
+
+        Returns:
+            Per-primitive aggregated gradient magnitude (N,), multiplied
+            by ``alphas``.
+        """
         if self.attr_names is not None:
             grad_mag = torch.zeros(
                 (len(primitive),), device=primitive.device, dtype=primitive.dtype
@@ -66,4 +85,12 @@ class GradSplit(SplitRule):
         return grad_mag * primitive.alphas
 
     def judge(self, criterion: Float[Tensor, "N"]) -> Bool[Tensor, "N"]:
+        """Split primitives whose aggregated gradient exceeds the threshold.
+
+        Args:
+            criterion: Per-primitive gradient magnitudes (N,).
+
+        Returns:
+            split: Boolean mask (N,). True = SPLIT, False = IGNORE.
+        """
         return criterion > self.threshold

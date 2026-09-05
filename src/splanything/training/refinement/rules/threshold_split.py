@@ -1,3 +1,5 @@
+"""Split rule thresholding a named primitive attribute."""
+
 from __future__ import annotations
 
 from typing import Literal, Union
@@ -31,6 +33,15 @@ class ThresholdSplit(SplitRule):
         method: Literal["ALL", "ANY"] = "ALL",
         interval: int = 10,
     ):
+        """Store the threshold configuration.
+
+        Args:
+            attr_name: Attribute name read from the primitive.
+            threshold: Scalar or per-dimension threshold tensor.
+            comparison: ``"OVER"`` or ``"UNDER"`` comparison direction.
+            method: ``"ALL"`` or ``"ANY"`` reduction over trailing dims.
+            interval: Fire every N invocations of ``__call__``.
+        """
         super().__init__(interval=interval)
         self.attr_name = attr_name
         self.threshold = threshold
@@ -38,9 +49,25 @@ class ThresholdSplit(SplitRule):
         self.method = method
 
     def criterion(self, primitive: Primitive, **kwargs) -> Float[Tensor, "N ..."]:
+        """Read the named attribute from the primitive.
+
+        Args:
+            primitive: Primitive to evaluate.
+
+        Returns:
+            Attribute values (N, ...).
+        """
         return getattr(primitive, self.attr_name)
 
     def judge(self, criterion: Float[Tensor, "N ..."]) -> Bool[Tensor, "N"]:
+        """Threshold the criterion and reduce trailing dimensions.
+
+        Args:
+            criterion: Per-primitive criterion (N, ...).
+
+        Returns:
+            split: Boolean mask (N,). True = SPLIT, False = IGNORE.
+        """
         if self.comparison == "OVER":
             result: Bool[Tensor, "N ..."] = criterion > self.threshold
         else:

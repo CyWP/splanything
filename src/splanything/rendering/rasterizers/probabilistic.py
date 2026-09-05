@@ -1,3 +1,5 @@
+"""Monte Carlo weighted-sampling aggregation rasterizer."""
+
 import torch
 from jaxtyping import Float
 from torch import Tensor
@@ -21,10 +23,29 @@ class ProbabilisticRasterizer(Rasterizer):
     """
 
     def __init__(self, top_k: int = 1, alpha_as_dropout: bool = True):
+        """Initialize the rasterizer.
+
+        Args:
+            top_k: Number of Monte Carlo samples per coordinate.
+            alpha_as_dropout: If True, binarize alpha by random thresholding.
+        """
         self.top_k = top_k
         self._alpha_as_dropout = alpha_as_dropout
 
     def rasterize(self, sample: SampleOutput, **kwargs) -> Float[Tensor, "Nc 4"]:
+        """Aggregate via Monte Carlo sampling of primitives per coordinate.
+
+        Args:
+            sample: SampleOutput with rgb (Nc, Np, 3), weights (Nc, Np).
+
+        Returns:
+            RGBA tensor (Nc, 4): mean of sampled RGBs per coordinate,
+            alpha = clamped weight sum.
+
+        Notes:
+            - Coordinates with zero total weight keep RGB 0.
+            - Sampling probabilities are the normalized (clamped) weights.
+        """
         w = sample.weights.clamp(min=0)
         Nc, Np = w.shape
         valid = w.sum(dim=1) > 0

@@ -1,3 +1,5 @@
+"""Refinement rule base classes and criterion processors."""
+
 from __future__ import annotations
 
 import logging
@@ -51,6 +53,7 @@ class CriterionProcessor(ABC):
         criterion: Float[Tensor, "N ..."],
         **kwargs,
     ) -> Float[Tensor, "N ..."]:
+        """Dispatch to :meth:`apply`."""
         return self.apply(primitive, rule, criterion, **kwargs)
 
 
@@ -153,6 +156,14 @@ class RefinementRule(ABC):
         return True
 
     def log_result(self, result: Any) -> str:
+        """Format the rule's result for logging.
+
+        Args:
+            result: Return value of ``apply``.
+
+        Returns:
+            Log message string.
+        """
         return f"{self.__class__.__name__}: called"
 
     @abstractmethod
@@ -228,6 +239,7 @@ class FilterRule(RefinementRule, ABC):
         """
 
     def log_result(self, result: Optional[Bool[Tensor, "N"]]) -> str:
+        """Format the number of primitives marked for culling."""
         n = 0 if result is None else (~result).sum()
         return f"{self.__class__.__name__}: {n} primitives marked for filtering."
 
@@ -250,5 +262,6 @@ class SplitRule(RefinementRule, ABC):
         """
 
     def log_result(self, result: Optional[Bool[Tensor, "N"]]) -> str:
+        """Format the number of primitives marked for splitting."""
         n = 0 if result is None else result.sum()
         return f"{self.__class__.__name__}: {n} primitives marked for splitting."

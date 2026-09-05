@@ -1,3 +1,5 @@
+"""Epoch-count loop control with optional tqdm progress bar."""
+
 from typing import List, Optional
 
 from ..trainer import Trainer

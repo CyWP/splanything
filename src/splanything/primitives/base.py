@@ -1,3 +1,4 @@
+"""Base ``Primitive`` class: parameter registration, mask-aware access, sampling, and refinement plumbing."""
 from __future__ import annotations
 
 import copy
@@ -39,6 +40,7 @@ class cached_property:
     """
 
     def __init__(self, func):
+        """Store the decorated function."""
         self.func = func
         self.name = func.__name__
         self.__doc__ = func.__doc__
@@ -67,6 +69,7 @@ class nomask:
     """
 
     def __init__(self, method):
+        """Store the wrapped method."""
         self.method = method
         self.name = method.__name__
         self.__doc__ = method.__doc__
@@ -78,6 +81,7 @@ class nomask:
 
         @functools.wraps(method)
         def wrapper(*args, **kwargs):
+            """Run the method inside the instance's ``unmasked`` context."""
             with instance.unmasked():
                 return method(instance, *args, **kwargs)
 
@@ -86,6 +90,18 @@ class nomask:
 
 @dataclass
 class ParamDef:
+    """Declaration of a single primitive parameter.
+
+    Attributes:
+        batched (bool): Whether the parameter has a per-primitive first dimension.
+        trainable (bool): Registered as ``nn.Parameter`` if True, buffer otherwise.
+        channels (Optional[Tuple[int]]): Trailing shape per primitive; None lets
+            the initializer decide.
+        lr_mod (float): Per-parameter learning-rate modifier.
+        scalable (bool): Whether ``Primitive.scale`` multiplies this parameter by
+            sqrt(factor).
+    """
+
     batched: bool
     trainable: bool
     channels: Optional[Tuple[int]] = None
@@ -93,6 +109,11 @@ class ParamDef:
     scalable: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
+        """Serialize the ParamDef fields.
+
+        Returns:
+            out: Dict of all ParamDef fields.
+        """
         return {
             "batched": self.batched,
             "trainable": self.trainable,
@@ -103,6 +124,37 @@ class ParamDef:
 
 
 class Primitive(nn.Module):
+    """Base class for trainable geometric primitives.
+
+    A primitive is an ``nn.Module`` holding batched parameters (one row per
+    splat instance, all sharing their first dimension) plus stable
+    (non-batched) parameters. Sampling at coordinates (Nc, 2) produces
+    per-primitive values via ``sample_rgb``/``sample_weights``; ``forward``
+    wraps them into a ``SampleOutput`` and applies any sample processors.
+
+    Batched parameter access is mask-aware: inside an active ``masked``
+    context, batched parameters return the masked slice (True=keep) and
+    ``len(self)`` reads the masked length.
+
+    Attributes:
+        size (int): Number of splat instances (full, unmasked length).
+        _aspect_ratio (Buffer): Scalar canvas aspect ratio (H/W); coordinates
+            and centroids are adjusted to it.
+
+    Construction:
+        Concrete subclasses declare ``default_params`` (name -> ParamDef)
+        and optionally ``default_initializers``/``default_splitters``; the
+        base ``__init__`` registers and initializes each parameter.
+        ``Primitive.cat`` and ``append`` combine primitives.
+
+    Notes:
+        - Refinement rules, regularizers and sample processors attach via
+          ``add_filter_rule``/``add_split_rule``/``add_regularizer``/
+          ``add_sample_processor``.
+        - ``check_filter``/``check_split`` are mask-independent: they always
+          evaluate on the full parameter set (see their docstrings).
+    """
+
     def __init__(
         self,
         size: int = 1,
@@ -114,6 +166,22 @@ class Primitive(nn.Module):
         sample_processors: Optional[List[SampleProcessor]] = None,
         regularizers: Optional[Dict[str, Tuple[Regularizer, float]]] = None,
     ):
+        """
+        Args:
+            size: Number of splat instances (rows of every batched parameter).
+            initializers: Per-parameter Initializer overrides; a single
+                Initializer applies to every parameter.
+            splitters: Per-parameter Splitter overrides; a single Splitter
+                applies to every parameter.
+            param_defs: ParamDef overrides merged over ``default_params``.
+            filter_rules: Filter rules attached at construction.
+            split_rules: Split rules attached at construction.
+            sample_processors: Sample processors attached at construction.
+            regularizers: Name -> (regularizer, weight) attached at construction.
+
+        Raises:
+            ValueError: If ``size`` < 1.
+        """
         super().__init__()
         if size < 1:
             raise ValueError("Size cannot be null or negative.")
@@ -149,14 +217,21 @@ class Primitive(nn.Module):
 
     @property
     def default_params(self) -> Dict[str, ParamDef]:
+        """ParamDefs every concrete primitive must declare.
+
+        Raises:
+            NotImplementedError: Always; subclasses must provide.
+        """
         raise NotImplementedError()
 
     @property
     def default_initializers(self) -> Dict[str, Initializer] | Initializer:
+        """Per-parameter initializer overrides; empty dict falls back to ``Initializer()``."""
         return {}
 
     @property
     def default_splitters(self) -> Dict[str, Splitter] | Splitter:
+        """Per-parameter splitter overrides; empty dict falls back to ``Splitter()``."""
         return {}
 
     def _register_initializers(
@@ -223,6 +298,7 @@ class Primitive(nn.Module):
 
     @property
     def device(self) -> torch.device:
+        """Device of the first registered parameter or buffer."""
         for p in self.parameters():
             return p.device
         for b in self.buffers():
@@ -231,6 +307,7 @@ class Primitive(nn.Module):
 
     @property
     def dtype(self) -> torch.dtype:
+        """dtype of the first registered parameter or buffer."""
         for p in self.parameters():
             return p.dtype
         for b in self.buffers():
@@ -324,6 +401,18 @@ class Primitive(nn.Module):
     @nomask
     @torch.no_grad()
     def adjust_to_canvas(self, H: int, W: int) -> Primitive:
+        """Adjust centroids and scalable parameters to a target aspect ratio.
+
+        Stores H/W as ``_aspect_ratio``; on a ratio change, squeezes
+        centroids along the shorter axis and rescales scalable parameters.
+
+        Args:
+            H: Target canvas height.
+            W: Target canvas width.
+
+        Returns:
+            out: Self, adjusted in-place.
+        """
         target_ar = torch.tensor(H / W, device=self._aspect_ratio.device)
         current_ar = self._aspect_ratio.item()
         if target_ar.item() == current_ar:
@@ -349,6 +438,7 @@ class Primitive(nn.Module):
 
     @cached_property
     def adjusted_coords(self) -> Float[Tensor, "N 2"]:
+        """Centroids transformed to the square coordinate frame (inverse of the aspect adjustment)."""
         ar = self._aspect_ratio.item()
         if ar == 1.0 or not hasattr(self, "centroids"):
             return self.centroids
@@ -471,6 +561,19 @@ class Primitive(nn.Module):
         trainable: bool = True,
         lr_modifier: float = 1.0,
     ):
+        """Register a parameter or buffer on the primitive.
+
+        Args:
+            name: Parameter name.
+            param: Tensor to register.
+            batched: Whether the parameter has a per-primitive first dimension.
+            trainable: Register as ``nn.Parameter`` if True, buffer otherwise.
+            lr_modifier: Per-parameter learning-rate modifier.
+
+        Raises:
+            KeyError: If ``name`` is already registered.
+            Exception: If a batched parameter's first dim mismatches ``self.size``.
+        """
         if name in self._batched_params | self._stable_params:
             raise KeyError(
                 f"Cannot register different parameters with same name: {name}."
@@ -688,6 +791,17 @@ class Primitive(nn.Module):
         co: Float[Tensor, "Nc 2"],
         **kwargs,
     ) -> Float[Tensor, "Nc Np 3"]:
+        """Sample per-primitive RGB values at coordinates.
+
+        Args:
+            co: Coordinates to sample at (Nc, 2).
+
+        Returns:
+            out: RGB values (Nc, Np, 3), ``Np`` the (masked) primitive count.
+
+        Raises:
+            NotImplementedError: Subclasses must implement.
+        """
         raise NotImplementedError()
 
     def sample_weights(
@@ -695,6 +809,17 @@ class Primitive(nn.Module):
         co: Float[Tensor, "Nc 2"],
         **kwargs,
     ) -> Float[Tensor, "Nc Np"]:
+        """Sample per-primitive weights at coordinates.
+
+        Args:
+            co: Coordinates to sample at (Nc, 2).
+
+        Returns:
+            out: Weights (Nc, Np), ``Np`` the (masked) primitive count.
+
+        Raises:
+            NotImplementedError: Subclasses must implement.
+        """
         raise NotImplementedError()
 
     def forward(self, co: Float[Tensor, "Nc 2"]) -> SampleOutput:
@@ -754,6 +879,14 @@ class Primitive(nn.Module):
 
     @classmethod
     def cat(cls, primitives: List[Primitive]) -> Primitive:
+        """Concatenate primitives into a new instance of ``cls``.
+
+        Args:
+            primitives: Primitives to append in order.
+
+        Returns:
+            out: New primitive with all batched parameters concatenated.
+        """
         prim = cls()
         for p in primitives:
             prim.append(p)
@@ -761,6 +894,12 @@ class Primitive(nn.Module):
 
     @nomask
     def param_groups(self) -> List[Dict[str, nn.Parameter]]:
+        """Build optimizer param groups for all trainable parameters.
+
+        Returns:
+            out: One group per trainable parameter, carrying its
+            ``lr_modifier`` and name.
+        """
         groups = []
         params_dict = {
             **dict(self.batched_parameters()),
@@ -786,10 +925,10 @@ class Primitive(nn.Module):
         return {name: self.__getattr__(name) for name in self._batched_params}.items()
 
     def stable_parameters(self) -> ItemsView[str, Float[Tensor, "N ..."]]:
-        """Get parameters with batch dimension.
+        """Get non-batched (stable) parameters.
 
         Returns:
-            ItemsView of (name, param) for batched parameters.
+            ItemsView of (name, param) for stable parameters.
         """
         return {name: self.__getattr__(name) for name in self._stable_params}.items()
 
@@ -863,12 +1002,25 @@ class Primitive(nn.Module):
         rule.register(self)
 
     def add_sample_processor(self, processor: SampleProcessor):
+        """Append a sample processor applied to the ``SampleOutput`` in ``forward``."""
         self._sample_processors.append(processor)
 
     def add_regularizer(self, name: str, reg: Regularizer, weight: float = 0.1):
+        """Attach a regularizer to this primitive.
+
+        Args:
+            name: Regularizer key (used as key in ``compute_regularization``).
+            reg: Regularizer evaluated over this primitive.
+            weight: Loss weight multiplied onto the regularizer term.
+        """
         self._regularizers[name] = (reg, weight)
 
     def compute_regularization(self) -> Dict[str, Float[Tensor, ""]]:
+        """Evaluate all attached regularizers.
+
+        Returns:
+            out: Scalar term per regularizer name, already weighted.
+        """
         regs = {}
         for name, (regularizer, weight) in self._regularizers.items():
             regs[name] = weight * regularizer(self)
@@ -877,6 +1029,15 @@ class Primitive(nn.Module):
     @nomask
     @torch.no_grad()
     def check_filter(self) -> Optional[Bool[Tensor, "N"]]:
+        """Run all filter rules and combine their keep masks.
+
+        Mask-independent: rules always evaluate on the full, unmasked
+        parameter set, so the returned mask is sized to the full primitive
+        and can be applied to ``filter`` and ``OptimizerWrapper.filter``.
+
+        Returns:
+            out: Combined keep mask (N,). True = KEEP. None if nothing to cull.
+        """
         if len(self._filter_rules) == 0:
             return None
         combined_filter = torch.ones(len(self), dtype=torch.bool, device=self.device)
@@ -894,6 +1055,16 @@ class Primitive(nn.Module):
     @nomask
     @torch.no_grad()
     def check_split(self) -> Optional[Bool[Tensor, "N"]]:
+        """Run all split rules and combine their split masks.
+
+        Mask-independent, like ``check_filter``: the returned mask is sized
+        to the full primitive so it can be applied to ``split`` and
+        ``OptimizerWrapper.split``.
+
+        Returns:
+            out: Combined split mask (N,). True = SPLIT. None if nothing to
+            split.
+        """
         if len(self._split_rules) == 0:
             return None
         combined_split = torch.zeros(len(self), dtype=torch.bool, device=self.device)
@@ -910,6 +1081,7 @@ class Primitive(nn.Module):
 
     @nomask
     def load(self, path: str | Path):
+        """Load a saved state_dict from ``path`` (non-strict)."""
         self.load_state_dict(torch.load(path, weights_only=False), strict=False)
 
     def _load_from_state_dict(

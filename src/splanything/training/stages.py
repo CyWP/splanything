@@ -1,3 +1,5 @@
+"""Training stage name constants for callbacks."""
+
 TRAIN_START = "train_start"
 TRAIN_END = "train_end"
 EPOCH_START = "epoch_start"

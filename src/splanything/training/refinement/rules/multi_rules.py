@@ -1,3 +1,5 @@
+"""Rules combining multiple filter/split rules via logical modes."""
+
 from __future__ import annotations
 
 import functools
@@ -49,28 +51,62 @@ class MultiFilterRule(FilterRule):
         mode: Literal["AND", "OR", "XOR", "NAND", "NOR", "XNOR"] = "AND",
         interval: int = 1,
     ):
+        """Store child rules and combination mode.
+
+        Args:
+            rules: Child filter rules to combine.
+            mode: Logical combination mode (see class docstring).
+            interval: Fire every N invocations of ``__call__``.
+        """
         super().__init__(interval=interval)
         self.rules = list(rules)
         self._mode_fn = _MODE_FNS[mode]
         self.mode = mode
 
     def register(self, primitive: Primitive) -> None:
+        """Register the primitive on this rule and all children.
+
+        Args:
+            primitive: Primitive to register.
+        """
         super().register(primitive)
         for rule in self.rules:
             rule.register(primitive)
 
     def unregister(self, primitive: Primitive) -> None:
+        """Remove the primitive from this rule and all children.
+
+        Args:
+            primitive: Primitive to unregister.
+        """
         super().unregister(primitive)
         for rule in self.rules:
             rule.unregister(primitive)
 
     def criterion(self, primitive: Primitive, **kwargs) -> Float[Tensor, "N"]:
+        """Placeholder criterion; combination happens in ``apply``.
+
+        Args:
+            primitive: Primitive to evaluate.
+
+        Returns:
+            All-True keep mask (N,).
+        """
         return torch.ones(len(primitive), device=primitive.device, dtype=torch.bool)
 
     def judge(self, criterion: Float[Tensor, "N"]) -> Optional[Bool[Tensor, "N"]]:
+        """Return the criterion unchanged (unused by ``apply``)."""
         return criterion
 
     def apply(self, primitive: Primitive, **kwargs) -> Optional[Bool[Tensor, "N"]]:
+        """Invoke child rules and combine their keep masks.
+
+        Args:
+            primitive: Primitive to evaluate.
+
+        Returns:
+            Combined keep mask (N,), or None if no child fired.
+        """
         masks: List[Bool[Tensor, "N"]] = []
         for rule in self.rules:
             mask = rule(primitive, **kwargs)
@@ -107,28 +143,62 @@ class MultiSplitRule(SplitRule):
         mode: Literal["AND", "OR", "XOR", "NAND", "NOR", "XNOR"] = "OR",
         interval: int = 1,
     ):
+        """Store child rules and combination mode.
+
+        Args:
+            rules: Child split rules to combine.
+            mode: Logical combination mode (see class docstring).
+            interval: Fire every N invocations of ``__call__``.
+        """
         super().__init__(interval=interval)
         self.rules = list(rules)
         self._mode_fn = _MODE_FNS[mode]
         self.mode = mode
 
     def register(self, primitive: Primitive) -> None:
+        """Register the primitive on this rule and all children.
+
+        Args:
+            primitive: Primitive to register.
+        """
         super().register(primitive)
         for rule in self.rules:
             rule.register(primitive)
 
     def unregister(self, primitive: Primitive) -> None:
+        """Remove the primitive from this rule and all children.
+
+        Args:
+            primitive: Primitive to unregister.
+        """
         super().unregister(primitive)
         for rule in self.rules:
             rule.unregister(primitive)
 
     def criterion(self, primitive: Primitive, **kwargs) -> Float[Tensor, "N"]:
+        """Placeholder criterion; combination happens in ``apply``.
+
+        Args:
+            primitive: Primitive to evaluate.
+
+        Returns:
+            All-True mask (N,).
+        """
         return torch.ones(len(primitive), device=primitive.device, dtype=torch.bool)
 
     def judge(self, criterion: Float[Tensor, "N"]) -> Bool[Tensor, "N"]:
+        """Return the criterion unchanged (unused by ``apply``)."""
         return criterion > 0
 
     def apply(self, primitive: Primitive, **kwargs) -> Bool[Tensor, "N"]:
+        """Invoke child rules and combine their split masks.
+
+        Args:
+            primitive: Primitive to evaluate.
+
+        Returns:
+            Combined split mask (N,); all-False if no child fired.
+        """
         masks: List[Bool[Tensor, "N"]] = []
         for rule in self.rules:
             mask = rule(primitive, **kwargs)

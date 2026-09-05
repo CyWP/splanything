@@ -1,3 +1,5 @@
+"""Loss base classes for per-sample and full-image losses."""
+
 from typing import Literal, Optional
 
 import torch.nn as nn

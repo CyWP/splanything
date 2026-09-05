@@ -1,3 +1,5 @@
+"""Criterion processor sampling a spatial map at primitive coordinates."""
+
 from torch import Tensor
 from jaxtyping import Float
 from typing import Callable, Optional
@@ -16,7 +18,8 @@ class MapCriterionProcessor(CriterionProcessor):
 
     Attributes:
         map: Spatial map (B, 1, H, W).
-        coords_attr: Attribute name for sampling coordinates (default ``"centroids"``).
+        coords_attr: Attribute name for sampling coordinates
+            (default ``"adjusted_coords"``).
         proc_fn: Callable ``(map_values, criterion) -> modified_criterion``.
             Defaults to element-wise multiplication.
 
@@ -36,7 +39,8 @@ class MapCriterionProcessor(CriterionProcessor):
         """
         Args:
             map: Spatial map (B, 1, H, W).
-            coords_attr: Attribute name for sampling coordinates (default ``"centroids"``).
+            coords_attr: Attribute name for sampling coordinates
+                (default ``"adjusted_coords"``).
             proc_fn: Combination function ``(map, criterion) -> criterion``.
                 Defaults to ``map * criterion``.
         """

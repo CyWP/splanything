@@ -1,3 +1,5 @@
+"""L2 (mean squared error) per-sample loss."""
+
 from jaxtyping import Float
 from torch import Tensor
 

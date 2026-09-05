@@ -1,3 +1,5 @@
+"""Tkinter preview window callback and image-window utilities."""
+
 from __future__ import annotations
 
 import logging
@@ -155,6 +157,13 @@ class TkImageWindow:
     """
 
     def __init__(self, title: str = "Image", width: int = 640, height: int = 480):
+        """Configure the window (created lazily on first ``update_image``).
+
+        Args:
+            title: Window title (unique identifier).
+            width: Fallback width used until the canvas is realised.
+            height: Fallback height used until the canvas is realised.
+        """
         self.title = title
         self.width = width
         self.height = height

@@ -1,3 +1,5 @@
+"""Axis-distance-based weight modulation processor."""
+
 from __future__ import annotations
 import torch
 from torch import Tensor
@@ -12,6 +14,14 @@ if TYPE_CHECKING:
 
 
 class VecSampleProcessor(SampleProcessor):
+    """Modulates weights using per-axis distances to primitive centroids.
+
+    Computes centroid-to-coordinate difference vectors (optionally against
+    fixed reference coordinates) and delegates to ``proc_fn`` with their
+    dx/dy components, or falls back to a Gaussian falloff on the minimum
+    squared axis distance.
+    """
+
     def __init__(
         self,
         processor: SampleProcessor,
@@ -23,6 +33,16 @@ class VecSampleProcessor(SampleProcessor):
         ] = None,
         ref_coords: Optional[Float[Tensor, "Nc 2"]] = None,
     ):
+        """Initialize the processor.
+
+        Args:
+            processor: Upstream processor applied before this one.
+            proc_fn: Optional custom (sample, primitive, dx, dy) ->
+                SampleOutput; defaults to Gaussian falloff on the minimum
+                squared axis distance.
+            ref_coords: Optional fixed reference coordinates (Nc, 2);
+                defaults to the sample's own coordinates.
+        """
         self._processor = processor
         self._proc_fn = proc_fn
         self._ref_coords = ref_coords
@@ -32,6 +52,15 @@ class VecSampleProcessor(SampleProcessor):
         sample: SampleOutput,
         primitive: Primitive,
     ) -> SampleOutput:
+        """Apply the upstream processor, then modulate weights by axis distances.
+
+        Args:
+            sample: SampleOutput to transform.
+            primitive: Primitive the sample was generated from.
+
+        Returns:
+            Transformed SampleOutput.
+        """
         if self._ref_coords is None:
             diff = primitive.centroids[None, :, :] - sample.co[:, None, :]
         else:
@@ -49,6 +78,18 @@ class VecSampleProcessor(SampleProcessor):
         dx: Float[Tensor, "Nc Np"],
         dy: Float[Tensor, "Nc Np"],
     ) -> SampleOutput:
+        """Modulate weights with precomputed dx/dy components.
+
+        Args:
+            sample: SampleOutput to transform.
+            primitive: Primitive the sample was generated from.
+            dx: Per-primitive x-distance components (Nc, Np).
+            dy: Per-primitive y-distance components (Nc, Np).
+
+        Returns:
+            Transformed SampleOutput; by default weights are scaled by
+            exp(-min_c(dx^2 + dy^2)) per primitive, broadcast (1, Np).
+        """
         if self._proc_fn is not None:
             return self._proc_fn(sample, primitive, dx, dy)
         dists = dx ** 2 + dy ** 2

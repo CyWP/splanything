@@ -1,3 +1,4 @@
+"""Patch-grid rendering of primitives to full images."""
 from __future__ import annotations
 
 from typing import Iterator, Optional, Tuple, TYPE_CHECKING
@@ -14,6 +15,28 @@ from .rasterizers.weighted import WeightedRasterizer
 
 
 class Sampler:
+    """Renders a primitive over a patch grid at a fixed resolution.
+
+    Splits the (padded) image into square patches, samples the primitive
+    per patch, and aggregates SampleOutputs to RGBA with the configured
+    rasterizer.
+
+    Attributes:
+        H: Image height.
+        W: Image width.
+        patch_size: Side length of square sampling patches.
+        max_batch: Coordinate-times-primitive budget per sample step;
+            None samples one patch per step.
+        rasterizer: Rasterizer aggregating SampleOutputs to RGBA.
+        padding: Padding around the image as (top, bottom, left, right).
+        low_vram: If True, ``rasterize`` offloads partial results to CPU.
+        device: Device of the patch coordinate tensors.
+
+    Notes:
+        - Coordinates are in normalized [0, 1] space.
+        - The sampler and the primitive must be on the same device.
+    """
+
     def __init__(
         self,
         H: int,
@@ -25,6 +48,20 @@ class Sampler:
         low_vram: bool = False,
         device: torch.device = torch.device("cpu"),
     ):
+        """Initialize the sampler.
+
+        Args:
+            H: Image height.
+            W: Image width.
+            patch_size: Side length of square sampling patches.
+            max_batch: Coordinate-times-primitive budget per sample step;
+                None samples one patch per step.
+            rasterizer: Rasterizer aggregating SampleOutputs; defaults to
+                ``WeightedRasterizer``.
+            padding: Padding as (top, bottom, left, right).
+            low_vram: If True, ``rasterize`` offloads partial results to CPU.
+            device: Device for the patch coordinate tensors.
+        """
         self.device = device
         self.H = H
         self.W = W
@@ -37,26 +74,49 @@ class Sampler:
     def set_patch_size(
         self, patch_size: int, padding: Tuple[int, int, int, int] = (0, 0, 0, 0)
     ):
+        """Set the patch size and rebuild the patch coordinate grids.
+
+        Args:
+            patch_size: Side length of square sampling patches.
+            padding: Padding as (top, bottom, left, right) applied
+                before patching.
+        """
         self.patch_size = patch_size
         self.co_patches, self.co_centers = ImgUtils.get_patches(
             self.H, self.W, device=self.device, patch_size=patch_size, padding=padding
         )
 
     def set_padding(self, padding: Tuple[int, int, int, int]):
+        """Change the padding and rebuild the patch coordinate grids.
+
+        Args:
+            padding: Padding as (top, bottom, left, right).
+        """
         self.set_patch_size(self.patch_size, padding)
         self.padding = padding
 
     def to(self, device: torch.device) -> Sampler:
+        """Move patch coordinate tensors to a device.
+
+        Args:
+            device: Target device.
+        """
         self.co_patches = self.co_patches.to(device)
         self.co_centers = self.co_centers.to(device)
 
     @property
     def padded_dims(self) -> Tuple[int, int]:
+        """Image dimensions including padding.
+
+        Returns:
+            Tuple (H, W) with padding added.
+        """
         t, b, l, r = self.padding
         return self.H + t + b, self.W + l + r
 
     @property
     def num_patches(self) -> int:
+        """Number of sampling patches."""
         if self.patch_size is None:
             return 1
         return self.co_patches.shape[0]
@@ -64,6 +124,24 @@ class Sampler:
     def samples(
         self, p: Primitive, verbose: bool = False
     ) -> Iterator[Tuple[Float[Tensor, "S C"], Float[Tensor, "S 2"]]]:
+        """Yield rasterized sample batches with their coordinates.
+
+        Args:
+            p: Primitive to sample.
+            verbose: If True, show a rich progress bar.
+
+        Yields:
+            Tuple of (RGBA tensor (S, 4), coordinates (S, 2)) per step,
+            where S is the number of coordinates in the current patch,
+            patch batch, or chunk.
+
+        Notes:
+            - Raises ValueError if the primitive is on a different device.
+            - Per-patch primitive masks limit the active primitive set.
+            - With ``max_batch`` set, multiple patches are batched per
+              step; a single patch exceeding the budget is chunked by
+              its pixels.
+        """
         if p.device != self.device:
             raise ValueError(
                 f"Sampler and primitive must be on same device. Currently: {self.device}, {p.device}."
@@ -143,6 +221,22 @@ class Sampler:
         low_vram: Optional[bool] = None,
         verbose: bool = False,
     ) -> Float[Tensor, "B C H W"]:
+        """Rasterize the primitive to a full (padded) image.
+
+        Args:
+            p: Primitive to render.
+            max_batch: Optional one-shot override of ``self.max_batch``,
+                restored afterwards.
+            low_vram: Optional one-shot override of ``self.low_vram``.
+            verbose: If True, show a rich progress bar.
+
+        Returns:
+            RGBA tensor (B, C, H', W') covering the padded image, where
+            (H', W') = ``padded_dims``.
+
+        Raises:
+            ValueError: If the primitive is on a different device.
+        """
         if p.device != self.device:
             raise ValueError(
                 f"Sampler and primitive must be on same device. Currently: {self.device}, {p.device}."
@@ -174,6 +268,17 @@ class Sampler:
         low_vram: Optional[bool] = None,
         verbose: bool = False,
     ) -> Splimage:
+        """Rasterize the primitive and wrap the result in a Splimage.
+
+        Args:
+            p: Primitive to render.
+            max_batch: Optional one-shot override of ``self.max_batch``.
+            low_vram: Optional one-shot override of ``self.low_vram``.
+            verbose: If True, show a rich progress bar.
+
+        Returns:
+            Splimage of the rendered image.
+        """
         return Splimage(
             self.rasterize(p, max_batch=max_batch, low_vram=low_vram, verbose=verbose)
         )

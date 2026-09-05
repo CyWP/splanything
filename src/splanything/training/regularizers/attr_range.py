@@ -1,3 +1,5 @@
+"""Regularizer soft-clipping an attribute to a range or target."""
+
 from typing import Optional
 
 import torch

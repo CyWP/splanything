@@ -1,3 +1,5 @@
+"""Criterion processor reducing the criterion to per-primitive values."""
+
 from __future__ import annotations
 
 from typing import Callable, Dict, Literal
@@ -36,6 +38,11 @@ class CriterionReduction(CriterionProcessor):
         self,
         reduction: Literal["max", "min", "mean", "var", "std", "sum"] = "max",
     ):
+        """Resolve the reduction function.
+
+        Args:
+            reduction: Reduction name (see class docstring).
+        """
         self._fn = _REDUCTION_FN[reduction]
         self.reduction = reduction
 
@@ -46,6 +53,16 @@ class CriterionReduction(CriterionProcessor):
         criterion: Float[Tensor, "N ..."],
         **kwargs,
     ) -> Float[Tensor, "N"]:
+        """Reduce all trailing dimensions of the criterion.
+
+        Args:
+            primitive: Unused.
+            rule: Unused.
+            criterion: Per-primitive criterion (N, ...).
+
+        Returns:
+            Reduced criterion (N,); unchanged if already 1-D.
+        """
         if criterion.ndim <= 1:
             return criterion
         return self._fn(criterion, dim=None)

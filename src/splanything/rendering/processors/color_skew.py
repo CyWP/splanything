@@ -1,3 +1,5 @@
+"""Target-color proximity weight modulation processor."""
+
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
@@ -19,6 +21,13 @@ _REDUCTION_FN = {
 
 
 class ColorSkewSampleProcessor(SampleProcessor):
+    """Skews sample weights toward configured target colors.
+
+    Re-weights each primitive by the RGB proximity of its color to the
+    closest target color, optionally rescaling to preserve the original
+    per-coordinate weight sums.
+    """
+
     def __init__(
         self,
         target_colors: Float[Tensor, "Nt 3"],
@@ -26,6 +35,19 @@ class ColorSkewSampleProcessor(SampleProcessor):
         reduction: str = "MIN",
         rescale: bool = True,
     ):
+        """Initialize the processor.
+
+        Args:
+            target_colors: Target RGB colors (Nt, 3).
+            sigma: Falloff scale of the color-proximity weight.
+            reduction: Reduction over target colors; one of "MIN",
+                "MAX", "MEAN".
+            rescale: If True, rescale the new weights to preserve the
+                original per-coordinate weight sums.
+
+        Raises:
+            ValueError: If ``reduction`` is not one of "MIN", "MAX", "MEAN".
+        """
         if reduction not in _REDUCTION_FN:
             raise ValueError(
                 f"Unknown reduction '{reduction}'. Expected one of {list(_REDUCTION_FN)}."
@@ -40,6 +62,15 @@ class ColorSkewSampleProcessor(SampleProcessor):
         sample: SampleOutput,
         primitive: Primitive,
     ) -> SampleOutput:
+        """Re-weight primitives by proximity to the target colors.
+
+        Args:
+            sample: SampleOutput to transform.
+            primitive: Primitive the sample was generated from.
+
+        Returns:
+            Transformed SampleOutput with proximity-scaled weights.
+        """
         diff = sample.rgb[..., None, :] - self._target_colors  # (Nc, Np, Nt, 3)
         dist_sq = diff.square().sum(dim=-1)  # (Nc, Np, Nt)
         dist_sq = _REDUCTION_FN[self._reduction](dist_sq)  # (Nc, Np)

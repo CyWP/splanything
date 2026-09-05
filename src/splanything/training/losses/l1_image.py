@@ -1,3 +1,5 @@
+"""L1 (absolute error) image-level loss."""
+
 import torch
 from jaxtyping import Float
 from torch import Tensor

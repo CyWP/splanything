@@ -1,3 +1,4 @@
+"""MetaPrimitive: per-splat affine transforms plus color/alpha modulation over a child primitive."""
 from __future__ import annotations
 
 import logging
@@ -21,9 +22,26 @@ _logger = logging.getLogger(__name__)
 
 
 class MetaSplitter(Splitter):
+    """Splitter placing meta splat children along their longest axis.
+
+    Halves the shorter scale and offsets the split centroids along the
+    longest world-space axis direction; all other parameters fall back to
+    the base splitter.
+    """
+
     def split_vals(
         self, name: str, primitive: Primitive, split_param: Float[Tensor, "N_split ..."]
     ) -> Tuple[Float[Tensor, "N_split ..."], Float[Tensor, "N_split ..."]]:
+        """Split values for a parameter, axis-aware for meta parameters.
+
+        Args:
+            name: Parameter name.
+            primitive: Primitive being split.
+            split_param: Parameter rows selected for splitting (N_split, ...).
+
+        Returns:
+            out: Two parameter tensors (N_split, ...) placed at the split positions.
+        """
         if name not in ("centroids", "scales_1", "scales_2"):
             return super().split_vals(name, primitive, split_param)
         p = primitive
@@ -60,6 +78,29 @@ class MetaSplitter(Splitter):
 
 
 class MetaPrimitive(Primitive):
+    """Per-splat transforms and color/alpha modulation over a child primitive.
+
+    Each meta splat owns a local unit-square frame (rotation ``thetas``,
+    scales ``scales_1``/``scales_2``). Sampling transforms coordinates into
+    every meta splat's local frame where the child primitive is evaluated;
+    child RGB is rotated/scaled by ``color_thetas``/``color_scales`` and
+    child weights are modulated by ``alphas``.
+
+    Attributes:
+        primitive (Primitive): Child primitive whose samples are transformed.
+        primitive_trainable (bool): Whether the child's parameters are optimized.
+
+    Construction:
+        MetaPrimitive(primitive, size=..., ...) -> MetaPrimitive:
+            Wrap an existing child primitive; typically the child is frozen
+            (``primitive_trainable=False``) and only the meta transforms train.
+
+    Notes:
+        - SampleOutput rows are laid out per meta splat: (Nc, N * Np, ...) with
+          N meta splats and Np child splats.
+        - ``forward`` returns zeros if len(self) == 0.
+    """
+
     def __init__(
         self,
         primitive: Primitive,
@@ -77,6 +118,23 @@ class MetaPrimitive(Primitive):
         modify_color: bool = True,
         modify_alphas: bool = True,
     ):
+        """
+        Args:
+            primitive: Child primitive to transform.
+            size: Number of meta splats.
+            initializers: Per-parameter Initializer overrides.
+            splitters: Per-parameter Splitter overrides.
+            param_defs: ParamDef overrides merged over ``default_params``.
+            filter_rules: Filter rules attached at construction.
+            split_rules: Split rules attached at construction.
+            sample_processors: Sample processors attached at construction.
+            regularizers: Name -> (regularizer, weight) attached at construction.
+            primitive_trainable: Optimize the child's parameters as well.
+            modify_scale: If False, meta scales are frozen (identity).
+            modify_rotation: If False, meta rotations are frozen (identity).
+            modify_color: Train ``color_thetas``/``color_scales``.
+            modify_alphas: Train ``alphas`` modulation of child weights.
+        """
         self._modify_scale = modify_scale
         self._modify_rotation = modify_rotation
         self._modify_color = modify_color
@@ -103,6 +161,7 @@ class MetaPrimitive(Primitive):
 
     @property
     def default_params(self) -> Dict[str, ParamDef]:
+        """Meta parameter declarations; scale/color/alpha trainability follows the ``modify_*`` flags."""
         ms = self._modify_scale
         mc = self._modify_color
         return dict(
@@ -117,10 +176,12 @@ class MetaPrimitive(Primitive):
 
     @property
     def default_splitters(self) -> Dict[str, Splitter]:
+        """Meta splitter applied to every parameter."""
         return MetaSplitter()
 
     @cached_property
     def transforms(self) -> Float[Tensor, "N 2 2"]:
+        """Per-splat affine transform matrices (N, 2, 2): rotation x scale."""
         c = torch.cos(self.thetas)
         s = torch.sin(self.thetas)
         if not self._modify_rotation:
@@ -138,20 +199,24 @@ class MetaPrimitive(Primitive):
 
     @cached_property
     def transforms_components(self) -> Tuple[Float[Tensor, "N"]]:
+        """The four transform matrix entries per splat as separate (N,) tensors."""
         t = self.transforms
         return (t[:, 0, 0], t[:, 0, 1], t[:, 1, 0], t[:, 1, 1])
 
     @cached_property
     def transforms_determinants(self) -> Float[Tensor, "N"]:
+        """Determinant of each transform matrix (N,)."""
         a, b, c, d = self.transforms_components
         return a * d - b * c
 
     @cached_property
     def transforms_determinants_inverse(self) -> Float[Tensor, "N"]:
+        """Reciprocal of each transform determinant (N,)."""
         return 1 / self.transforms_determinants
 
     @cached_property
     def transforms_inverse(self) -> Float[Tensor, "N 2 2"]:
+        """Inverse transform matrices (N, 2, 2), mapping world coordinates to each splat's local frame."""
         a, b, c, d = self.transforms_components
         r1 = torch.stack([d, -b], dim=1)
         r2 = torch.stack([-c, a], dim=1)
@@ -161,10 +226,12 @@ class MetaPrimitive(Primitive):
 
     @cached_property
     def areas(self) -> Float[Tensor, "N"]:
+        """Approximate splat areas (N,): ``scales_1 * scales_2``."""
         return self.scales_1 * self.scales_2
 
     @cached_property
     def scales(self) -> Tuple[Float[Tensor, "N"], Float[Tensor, "N"]]:
+        """Pair ``(scales_1, scales_2)`` of per-splat scales."""
         return (self.scales_1, self.scales_2)
 
     @torch.no_grad()
@@ -249,6 +316,16 @@ class MetaPrimitive(Primitive):
         meta_idx: Optional[Integer[Tensor, "Nc"]] = None,
         **kwargs,
     ) -> Float[Tensor, "Nc Np 3"]:
+        """Sample child RGB in local frames, with color rotation/scale applied.
+
+        Args:
+            co: Local-frame coordinates (Nc, 2).
+            meta_idx: Meta splat index per coordinate row (Nc,). Required
+                when ``modify_color`` is set.
+
+        Returns:
+            out: RGB values (Nc, Np, 3).
+        """
         rgb = self.primitive.sample_rgb(co, **kwargs)  # (M, Npi, 3)
         if not self._modify_color or meta_idx is None:
             return rgb
@@ -280,12 +357,39 @@ class MetaPrimitive(Primitive):
         meta_idx: Optional[Integer[Tensor, "Nc"]] = None,
         **kwargs,
     ) -> Float[Tensor, "Nc Np"]:
+        """Sample child weights in local frames, modulated by ``alphas``.
+
+        Args:
+            co: Local-frame coordinates (Nc, 2).
+            meta_idx: Meta splat index per coordinate row (Nc,). Required
+                when ``modify_alphas`` is set.
+
+        Returns:
+            out: Weights (Nc, Np).
+        """
         weights = self.primitive.sample_weights(co, **kwargs)  # (M, Npi)
         if not self._modify_alphas or meta_idx is None:
             return weights
         return weights * self.alphas[meta_idx][:, None]  # (M, Npi)
 
     def forward(self, co: Float[Tensor, "Nc 2"]) -> SampleOutput:
+        """Sample the child primitive under every meta splat's transform.
+
+        Coordinates are transformed into each meta splat's local frame via
+        ``transforms_inverse`` and the child is sampled there.
+
+        Args:
+            co: Coordinates to sample at (Nc, 2).
+
+        Returns:
+            out: SampleOutput with rgb (Nc, N * Np, 3) and weights
+            (Nc, N * Np), laid out per meta splat.
+
+        Notes:
+            - Returns zeros if len(self) == 0.
+            - ``inside`` culling is currently disabled (all coordinates
+              are sampled).
+        """
         if len(self) == 0:
             return SampleOutput(
                 rgb=torch.zeros((co.shape[0], 3), device=self.device, dtype=co.dtype),
@@ -328,6 +432,12 @@ class MetaPrimitive(Primitive):
             return sample
 
     def compute_regularization(self) -> Dict[str, Float[Tensor, ""]]:
+        """Evaluate regularizers on self and (if trainable) the child.
+
+        Returns:
+            out: Weighted scalar terms keyed ``<name>(Parent)`` and
+            ``<name>(Child)``.
+        """
         regs = super().compute_regularization()
         if self.primitive_trainable:
             regs = {
@@ -340,17 +450,25 @@ class MetaPrimitive(Primitive):
         return regs
 
     def requires_grad_(self, mode: bool = True) -> MetaPrimitive:
+        """Enable/disable gradients; the child is additionally gated by ``primitive_trainable``."""
         super().requires_grad_(mode)
         self.primitive.requires_grad_(self.primitive_trainable and mode)
         return self
 
     def train(self, mode: bool = True) -> MetaPrimitive:
+        """Set train/eval mode; the child follows only when ``primitive_trainable``."""
         super().train(mode)
         self.primitive.train(mode and self.primitive_trainable)
         return self
 
     @nomask
     def param_groups(self) -> List[Dict[str, nn.Parameter]]:
+        """Optimizer param groups; child groups (if trainable) get ``^^``-prefixed names.
+
+        Returns:
+            out: Own groups plus child groups; the ``^^`` prefix lets
+            OptimizerWrapper treat child params as a sub-primitive.
+        """
         groups = super().param_groups()
         if self.primitive_trainable:
             pg = self.primitive.param_groups()

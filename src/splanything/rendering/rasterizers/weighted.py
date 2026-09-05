@@ -1,3 +1,5 @@
+"""Weight-normalized aggregation rasterizer."""
+
 from typing import Optional
 
 import torch

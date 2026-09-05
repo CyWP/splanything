@@ -1,3 +1,5 @@
+"""Container for primitive sampling results passed to rasterizers."""
+
 from __future__ import annotations
 from dataclasses import dataclass
 import torch
@@ -34,17 +36,17 @@ class SampleOutput:
 
     @staticmethod
     def cat(*samples: SampleOutput) -> SampleOutput:
-        """Concatenate multiple SampleOutputs along the coordinate dimension.
+        """Concatenate multiple SampleOutputs along the primitive dimension.
 
         Args:
             samples: SampleOutputs to concatenate.
 
         Returns:
-            Concatenated SampleOutput with increased Nc dimension.
+            Concatenated SampleOutput with increased N dimension.
 
         Notes:
-            - Concatenates along dim=0 (coordinate dimension).
-            - All other dimensions (N, 3) must match.
+            - Concatenates rgb and weights along dim=1 (primitive dimension).
+            - Coordinates are taken from the first SampleOutput.
         """
         rgb = torch.cat([s.rgb for s in samples], dim=1)  # (Nc_sum, N, 3)
         weights = torch.cat([s.weights for s in samples], dim=1)  # (Nc_sum, N_sum)

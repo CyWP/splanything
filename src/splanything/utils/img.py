@@ -1,3 +1,5 @@
+"""Image utilities and a cached BCHW image wrapper."""
+
 from __future__ import annotations
 
 import math
@@ -103,6 +105,15 @@ class ImgUtils:
         img: Image.Image | Sequence[Image.Image],
         mode: str = "mean",
     ) -> Float[Tensor, "B 1 H W"]:
+        """Convert PIL image(s) to a single-channel mask.
+
+        Args:
+            img: PIL Image or sequence of PIL Images.
+            mode: Reduction mode for :meth:`tensor2mask`.
+
+        Returns:
+            Mask tensor (B, 1, H, W).
+        """
         return ImgUtils.tensor2mask(ImgUtils.pil2tensor(img), mode=mode)
 
     @staticmethod
@@ -412,6 +423,18 @@ class ImgUtils:
         co: Float[Tensor, "C H W"],
         padding: Tuple[int, int, int, int] = (0, 0, 0, 0),
     ) -> Float[Tensor, "C (H+pad_top+pad_bottom) (W+pad_left+pad_right)"]:
+        """Extend a normalized coordinate grid outward by padding.
+
+        Padded rows/columns continue the original grid, extrapolated
+        from the edge step.
+
+        Args:
+            co: Coordinate grid (2, H, W) from :meth:`gen_px_coords`.
+            padding: Outward padding (top, bottom, left, right).
+
+        Returns:
+            Coordinate grid (2, H + pt + pb, W + pl + pr).
+        """
         pad_top, pad_bottom, pad_left, pad_right = padding
         if padding == (0, 0, 0, 0):
             return co
@@ -647,14 +670,46 @@ class ImgUtils:
     def img2mask(
         img: Float[Tensor, "B C H W"], min: float = -1.0, max: float = 1.0
     ) -> Float[Tensor, "B 1 H W"]:
+        """Reduce an image tensor to a single-channel mask via channel mean.
+
+        Maps the mean through ``(mean + 1) / 2``. ``min``/``max`` are
+        accepted but unused.
+
+        Args:
+            img: Image tensor (B, C, H, W).
+            min: Unused.
+            max: Unused.
+
+        Returns:
+            Mask tensor (B, 1, H, W).
+        """
         return (img.mean(dim=1).unsqueeze(1) + 1) / 2
 
     @staticmethod
     def load_mask(path: str) -> Float[Tensor, "B 1 H W"]:
+        """Load an image file as a single-channel mask.
+
+        Args:
+            path: Path to image file.
+
+        Returns:
+            Mask tensor (B, 1, H, W).
+        """
         return ImgUtils.img2mask(ImgUtils.load_image(path, mode="RGBA"))
 
     @staticmethod
     def same_size(*imgs: Float[Tensor, "B C H W"]) -> bool:
+        """Check whether multiple image tensors share the same H and W.
+
+        Args:
+            *imgs: Image tensors (B, C, H, W).
+
+        Returns:
+            True if all images have matching H and W.
+
+        Raises:
+            ValueError: If fewer than two images are provided.
+        """
         if len(imgs) <= 1:
             raise ValueError(
                 f"Function requires a minimum of 2 images to compare. Provided {len(imgs)}."
@@ -1252,10 +1307,12 @@ class Splimage:
 
     @property
     def padding(self) -> Tuple[int, int, int, int]:
+        """Logical padding (top, bottom, left, right) in pixels."""
         return self._padding
 
     @padding.setter
     def padding(self, value: Tuple[int, int, int, int]) -> None:
+        """Set padding; see :meth:`set_padding` for validation rules."""
         self.set_padding(value)
 
     def set_padding(self, value: Tuple[int, int, int, int]) -> None:
@@ -1304,6 +1361,7 @@ class Splimage:
 
     @property
     def H(self) -> int:
+        """Image height."""
         hw = self._hw_from_cache()
         if hw is not None:
             return hw[0]
@@ -1311,6 +1369,7 @@ class Splimage:
 
     @property
     def W(self) -> int:
+        """Image width."""
         hw = self._hw_from_cache()
         if hw is not None:
             return hw[1]
@@ -1318,10 +1377,12 @@ class Splimage:
 
     @property
     def C(self) -> int:
+        """Number of channels."""
         return self._tensor.shape[1]
 
     @property
     def shape(self) -> Tuple[int, int, int, int]:
+        """Image shape (B, C, H, W)."""
         return tuple(self._tensor.shape)
 
     def same_size(self, *others: Splimage) -> bool:
@@ -1381,10 +1442,12 @@ class Splimage:
 
     @property
     def device(self) -> torch.device:
+        """Device of the underlying tensor."""
         return self._tensor.device
 
     @property
     def dtype(self) -> torch.dtype:
+        """Dtype of the underlying tensor."""
         return self._tensor.dtype
 
     def to(self, *args, **kwargs) -> Splimage:

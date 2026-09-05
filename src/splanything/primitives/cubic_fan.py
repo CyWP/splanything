@@ -1,3 +1,5 @@
+"""Cubic fan primitive: oriented two-color gradient fans."""
+
 from __future__ import annotations
 from typing import Tuple, TYPE_CHECKING
 
@@ -10,9 +12,28 @@ from .splitters.base import Splitter
 
 
 class CubicFanSplitter(Splitter):
+    """Splitter splitting cubic fans along their dominant axis.
+
+    Halves the dominant range, keeps the other range, and displaces child
+    centroids by a quarter of the dominant axis extent; other parameters
+    fall back to ``Splitter.split_vals``.
+    """
+
     def split_vals(
         self, name: str, primitive: Primitive, split_param: Float[Tensor, "N_split ..."]
     ) -> Tuple[Float[Tensor, "N_split ..."], Float[Tensor, "N_split ..."]]:
+        """Compute child parameter values for instances being split.
+
+        Args:
+            name: Parameter name being split.
+            primitive: Primitive being split, with the split instances
+                masked in.
+            split_param: Parameter values of the instances being split.
+
+        Returns:
+            Tuple of two tensors (N_split, ...): values for the retained
+            rows and the appended split rows.
+        """
         if name not in ("range_1", "range_2", "centroids"):
             return super().split_vals(name, primitive, split_param)
         p = primitive
@@ -32,8 +53,27 @@ class CubicFanSplitter(Splitter):
 
 
 class CubicFanPrimitive(Primitive):
+    """Oriented two-color gradient fan.
+
+    Each instance is a gradient rotated by ``thetas`` around
+    ``centroids``: a coordinate takes ``color_1`` or ``color_2`` depending
+    on which of the two perpendicular axes it aligns with, with weight
+    falling off linearly along the dominant axis over its range, squared.
+
+    Attributes:
+        thetas: Rotation of each gradient in [0, 1] turns (N,).
+        centroids: Center positions (N, 2).
+        range_1: Extent along the first axis (N,).
+        range_2: Extent along the second axis (N,).
+        color_1: Color of the first axis half (N, 3).
+        color_2: Color of the second axis half (N, 3).
+        alphas: Opacity (N,).
+        ref_axis: Fixed reference axis the rotation acts on (2,).
+    """
+
     @property
     def default_params(self) -> Dict[str, ParamDef]:
+        """Parameter definitions for this primitive."""
         return dict(
             thetas=ParamDef(True, True, None),
             centroids=ParamDef(True, True, (2,), 0.5),
@@ -47,6 +87,7 @@ class CubicFanPrimitive(Primitive):
 
     @property
     def default_splitters(self) -> Dict[str, Splitter]:
+        """Default splitter: ``CubicFanSplitter`` for all parameters."""
         return CubicFanSplitter()
 
     @cached_property
@@ -87,6 +128,11 @@ class CubicFanPrimitive(Primitive):
 
     @cached_property
     def scales(self) -> Tuple[Float[Tensor, "N"], Float[Tensor, "N"]]:
+        """Scale parameters used by refinement/splitting.
+
+        Returns:
+            Tuple of (range_1, range_2), each (N,).
+        """
         return (self.range_1, self.range_2)
 
     @torch.no_grad()
@@ -107,6 +153,17 @@ class CubicFanPrimitive(Primitive):
         co: Float[Tensor, "Nc 2"],
         **kwargs,
     ) -> Float[Tensor, "Nc Np 3"]:
+        """Sample per-primitive colors at coordinates.
+
+        Returns ``color_1`` or ``color_2`` per primitive depending on
+        which gradient axis the coordinate aligns with.
+
+        Args:
+            co: Coordinates to sample at (Nc, 2).
+
+        Returns:
+            RGB tensor (Nc, Np, 3).
+        """
         ax_1, ax_2 = self.axes
         centroids = self.centroids
         color_1 = self.color_1
@@ -122,6 +179,17 @@ class CubicFanPrimitive(Primitive):
         co: Float[Tensor, "Nc 2"],
         **kwargs,
     ) -> Float[Tensor, "Nc N"]:
+        """Sample per-primitive weights at coordinates.
+
+        Linear falloff from the centroid along the dominant axis over its
+        range, times an angular-alignment factor, all squared.
+
+        Args:
+            co: Coordinates to sample at (Nc, 2).
+
+        Returns:
+            Weights tensor (Nc, Np).
+        """
         ax_1, ax_2 = self.axes
         centroids = self.centroids
         range_1 = self.range_1

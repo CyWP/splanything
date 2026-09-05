@@ -1,3 +1,5 @@
+"""Radial-frequency splat primitive with angular ray modulation."""
+
 import math
 
 import torch
@@ -13,9 +15,22 @@ from .initializers.base import Initializer
 
 
 class RadialFreqInitializer(Initializer):
+    """Initializer sampling ``freq`` and ``floor`` for radial frequency splats."""
+
     def init_param(
         self, name: str, param_shape: Tuple[int], batched: bool
     ) -> Float[Tensor, "N ..."]:
+        """Initialize a parameter tensor.
+
+        Args:
+            name: Parameter name.
+            param_shape: Shape of the parameter tensor.
+            batched: Whether the parameter has a batch dimension.
+
+        Returns:
+            Initialized tensor; ``freq`` is scaled by pi, ``floor`` is
+            standard normal; other names fall back to ``Initializer``.
+        """
         if name == "freq":
             return (torch.randn(param_shape)) * torch.pi
         if name == "floor":
@@ -45,6 +60,7 @@ class RadialFreqPrimitive(Primitive):
 
     @property
     def default_params(self) -> Dict[str, ParamDef]:
+        """Parameter definitions for this primitive."""
         return dict(
             thetas=ParamDef(True, True, None),
             centroids=ParamDef(True, True, (2,), 0.5),
@@ -58,15 +74,27 @@ class RadialFreqPrimitive(Primitive):
 
     @property
     def default_initializers(self) -> Dict[str, Initializer] | Initializer:
+        """Default initializer: ``RadialFreqInitializer`` for all parameters."""
         return RadialFreqInitializer()
 
     @cached_property
     def scales(self) -> Tuple[Float[Tensor, "N"], Float[Tensor, "N"]]:
+        """Scale parameters used by refinement/splitting.
+
+        Returns:
+            Tuple of (sigma * _sigma_cutoff, sigma * _sigma_cutoff), each (N,).
+        """
         s = self.sigma * self._sigma_cutoff
         return (s, s)
 
     @cached_property
     def areas(self) -> Float[Tensor, "N"]:
+        """Approximate area of each primitive.
+
+        Returns:
+            Tensor of shape (N,) with area values
+            (sigma * _sigma_cutoff)**2 * pi.
+        """
         return (self.sigma * self._sigma_cutoff) ** 2 * math.pi
 
     @cached_property
@@ -97,6 +125,17 @@ class RadialFreqPrimitive(Primitive):
         co: Float[Tensor, "Nc 2"],
         **kwargs,
     ) -> Float[Tensor, "Nc Np 3"]:
+        """Sample per-primitive colors at coordinates.
+
+        Color interpolates between ``color_1`` and ``color_2`` with the
+        ray phase of the coordinate relative to its centroid.
+
+        Args:
+            co: Coordinates to sample at (Nc, 2).
+
+        Returns:
+            RGB tensor (Nc, Np, 3).
+        """
         centroids = self.centroids
         deltas = co[:, None, :] - centroids[None, :, :]
         angles = torch.atan2(deltas[..., 1], deltas[..., 0]) / torch.pi

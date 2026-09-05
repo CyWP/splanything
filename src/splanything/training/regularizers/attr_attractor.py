@@ -1,3 +1,5 @@
+"""Regularizer attracting or pushing attributes near target points."""
+
 from typing import Callable, Dict, Literal, Optional, Union
 
 import torch

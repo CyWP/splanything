@@ -1,3 +1,5 @@
+"""Criterion processor applying a user-supplied function."""
+
 from __future__ import annotations
 
 from typing import Callable
@@ -23,6 +25,11 @@ class FlexibleCriterionProcessor(CriterionProcessor):
         self,
         proc_fn: Callable[[Float[Tensor, "N ..."]], Float[Tensor, "N ..."]],
     ):
+        """Store the processing function.
+
+        Args:
+            proc_fn: Callable ``(criterion) -> modified_criterion``.
+        """
         self.proc_fn = proc_fn
 
     def apply(
@@ -32,4 +39,14 @@ class FlexibleCriterionProcessor(CriterionProcessor):
         criterion: Float[Tensor, "N ..."],
         **kwargs,
     ) -> Float[Tensor, "N ..."]:
+        """Apply ``proc_fn`` to the criterion.
+
+        Args:
+            primitive: Unused.
+            rule: Unused.
+            criterion: Per-primitive criterion (N, ...).
+
+        Returns:
+            Modified criterion (N, ...).
+        """
         return self.proc_fn(criterion)

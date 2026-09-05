@@ -1,3 +1,5 @@
+"""Callback saving primitive checkpoints at a fixed epoch interval."""
+
 import logging
 from typing import List
 

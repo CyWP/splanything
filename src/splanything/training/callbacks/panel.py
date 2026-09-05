@@ -1,3 +1,5 @@
+"""Live rich-based statistics panel callback."""
+
 import time
 import torch
 from collections import deque
@@ -10,11 +12,26 @@ from .base import Callback
 
 
 class StatsPanel(Callback):
-    """
+    """Live terminal panel of training stats and recent logs (rich-based).
+
+    Renders ``trainer.state_dict()`` into a table next to a scrolling log
+    pane, refreshed at every EPOCH_END; the live display is stopped at
+    TRAIN_END.
+
+    Attributes:
+        excl_kw: Stat keys hidden from the table.
+        logs: Recent log messages (bounded deque).
+
     Stages: EPOCH_END, TRAIN_END
     """
 
     def __init__(self, excl_kw: Optional[List[str]] = None, max_logs: int = 10):
+        """Start the rich live display.
+
+        Args:
+            excl_kw: Stat keys to exclude from the table.
+            max_logs: Maximum number of recent log lines kept.
+        """
         super().__init__()
         from rich.live import Live
 
@@ -27,12 +44,27 @@ class StatsPanel(Callback):
     _stages: List[str] = [EPOCH_END, TRAIN_END]
 
     def run(self, trainer: Trainer, stage: str):
+        """Refresh the panel on EPOCH_END; stop the display on TRAIN_END.
+
+        Args:
+            trainer: Current trainer instance.
+            stage: Current training stage.
+        """
         if stage == TRAIN_END:
             self.live.stop()
             return
         self.live.update(self.render(trainer.state_dict()), refresh=True)
 
     def render(self, stats: Dict[str, Any]) -> "Columns":
+        """Format trainer stats into a two-panel rich display.
+
+        Args:
+            stats: Stat dict from ``trainer.state_dict()``; ``"msg"`` is
+                popped into the log pane and ``"time"`` is added.
+
+        Returns:
+            Rich ``Columns`` with a stats table panel and a logs panel.
+        """
         from rich.columns import Columns
         from rich.panel import Panel
         from rich.table import Table

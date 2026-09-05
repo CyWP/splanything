@@ -1,3 +1,5 @@
+"""Sample processors transforming SampleOutputs before rasterization."""
+
 from .base import SampleProcessor
 from .flex import FlexibleSampleProcessor
 from .dist import DistanceSampleProcessor

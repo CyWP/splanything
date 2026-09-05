@@ -1,3 +1,5 @@
+"""Split rule for primitives with anisotropic scale ratios."""
+
 from jaxtyping import Bool, Float
 from torch import Tensor
 

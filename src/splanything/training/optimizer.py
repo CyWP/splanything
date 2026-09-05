@@ -1,3 +1,5 @@
+"""Optimizer wrapper keeping torch optimizer state aligned with refinement."""
+
 from collections import defaultdict
 from logging import getLogger
 from typing import Any, Dict, List
@@ -145,6 +147,14 @@ class OptimizerWrapper:
         optimizer_class: type[optim.Optimizer],
         **kwargs: Any,
     ):
+        """Create the optimizer over the primitive's parameter groups.
+
+        Args:
+            primitive: Primitive whose ``param_groups()`` seed the optimizer.
+            optimizer_class: Torch optimizer class to instantiate.
+            **kwargs: Keyword arguments for the optimizer (e.g. ``lr``);
+                ``params`` is ignored and replaced by ``param_groups``.
+        """
         self._optimizer_class = optimizer_class
         self._reinit_kwargs: Dict[str, Any] = {
             k: v for k, v in kwargs.items() if k not in _REINIT_IGNORED_KWARGS
@@ -156,6 +166,7 @@ class OptimizerWrapper:
 
     @property
     def lr(self) -> float:
+        """Base learning rate (group ``lr`` divided by any ``lr_modifier``)."""
         g = self._optimizer.param_groups[0]
         lr = g["lr"]
         lr_mod = g.get("lr_modifier", None)
@@ -167,7 +178,7 @@ class OptimizerWrapper:
         """Reinitialize optimizer with new parameters.
 
         Args:
-            params: New parameters to optimize.
+            param_groups: New parameter groups (from ``Primitive.param_groups``).
         """
         if "lr" in self._reinit_kwargs:
             base_lr = self._reinit_kwargs["lr"]

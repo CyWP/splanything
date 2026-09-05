@@ -1,3 +1,5 @@
+"""Filter rule thresholding an attribute's gradient magnitude."""
+
 from __future__ import annotations
 
 from typing import Literal, Optional, Union
@@ -33,6 +35,15 @@ class ThresholdGradFilter(FilterRule):
         method: Literal["ALL", "ANY"] = "ALL",
         interval: int = 10,
     ):
+        """Store the threshold configuration.
+
+        Args:
+            attr_name: Attribute whose gradient is evaluated.
+            threshold: Scalar or per-dimension threshold tensor.
+            comparison: ``"OVER"`` or ``"UNDER"`` comparison direction.
+            method: ``"ALL"`` or ``"ANY"`` reduction over trailing dims.
+            interval: Fire every N invocations of ``__call__``.
+        """
         super().__init__(interval=interval)
         self.attr_name = attr_name
         self.threshold = threshold
@@ -40,10 +51,26 @@ class ThresholdGradFilter(FilterRule):
         self.method = method
 
     def criterion(self, primitive: Primitive, **kwargs) -> Float[Tensor, "N ..."]:
+        """Read the absolute gradient of the named attribute.
+
+        Args:
+            primitive: Primitive to evaluate.
+
+        Returns:
+            Gradient magnitudes (N, ...).
+        """
         grad = getattr(primitive, self.attr_name).grad
         return grad.abs()
 
     def judge(self, criterion: Float[Tensor, "N ..."]) -> Optional[Bool[Tensor, "N"]]:
+        """Threshold the criterion and reduce trailing dimensions.
+
+        Args:
+            criterion: Per-primitive gradient magnitudes (N, ...).
+
+        Returns:
+            keep: Boolean mask (N,). True = KEEP, False = REMOVE.
+        """
         if self.comparison == "OVER":
             result: Bool[Tensor, "N ..."] = criterion > self.threshold
         else:

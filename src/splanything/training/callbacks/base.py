@@ -1,3 +1,5 @@
+"""Callback base class with training-stage dispatch."""
+
 from abc import ABC, abstractmethod
 from typing import List
 
