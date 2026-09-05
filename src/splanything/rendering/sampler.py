@@ -100,9 +100,13 @@ class Sampler:
 
         Args:
             device: Target device.
+
+        Returns:
+            out: Self.
         """
         self.co_patches = self.co_patches.to(device)
         self.co_centers = self.co_centers.to(device)
+        return self
 
     @property
     def padded_dims(self) -> Tuple[int, int]:

@@ -150,22 +150,30 @@ class TrainSampler(Sampler):
 
     def jitter_target(
         self,
-    ) -> Tuple[Float[Tensor[Float, "P S 2"]], Float[Tensor, "P S 4"]]:
-        """Jitter patch coordinates and re-extract matching target patches.
+    ) -> Tuple[Float[Tensor, "P S 2"], Float[Tensor, "P S 4"]]:
+        """Jitter patch coordinates by up to half a pixel and extract the
+        matching target patches.
+
+        The coordinates are shifted in normalized units; the image is
+        shifted by the same amount in pixels via bilinear sampling, with
+        the y-component negated to match the ``extract_image_patches``
+        shift convention. ``co_patches`` is not mutated.
 
         Returns:
-            Jittered patch coordinates (P, S, 2) and target patches
-            (P, S, 4) extracted at the jittered positions.
+            out: Tuple of jittered coordinates (P, S, 2) and the matching
+            image patches (P, S, C).
         """
         H_step = 1 / self.H
         W_step = 1 / self.W
         device = self.co_patches.device
         H_jitter = torch.rand(tuple(), device=device) * H_step - H_step / 2
         W_jitter = torch.rand(tuple(), device=device) * W_step - W_step / 2
+        co_patches = self.co_patches.clone()
         co_patches[:, :, 0] += H_jitter
         co_patches[:, :, 1] += W_jitter
         return co_patches, self.target_img.extract_image_patches(
-            self.patch_size, jitter=(H_jitter, W_jitter)
+            self.patch_size,
+            jitter=(-H_jitter.item() * self.H, W_jitter.item() * self.W),
         ).squeeze(0)
 
     def set_patch_size(self, patch_size: int):

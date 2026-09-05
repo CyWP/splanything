@@ -44,7 +44,7 @@ class Splitter:
                     else torch.full_like(split_param[:, 0], (1 / len(primitive)))
                 )
                 ** 0.5
-                / (4 * disp.norm())
+                / (4 * disp.norm(dim=0))
             )[:, None]
             return split_param + disp, split_param - disp
         if any([n in name for n in ("scale", "range", "sigma")]):

@@ -55,9 +55,11 @@ class MappedSampleProcessor(SampleProcessor):
         Returns:
             Transformed SampleOutput.
         """
-        sampled = self._map.mask_sample(getattr(primitive, self._coords_attr)).squeeze(
-            -1
-        )
+        sampled = (
+            self._map.mask_sample(getattr(primitive, self._coords_attr))
+            .squeeze(-1)
+            .squeeze(0)
+        )  # (1, Np, 1) -> (Np,)
         return self.process_map(self._processor(sample, primitive), primitive, sampled)
 
     def process_map(
@@ -77,7 +79,7 @@ class MappedSampleProcessor(SampleProcessor):
             Transformed SampleOutput with weights scaled per primitive.
         """
         if self._proc_fn is not None:
-            return self._proc_fn(sample, primitive, distances)
+            return self._proc_fn(sample, primitive, sampled_vals)
         return SampleOutput(
             rgb=sample.rgb, weights=sample.weights * sampled_vals[:, None], co=sample.co
         )

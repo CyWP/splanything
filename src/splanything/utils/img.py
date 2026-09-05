@@ -672,18 +672,18 @@ class ImgUtils:
     ) -> Float[Tensor, "B 1 H W"]:
         """Reduce an image tensor to a single-channel mask via channel mean.
 
-        Maps the mean through ``(mean + 1) / 2``. ``min``/``max`` are
-        accepted but unused.
+        Maps the channel mean from ``[min, max]`` to ``[0, 1]``.
 
         Args:
             img: Image tensor (B, C, H, W).
-            min: Unused.
-            max: Unused.
+            min: Lower input bound mapped to 0.
+            max: Upper input bound mapped to 1.
 
         Returns:
-            Mask tensor (B, 1, H, W).
+            out: Mask tensor (B, 1, H, W). Values outside ``[min, max]``
+            extrapolate beyond [0, 1].
         """
-        return (img.mean(dim=1).unsqueeze(1) + 1) / 2
+        return (img.mean(dim=1).unsqueeze(1) - min) / (max - min)
 
     @staticmethod
     def load_mask(path: str) -> Float[Tensor, "B 1 H W"]:

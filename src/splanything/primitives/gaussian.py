@@ -35,19 +35,19 @@ class GaussianSplitter(Splitter):
         """
         if name not in ("sigma_1", "sigma_2", "centroids"):
             return super().split_vals(name, primitive, split_param)
+        p = primitive
         s_mask = p.sigma_1 > p.sigma_2
         if name == "centroids":
-            p = primitive
             ax_1, ax_2 = p.axes
-            ax_1 *= p.sigma_1[:, None]
-            ax_2 *= p.sigma_2[:, None]
+            ax_1 = ax_1 * p.sigma_1[:, None]
+            ax_2 = ax_2 * p.sigma_2[:, None]
             disp = torch.where(s_mask, ax_1, ax_2) / 4
             return split_param + disp, split_param - disp
         if name == "sigma_1":
-            new_param = torch.where(s_mask, param_split / 2, param_split)
+            new_param = torch.where(s_mask, split_param / 2, split_param)
             return new_param, new_param
         if name == "sigma_2":
-            new_param = torch.where(s_mask, param_split, param_split / 2)
+            new_param = torch.where(s_mask, split_param, split_param / 2)
             return new_param, new_param
 
 

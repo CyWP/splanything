@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import ExitStack, contextmanager
-from typing import Dict, ItemsView, List, Optional, Any, TYPE_CHECKING
+from typing import Dict, ItemsView, List, Optional, Any, Tuple, TYPE_CHECKING
 
 import torch
 import torch.nn as nn
@@ -11,7 +11,7 @@ from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
 from ..rendering.sample_output import SampleOutput
-from .base import Primitive, ParamDef, nomask
+from .base import Primitive, ParamDef, nomask, SampleProcessor
 
 if TYPE_CHECKING:
     from ..training.regularizers.base import Regularizer
@@ -190,7 +190,7 @@ class MultiPrimitive(Primitive):
 
     @nomask
     @torch.no_grad()
-    def filter(self, keys: Dict[str,]) -> MultiPrimitive:
+    def filter(self, keys: Dict[str, Bool[Tensor, "N"]]) -> MultiPrimitive:
         """In-place index selection of batched elements.
 
         Filters primitive parameters to keep only elements matching key.

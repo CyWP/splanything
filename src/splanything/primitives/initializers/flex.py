@@ -31,4 +31,4 @@ class FlexibleInitializer(Initializer):
         Returns:
             Initialized tensor.
         """
-        return func(name, param_shape)
+        return self.func(name, param_shape)

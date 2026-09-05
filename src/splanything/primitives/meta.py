@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 import logging
-from typing import Tuple, Optional, TYPE_CHECKING
+from typing import Dict, List, Tuple, Optional, TYPE_CHECKING
 
 import torch
 from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
 from ..rendering.sample_output import SampleOutput
-from .base import Primitive, cached_property, nomask, ParamDef
+from .base import Primitive, cached_property, nomask, ParamDef, SampleProcessor
 from .splitters.base import Splitter
 
 if TYPE_CHECKING:
@@ -387,8 +387,8 @@ class MetaPrimitive(Primitive):
 
         Notes:
             - Returns zeros if len(self) == 0.
-            - ``inside`` culling is currently disabled (all coordinates
-              are sampled).
+            - Coordinates outside a meta splat's local frame contribute
+              zero (weight 0) and skip child sampling.
         """
         if len(self) == 0:
             return SampleOutput(
@@ -413,7 +413,6 @@ class MetaPrimitive(Primitive):
             )
             flat_coords = coords.reshape(Nc * N, 2)  # (Nc*N, 2)
             inside = ((flat_coords >= 0) & (flat_coords <= 1)).all(dim=-1)  # (Nc*N,)
-            inside = torch.ones_like(inside)
             meta_idx = torch.arange(N, device=co.device).repeat(Nc)  # (Nc*N,)
             rgb_flat = torch.zeros((Nc * N, Np, 3), device=co.device, dtype=co.dtype)
             w_flat = torch.zeros((Nc * N, Np), device=co.device, dtype=co.dtype)
