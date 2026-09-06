@@ -1,3 +1,10 @@
+"""Fit a MultiPrimitive (star + radial-frequency splats) to the
+North-Macedonia/Brazil target image, then re-render the trained primitive
+at high resolution.
+
+Run with ``-t/--train`` to train and ``-g/--generate`` to re-render.
+"""
+
 import argparse
 import torch
 from typing import Tuple
@@ -46,15 +53,20 @@ from splanything.rendering.rasterizers import (
     MultiRasterizer,
 )
 
+# Device and output folder: checkpoints, previews and the final render are
+# saved under base_folder / run_name.
 device = torch.device("cuda:0")
 run_name = "NorVBra"
 base_folder = Path("../test_runs").resolve()
 run_folder = base_folder / run_name
+# Set a seed to make runs reproducible; None keeps random initialization.
 seed = None
 if seed is not None:
     torch.manual_seed(seed)
 
 
+# Custom initializer: pin every theta (rotation) to zero; all other
+# parameters fall back to the name-based default initializer.
 class ThetaZero(Initializer):
     def init_param(
         self, name: str, param_shape: Tuple[int], batched: bool
@@ -65,7 +77,9 @@ class ThetaZero(Initializer):
 
 
 def get_primitive():
-    # cubic = CubicFanPrimitive(size=10).to(device)
+    # Two primitive families sharing the flag mask: radial-frequency rays
+    # seeded by the blurred mask, stars seeded more diffusely. Thetas are
+    # frozen via ParamDef so only the remaining parameters train.
     msk = Splimage("../assets/bra_nor_offside_masked.png", mask_mode="A", as_mask=True)
     radial = RadialFreqPrimitive(
         size=80,
@@ -91,16 +105,20 @@ def get_primitive():
 def train():
     prev_H = 1080
     prev_W = 1080
-    # Images
+    # Target image and alpha mask (train and render only inside the flag);
+    # the blurred mask is reused for rules, sampling and regularizers.
     tgt = Splimage("../assets/bra_nor_offside.png").to(device)
     msk = Splimage(
         "../assets/bra_nor_offside_masked.png", mask_mode="A", as_mask=True
     ).to(device)
     msk_blur10 = msk.blur(10)
-    # primitive
+    # Primitive
     prim = get_primitive()
 
-    # Rules
+    # Refinement rules, applied by the trainer around each optimizer step:
+    # cull faded and tiny splats, split by position via the blurred mask,
+    # split high-gradient regions per child (looser threshold for stars),
+    # split oversized areas, and cap the total splat count.
     alpha_cull = ThresholdFilter(attr_name="alphas", threshold=0.1, interval=17)
     grad_split_lo = GradSplit(threshold=0.005, interval=201, attr_names=["centroids"])
     grad_split_hi = GradSplit(threshold=0.02, interval=173, attr_names=["centroids"])
@@ -116,12 +134,14 @@ def train():
     prim.add_split_rule(area_split)
     prim.add_filter_rule(ceiling)
 
-    # Rule processors
+    # Rule processor: scale the gradient-split criterion by the mask so
+    # splitting concentrates inside the flag.
     map_proc = MapCriterionProcessor(msk_blur10 * 0.6 + 0.4)
     grad_split_lo.add_processor(map_proc)
     grad_split_hi.add_processor(map_proc)
 
-    # Sampler
+    # Training sampler: subsamples pixels per patch using the blurred mask
+    # as probability map; max_batch bounds the per-step compute budget.
     sampler = TrainSampler(
         target=tgt,
         patch_size=128,
@@ -130,7 +150,8 @@ def train():
         low_vram=True,
     )
 
-    # Callbacks
+    # Callbacks: live preview rendered at the display resolution (with
+    # padding to match the previous viewport) plus a console stats panel.
     H_pad = (prev_H - tgt.H) // 2
     W_pad = (prev_W - tgt.W) // 2
     vis_sampler = Sampler(
@@ -151,15 +172,18 @@ def train():
         StatsPanel(),
     ]
 
-    # Optim
+    # Optimizer with per-parameter learning-rate modifiers and a cosine
+    # schedule with warm restarts.
     optimizer = OptimizerWrapper(prim, AdamW, lr=0.002)
     scheduler = CosineAnnealingWarmRestarts(
         optimizer._optimizer, T_0=1000, eta_min=0.001
     )
+    # Per-sample loss: L2 on the subsampled pixel batches.
     losses = {
         "L2": (L2Loss(), 1.0),
     }
-    # Regularizers
+    # Regularizers: push the radial colors apart, keep splat areas and
+    # alphas high, and keep the star axes near a fixed ratio.
     prim["radial"].add_regularizer(
         "Color Push",
         AttributeProximity(["color_1", "color_2"], mode="PUSH"),
@@ -177,7 +201,7 @@ def train():
         weight=5.0,
     )
 
-    # Trainer
+    # Trainer drives epochs until the callbacks stop it.
     trainer = Trainer(
         run_name,
         prim,
@@ -194,12 +218,14 @@ def train():
 
 
 def generate():
-    # Load primitive
+    """Re-render the trained primitive at high resolution with decorative
+    sample processors and a blended rasterizer."""
     gen_H = 3072
     gen_W = 1024
     gen_padding = (1536, 1024, 1024, 1024)
     full_H = gen_H + gen_padding[0] + gen_padding[1]
     full_W = gen_W + gen_padding[2] + gen_padding[3]
+    # Load the trained checkpoint; adapt splat size to the larger canvas.
     prim = get_primitive()
     prim.load(run_folder / "primitive.pt")
     prim.requires_grad_(False)
@@ -211,7 +237,9 @@ def generate():
         .resize(gen_H, gen_W)
     )
 
-    # Sample processor
+    # Sample processors for the final look: a base weight sharpening, then
+    # distance-based and axis-based pattern modulations, blended by mask
+    # weight; a color skew toward a fixed palette is applied on top.
     sample_proc = FlexibleSampleProcessor(
         lambda s, p: SampleOutput(s.rgb, s.weights**1.08, s.co)
     )
@@ -255,7 +283,8 @@ def generate():
     )
     prim.add_sample_processor(color_proc)
 
-    # Rasterizer
+    # Rasterizer blend: weighted aggregation inside the flag, Monte Carlo
+    # sampling outside.
     rast = MultiRasterizer(
         [
             (WeightedRasterizer(), msk.blur(700)),
@@ -263,7 +292,7 @@ def generate():
         ]
     )
 
-    # Sampler
+    # Inference sampler over the large canvas, then render and save.
     sampler = Sampler(
         gen_H,
         gen_W,

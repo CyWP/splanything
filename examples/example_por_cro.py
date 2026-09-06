@@ -1,3 +1,9 @@
+"""Fit a CubicFanPrimitive to the Portugal/Croatia target image, then
+re-render the trained primitive at high resolution.
+
+Run with ``-t/--train`` to train and ``-g/--generate`` to re-render.
+"""
+
 import argparse
 import torch
 import math
@@ -45,15 +51,20 @@ from splanything.rendering.rasterizers import (
     MultiRasterizer,
 )
 
+# Device and output folder: checkpoints, previews and the final render are
+# saved under base_folder / run_name.
 device = torch.device("cuda:0")
 run_name = "PorVCro"
 base_folder = Path("../test_runs").resolve()
 run_folder = base_folder / run_name
+# Set a seed to make runs reproducible; None keeps random initialization.
 seed = None
 if seed is not None:
     torch.manual_seed(seed)
 
 
+# Custom initializer: pin every theta (fan rotation) to one value; all other
+# parameters fall back to the name-based default initializer.
 class ThetaSet(Initializer):
     def __init__(self, val: float):
         self.val = val
@@ -67,6 +78,9 @@ class ThetaSet(Initializer):
 
 
 def get_primitive():
+    # Cubic-fan splats seeded inside the masked flag region: the
+    # MappedInitializer samples each centroid from the (slightly lifted)
+    # mask density, so all splats start on the flag.
     msk = Splimage(
         "../assets/por_cro_offside_masked.png", mask_mode="A", as_mask=True
     ).to(device)
@@ -82,7 +96,8 @@ def get_primitive():
 def train():
     prev_H = 1080
     prev_W = 1080
-    # Images
+    # Target image, alpha mask (train and render only inside the flag), and
+    # a map of target fan angles used by the theta regularizer and nudge.
     tgt = Splimage("../assets/por_cro_offside.png").to(device)
     msk = Splimage(
         "../assets/por_cro_offside_masked.png", mask_mode="A", as_mask=True
@@ -95,9 +110,12 @@ def train():
         / 2
         + math.pi / 6
     )
-    # primitive
+    # Primitive
     prim = get_primitive()
-    # Rules
+    # Refinement rules, applied by the trainer around each optimizer step:
+    # cull faded splats, split oversized areas and high-gradient regions,
+    # split by position via a blurred mask, and cap the total splat count.
+    # Staggered intervals make the rules fire on different epochs.
     alpha_cull = ThresholdFilter(
         attr_name="alphas", threshold=0.1, interval=52, comparison="OVER"
     )
@@ -111,11 +129,13 @@ def train():
     prim.add_split_rule(grad_split_lo)
     prim.add_split_rule(area_split)
 
-    # Rule processors
+    # Rule processor: scale the area-split criterion by the mask so
+    # splitting concentrates inside the flag.
     map_proc = MapCriterionProcessor(msk.expand(20) * 0.6 + 0.4)
     area_split.add_processor(map_proc)
 
-    # Sampler
+    # Training sampler: subsamples pixels per patch using the blurred mask
+    # as probability map; max_batch bounds the per-step compute budget.
     sampler = TrainSampler(
         target=tgt.resize(200, 360),
         patch_size=64,
@@ -125,7 +145,8 @@ def train():
         jitter_coords=False,
     )
 
-    # Callbacks
+    # Callbacks: live preview rendered at the display resolution (with
+    # padding to match the previous viewport) plus a console stats panel.
     H_pad = int(prev_H - tgt.H)
     W_pad = int(prev_W - tgt.W)
     vis_sampler = Sampler(
@@ -146,18 +167,23 @@ def train():
         StatsPanel(),
     ]
 
-    # Optim
+    # Optimizer with per-parameter learning-rate modifiers and a cosine
+    # schedule with warm restarts; the 100 pre-steps start training
+    # mid-cycle instead of at the peak learning rate.
     optimizer = OptimizerWrapper(prim, AdamW, lr=0.005)
     scheduler = CosineAnnealingWarmRestarts(
         optimizer._optimizer, T_0=200, eta_min=0.001
     )
     for _ in range(100):
         scheduler.step()
+    # Image-level losses on full renders; both use blurred masks as
+    # per-pixel weights so the background does not dominate the loss.
     losses = {
         "L2": (L2ImageLoss(msk.blur(40)), 1.0),
         "SSIM": (SSIMImageLoss(msk.blur(200)), 0.1),
     }
-    # Regularizers
+    # Regularizers: push the two fan colors apart, keep alphas high, pull
+    # thetas toward the angle map, and keep splat areas in a sane range.
     prim.add_regularizer(
         "Color Push",
         AttributeProximity(["color_1", "color_2"], mode="PUSH"),
@@ -173,7 +199,8 @@ def train():
         "Area_floor", AttributeRange("areas", min=1e-6, max=0.25), weight=1.0
     )
 
-    # Trainer
+    # Trainer drives epochs; the loop body runs after every epoch and
+    # nudges thetas toward the angle map (momentum 0.995).
     trainer = Trainer(
         run_name,
         prim,
@@ -197,10 +224,12 @@ def train():
 
 
 def generate():
-    # Load primitive
+    """Re-render the trained primitive at high resolution with decorative
+    sample processors and a blended rasterizer."""
     gen_H = 2040
     gen_W = 3600
     gen_padding = (1536, 1536, 712, 800)
+    # Load the trained checkpoint; adapt splat size to the larger canvas.
     prim = get_primitive()
     prim.load(run_folder / "primitive.pt")
     prim.requires_grad_(False)
@@ -219,11 +248,16 @@ def generate():
         / 2
         + math.pi / 6
     )
+    # Pin fan angles from the angle map and fade small splats so they do
+    # not dominate the high-res render.
     prim.thetas.weight = theta_msk.mask_sample(prim.centroids)[0].squeeze(-1)
     areas = prim.areas
     areas_weight = 1 - ((areas - areas.min()) / (areas.max() - areas.min())) * 0.5 + 0.5
     prim.alphas.weight = prim.alphas * areas_weight
 
+    # Sample processors for the final look: a slight weight sharpening
+    # inside the flag, plain weights outside, and a color skew toward a
+    # fixed palette; MultiSampleProcessor blends them by mask weight.
     exp_proc = FlexibleSampleProcessor(
         lambda s, p: SampleOutput(s.rgb, s.weights**1.1, s.co)
     )
@@ -242,6 +276,8 @@ def generate():
         normalize_weights=True,
     )
 
+    # Rays: modulate weights along each splat's dominant axis to draw
+    # radial rays at high frequency.
     def _radius_proc(s, p, x, y):
         ax_1, ax_2 = p.axes
         ax = torch.where((p.range_1 > p.range_2)[:, None], ax_1, ax_2)  # [N, 2]
@@ -256,7 +292,8 @@ def generate():
     )
     prim.add_sample_processor(radius_proc)
 
-    # Rasterizer
+    # Rasterizer blend: weighted aggregation inside the flag, Monte Carlo
+    # sampling outside.
     rast = MultiRasterizer(
         [
             (WeightedRasterizer(), msk.blur(200)),
@@ -264,7 +301,7 @@ def generate():
         ]
     )
 
-    # Sampler
+    # Inference sampler over the large canvas, then render and save.
     sampler = Sampler(
         gen_H,
         gen_W,
