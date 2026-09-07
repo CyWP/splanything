@@ -1,9 +1,3 @@
-"""Fit a CubicFanPrimitive to the Portugal/Croatia target image, then
-re-render the trained primitive at high resolution.
-
-Run with ``-t/--train`` to train and ``-g/--generate`` to re-render.
-"""
-
 import argparse
 import torch
 import math
