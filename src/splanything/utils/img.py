@@ -1061,6 +1061,53 @@ class ImgUtils:
                 )
         return torch.cat(imgs, dim=cat_dim)
 
+    @staticmethod
+    def compute_grad(
+        img: Float[Tensor, "B C H W"],
+    ) -> Tuple[Float[Tensor, "B C H W"], Float[Tensor, "B C H W"]]:
+        """Compute per-channel x and y gradients using3×3 Sobel kernels.
+
+        Args:
+            img: Input image tensor ``(B, C, H, W)``.
+
+        Returns:
+            ``(grad_x, grad_y)`` — each ``(B, C, H, W)``. *grad_x*
+            measures horizontal change (left→right) and *grad_y*
+            measures vertical change (top→bottom).
+        """
+        B, C, H, W = img.shape
+        sobel_x = torch.tensor(
+            [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]],
+            dtype=img.dtype, device=img.device,
+        ).reshape(1, 1, 3, 3).repeat(C, 1, 1, 1)
+        sobel_y = torch.tensor(
+            [[-1, -2, -1], [0, 0, 0], [1, 2, 1]],
+            dtype=img.dtype, device=img.device,
+        ).reshape(1, 1, 3, 3).repeat(C, 1, 1, 1)
+        padded = F.pad(img, (1, 1, 1, 1), mode="replicate")
+        grad_x = F.conv2d(padded, sobel_x, groups=C)
+        grad_y = F.conv2d(padded, sobel_y, groups=C)
+        return grad_x, grad_y
+
+    @staticmethod
+    def gradient_magnitude(
+        img: Float[Tensor, "B C H W"],
+    ) -> Float[Tensor, "B 1 H W"]:
+        """Compute gradient magnitude using3×3 Sobel kernels.
+
+        The magnitude is ``sqrt(gx² + gy²)`` averaged across channels,
+        yielding a single-channel edge-strength map.
+
+        Args:
+            img: Input image tensor ``(B, C, H, W)``.
+
+        Returns:
+            Gradient magnitude ``(B, 1, H, W)``.
+        """
+        grad_x, grad_y = ImgUtils.compute_grad(img)
+        mag = torch.sqrt(grad_x ** 2 + grad_y ** 2)
+        return mag.mean(dim=1, keepdim=True)
+
 
 _SplimageInput = Union[
     np.ndarray,
@@ -1771,6 +1818,60 @@ class Splimage:
         self._invalidate()
         return self
 
+    def scale(
+        self,
+        factor: Union[float, Tuple[float, float]],
+        mode: str = "bilinear",
+        align_corners: Optional[bool] = None,
+        antialias: bool = False,
+    ) -> Splimage:
+        """Scale image by a factor. Returns new Splimage.
+
+        Args:
+            factor: Uniform scale (single float) or ``(scale_H, scale_W)``
+                tuple for non-uniform scaling. Values > 1 enlarge, < 1 shrink.
+            mode: Interpolation mode.
+            align_corners: Optional align_corners for F.interpolate.
+            antialias: Apply antialiasing on downscaling.
+
+        Returns:
+            New Splimage at the scaled resolution.
+        """
+        if isinstance(factor, (int, float)):
+            sh = sw = float(factor)
+        else:
+            sh, sw = factor
+        H = max(1, round(self.H * sh))
+        W = max(1, round(self.W * sw))
+        return self.resize(H, W, mode=mode, align_corners=align_corners, antialias=antialias)
+
+    def scale_(
+        self,
+        factor: Union[float, Tuple[float, float]],
+        mode: str = "bilinear",
+        align_corners: Optional[bool] = None,
+        antialias: bool = False,
+    ) -> Splimage:
+        """Scale image in-place.
+
+        Args:
+            factor: Uniform scale (single float) or ``(scale_H, scale_W)``
+                tuple for non-uniform scaling.
+            mode: Interpolation mode.
+            align_corners: Optional align_corners for F.interpolate.
+            antialias: Apply antialiasing on downscaling.
+
+        Returns:
+            ``self``, with the tensor replaced by the scaled result.
+        """
+        if isinstance(factor, (int, float)):
+            sh = sw = float(factor)
+        else:
+            sh, sw = factor
+        H = max(1, round(self.H * sh))
+        W = max(1, round(self.W * sw))
+        return self.resize_(H, W, mode=mode, align_corners=align_corners, antialias=antialias)
+
     def convolve(
         self,
         kernel: Float[Tensor, "C G KH KW"],
@@ -2120,3 +2221,29 @@ class Splimage:
         self._is_mask = True
         self._invalidate()
         return self
+
+    def grad(
+        self, stack: bool = False,
+    ) -> Union[Tuple[Float[Tensor, "B C H W"], Float[Tensor, "B C H W"]], Float[Tensor, "B 2C H W"]]:
+        """Compute per-channel x/y gradients via3×3 Sobel.
+
+        Args:
+            stack: If True, concatenate grad_x and grad_y along the
+                channel dimension, returning ``(B, 2*C, H, W)``. If
+                False (default), return the ``(grad_x, grad_y)`` tuple.
+
+        Returns:
+            Gradient tensors.
+        """
+        gx, gy = ImgUtils.compute_grad(self._tensor)
+        if stack:
+            return torch.cat([gx, gy], dim=1)
+        return gx, gy
+
+    def grad_mag(self) -> Float[Tensor, "B 1 H W"]:
+        """Compute gradient magnitude via3×3 Sobel.
+
+        Returns:
+            Gradient magnitude ``(B, 1, H, W)``.
+        """
+        return ImgUtils.gradient_magnitude(self._tensor)

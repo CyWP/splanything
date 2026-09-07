@@ -3,6 +3,7 @@
 from .base import Primitive, cached_property, nomask, ParamDef
 from .cubic_fan import CubicFanPrimitive
 from .gaussian import GaussianPrimitive
+from .polygon import PolygonPrimitive
 from .radial_freq import RadialFreqPrimitive
 from .star import StarPrimitive
 from .meta import MetaPrimitive
@@ -18,6 +19,7 @@ __all__ = [
     "MetaPrimitive",
     "CubicFanPrimitive",
     "GaussianPrimitive",
+    "PolygonPrimitive",
     "RadialFreqPrimitive",
     "StarPrimitive",
     "initializers",
