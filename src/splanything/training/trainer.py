@@ -8,14 +8,12 @@ from typing import Any, Callable, Dict, Optional, Sequence, Tuple
 
 import torch
 from torch import Tensor
-from jaxtyping import Float
 
 from ..primitives.base import Primitive
 from ..rendering.sampler import Sampler
 from ..utils.img import Splimage
-from .losses.base import ImageLoss
+from .losses.base import Loss
 from .optimizer import OptimizerWrapper
-from .sampler import TrainSampler
 from .stages import (
     PRE_STEP,
     TRAIN_END,
@@ -139,8 +137,8 @@ class Trainer:
     step-by-step execution.
 
     Attributes:
-        target: Ground truth image tensor (B, C, H, W).
         primitive: Trainable primitive to optimize.
+        sampler: Sampler rendering the full image each epoch.
         optimizer: PyTorch optimizer updating primitive parameters.
         scheduler: Optional learning rate scheduler.
         losses: Dict of loss functions to combine.
@@ -149,6 +147,8 @@ class Trainer:
         run_folder: Path to folder for this training run.
 
     Notes:
+        - Each epoch renders the full image once; each loss owns its own
+          target and is called on the rendered output only.
         - Callbacks are triggered at TRAIN_START, TRAIN_END, EPOCH_START,
           EPOCH_END, BATCH_START, BATCH_END, PRE_STEP.
         - Use `stop()` to halt training early (e.g., from interrupt callback).
@@ -158,23 +158,24 @@ class Trainer:
         self,
         name: str,
         primitive: Primitive,
-        sampler: TrainSampler,
+        sampler: Sampler,
         optimizer: OptimizerWrapper,
-        losses: Dict[str, Tuple[Callable, float]],
+        losses: Dict[str, Tuple[Loss, float]],
         callbacks: Sequence[Callable],
         base_folder: Optional[Path] = None,
         scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
         low_vram: bool = False,
-        adjust_prim: bool = True,
     ):
         """Initialise the trainer and create its run folder.
 
         Args:
             name: Run name; the run folder is ``base_folder / name``.
             primitive: Trainable primitive to optimize.
-            sampler: TrainSampler providing target patches and coordinates.
+            sampler: Sampler used to render the full image each epoch;
+                use ``Sampler.train_sampler`` to build a training one.
             optimizer: OptimizerWrapper updating the primitive's parameters.
-            losses: Dict mapping loss name to ``(loss_fn, weight)``.
+            losses: Dict mapping loss name to ``(loss_fn, weight)``; each
+                loss owns its own target image.
             callbacks: Callbacks invoked at each training stage.
             base_folder: Base directory for checkpoints and logs.
             scheduler: Optional LR scheduler stepped once per epoch.
@@ -182,9 +183,8 @@ class Trainer:
             adjust_prim: If True, resize the primitive to the sampler
                 canvas via ``adjust_to_canvas`` on init.
 
-        Notes:
-            - Warns when ``losses`` mixes per-sample ``Loss`` and
-              full-image ``ImageLoss`` entries.
+        Raises:
+            ValueError: If any loss entry is not a :class:`Loss` instance.
         """
 
         self.name = name
@@ -193,22 +193,9 @@ class Trainer:
         self.run_folder.mkdir(parents=True, exist_ok=True)
         self.primitive = primitive
         self.sampler = sampler
-        if adjust_prim:
-            self.primitive.adjust_to_canvas(self.sampler.H, self.sampler.W)
-        self.target = sampler.target_img
         self.optimizer = optimizer
         self.losses = losses
         self.callbacks = callbacks
-
-        has_image = any(isinstance(fn, ImageLoss) for fn, _ in losses.values())
-        has_sample = any(not isinstance(fn, ImageLoss) for fn, _ in losses.values())
-        if has_image and has_sample:
-            _logger.warning(
-                "Mixed loss types: losses contain both Loss and ImageLoss. "
-                "ImageLoss expects full BCHW images while Loss expects "
-                "per-sample patches. This may produce incorrect results."
-            )
-        self._use_image_losses = has_image
         self.scheduler = scheduler
         self.logs: Dict[int, Dict[str, Any]] = dict()
         self.epoch: int = 0
@@ -311,21 +298,15 @@ class Trainer:
     def exec_epoch(self) -> Dict[str, Any]:
         """Execute one training epoch.
 
-        Runs: zero_grad -> forward -> compute losses -> backward -> step.
-        Triggers callbacks at EPOCH_START, PRE_STEP, EPOCH_END.
-
-        Dispatches to per-sample or full-image path depending on whether
-        any loss is an :class:`ImageLoss`.
+        Renders the full image once, computes losses, discards their values
+        into logs, and runs the backward pass. Triggers callbacks at
+        EPOCH_START, PRE_STEP, EPOCH_END.
         """
         self.last_epoch_image = None
         self.last_losses = {name: 0.0 for name in self.losses.keys()}
         self.last_regularizers = {}
-        self.epoch_backward_passes = 0
         self.call_back(EPOCH_START)
-        if self._use_image_losses:
-            self._exec_epoch_image()
-        else:
-            self._exec_epoch_sample()
+        self._exec_batch()
         self.call_back(PRE_STEP)
         with self._apply_refinements():
             self._compute_regularizers()
@@ -336,45 +317,31 @@ class Trainer:
         with torch.no_grad():
             self.call_back(EPOCH_END)
 
-    def _exec_epoch_sample(self):
-        """Per-sample training loop.
+    def _exec_batch(self):
+        """Single-batch training step.
 
-        Iterates over sampler patches, computing losses on each batch.
+        Renders the complete image, sets ``last_output`` as a BCHW tensor,
+        computes losses, and runs the backward pass.
         """
-        for gen, target, batch_co in self.sampler.samples(self.primitive):
-            self.call_back(BATCH_START)
-            self.last_output = gen
-            self.last_target = target
-            self._compute_losses(co=batch_co)
-            self.call_back(BATCH_END)
-
-    def _exec_epoch_image(self):
-        """Full-image training loop.
-
-        Renders the complete image, sets ``last_output`` and
-        ``last_target`` as BCHW tensors, and computes losses once.
-        """
-        gen, target = self.sampler.rasterize(self.primitive)
+        gen = self.sampler.rasterize(self.primitive)
         self.last_output = gen
-        self.last_target = target.image()
         self.call_back(BATCH_START)
         self._compute_losses()
         self.call_back(BATCH_END)
 
-    def _compute_losses(self, co: Optional[Float[Tensor, "B 2"]] = None):
+    def _compute_losses(self):
         last_losses = {
-            name: weight * loss_fn(self.last_output, self.last_target, co=co)
+            name: weight * loss_fn(self.last_output)
             for name, (loss_fn, weight) in self.losses.items()
         }
         last_loss = sum(last_losses.values())
         last_loss.backward()
         for name, loss in last_losses.items():
             self.last_losses[name] += loss.item()
-        self.epoch_backward_passes += 1
 
     def _compute_regularizers(self):
         regs = self.primitive.compute_regularization()
-        reg = sum(regs.values()) * float(self.epoch_backward_passes)
+        reg = sum(regs.values())
         if isinstance(reg, Tensor):
             reg.backward()
         for name, r in regs.items():

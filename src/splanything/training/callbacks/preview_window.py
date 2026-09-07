@@ -40,12 +40,14 @@ class PreviewWindow(Callback):
         max_batch: Optional[int] = None,
         low_vram: Optional[bool] = None,
         save_folder: Optional[Path] = None,
+        reference_image: Optional[Splimage] = None,
     ):
         """Initialize preview window callback.
 
         Args:
             frequency: Update window every N epochs (default: 1).
-            show_target: If True, show target side-by-side with output.
+            show_target: If True, show the reference image side-by-side
+                with the output.
             window_title: Title for the preview window.
             sampler: Optional Sampler used to rasterize the preview image.
                 If None, the trainer's sampler is used.
@@ -54,10 +56,19 @@ class PreviewWindow(Callback):
             max_batch: Max batch size passed to the sampler's rasterize.
             low_vram: Low-VRAM flag passed to the sampler's rasterize.
             save_folder: Optional folder to save preview PNGs to.
+            reference_image: Optional reference image shown when
+                ``show_target`` is True.
+
+        Raises:
+            ValueError: If ``show_target`` is True but
+                ``reference_image`` is None.
         """
         super().__init__()
         self.frequency = max(frequency, 1)
         self.show_target = show_target
+        if show_target and reference_image is None:
+            raise ValueError("show_target=True requires 'reference_image' to be set.")
+        self.reference_image = reference_image
         self.window_title = window_title
         self.sampler = sampler
         self.H = H
@@ -90,7 +101,7 @@ class PreviewWindow(Callback):
             if cur_H != self.H or cur_W != self.W:
                 img = img.resize(self.H, self.W)
         if self.show_target:
-            tgt_img = trainer.sampler.target_img
+            tgt_img = self.reference_image
             t_H, t_W = tgt_img.shape[-2:]
             i_H, i_W = img.shape[-2:]
             if t_H != i_H or t_W != i_W:

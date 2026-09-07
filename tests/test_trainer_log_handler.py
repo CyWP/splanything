@@ -3,7 +3,7 @@
 The handler attaches to the top-level ``splanything`` package logger so it
 catches records emitted by any submodule whose dotted name begins with
 ``splanything.`` (``splanything.training.trainer``, ``splanything.training.optimizer``,
-``splanything.training.sampler``, ``splanything.primitives.*`` ...) via the
+``splanything.primitives.*`` ...) via the
 standard logger-hierarchy propagation.
 """
 
@@ -17,7 +17,8 @@ from torch.optim import AdamW
 
 import splanything.training.trainer as trainer_mod
 from splanything.primitives import RadialFreqPrimitive
-from splanything.training import Trainer, TrainSampler, OptimizerWrapper
+from splanything.rendering import Sampler
+from splanything.training import Trainer, OptimizerWrapper
 from splanything.training.losses import L2Loss
 from splanything.training.trainer import TrainerLogHandler
 from splanything.utils.img import Splimage
@@ -36,13 +37,12 @@ def device():
 def _make_minimal_trainer(device, name="probe"):
     prim = RadialFreqPrimitive(size=2).to(device)
     target = torch.rand(1, 4, 8, 8, device=device)
-    sampling_map = torch.full((1, 1, 8, 8), 1.0, device=device)
-    sampler = TrainSampler(
-        target=Splimage(target),
+    sampler = Sampler.train_sampler(
+        8,
+        8,
         patch_size=8,
         max_batch=10000,
-        sampling_map=Splimage(sampling_map),
-        low_vram=False,
+        device=device,
     )
     optimizer = OptimizerWrapper(prim, AdamW, lr=0.01)
     return Trainer(
@@ -50,7 +50,7 @@ def _make_minimal_trainer(device, name="probe"):
         primitive=prim,
         sampler=sampler,
         optimizer=optimizer,
-        losses={"L2": (L2Loss(), 1.0)},
+        losses={"L2": (L2Loss(Splimage(target)), 1.0)},
         callbacks=[],
         base_folder="/tmp/splanything_log_handler",
     )
@@ -65,7 +65,7 @@ def test_trainer_attaches_handler_to_package_logger():
     """``Trainer.__init__`` must attach the handler to the top-level
     ``splanything`` package logger so logs from ANY submodule
     (``splanything.training.trainer``, ``splanything.training.optimizer``,
-    ``splanything.training.sampler``, ``splanything.primitives.*`` ...)
+    ``splanything.primitives.*`` ...)
     that propagate up the dotted-name hierarchy are captured."""
     trainer = _make_minimal_trainer(torch.device("cpu"), name="wiring")
     try:

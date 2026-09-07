@@ -8,7 +8,7 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from pathlib import Path
 
-from splanything.training import Trainer, TrainSampler, OptimizerWrapper
+from splanything.training import Trainer, OptimizerWrapper
 from splanything.primitives import (
     CubicFanPrimitive,
 )
@@ -24,7 +24,7 @@ from splanything.training.refinement.rules import (
     MapSplit,
     PrimitiveCeiling,
 )
-from splanything.training.losses import L2ImageLoss, SSIMImageLoss
+from splanything.training.losses import L2Loss, SSIMLoss
 from splanything.training.regularizers import (
     AttributeProximity,
     AttributeRange,
@@ -106,6 +106,7 @@ def train():
     )
     # Primitive
     prim = get_primitive()
+    prim.adjust_to_canvas(tgt.H, tgt.W)
     # Refinement rules, applied by the trainer around each optimizer step:
     # cull faded splats, split oversized areas and high-gradient regions,
     # split by position via a blurred mask, and cap the total splat count.
@@ -128,15 +129,15 @@ def train():
     map_proc = MapCriterionProcessor(msk.expand(20) * 0.6 + 0.4)
     area_split.add_processor(map_proc)
 
-    # Training sampler: subsamples pixels per patch using the blurred mask
-    # as probability map; max_batch bounds the per-step compute budget.
-    sampler = TrainSampler(
-        target=tgt.resize(200, 360),
+    # Training sampler: renders the full image each epoch; max_batch
+    # bounds the per-step compute budget.
+    train_H, train_W = 200, 360
+    sampler = Sampler.train_sampler(
+        train_H,
+        train_W,
         patch_size=64,
         max_batch=100000,
-        sampling_map=msk.blur(30) * 0.2 + 1e-5,
-        low_vram=True,
-        jitter_coords=False,
+        device=device,
     )
 
     # Callbacks: live preview rendered at the display resolution (with
@@ -170,11 +171,12 @@ def train():
     )
     for _ in range(100):
         scheduler.step()
-    # Image-level losses on full renders; both use blurred masks as
-    # per-pixel weights so the background does not dominate the loss.
+    # Losses own their target image; blurred masks are per-pixel weight
+    # maps so the background does not dominate the loss.
+    train_tgt = tgt.resize(train_H, train_W)
     losses = {
-        "L2": (L2ImageLoss(msk.blur(40)), 1.0),
-        "SSIM": (SSIMImageLoss(msk.blur(200)), 0.1),
+        "L2": (L2Loss(train_tgt, weight_map=msk.blur(40)), 1.0),
+        "SSIM": (SSIMLoss(train_tgt, weight_map=msk.blur(200)), 0.1),
     }
     # Regularizers: push the two fan colors apart, keep alphas high, pull
     # thetas toward the angle map, and keep splat areas in a sane range.
@@ -204,7 +206,6 @@ def train():
         losses=losses,
         callbacks=train_callbacks,
         base_folder=base_folder,
-        adjust_prim=True,
     )
     for _ in trainer.train():
         with torch.no_grad():

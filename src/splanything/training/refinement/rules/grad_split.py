@@ -5,7 +5,7 @@ from jaxtyping import Bool, Float
 from torch import Tensor
 
 from ....primitives.base import Primitive
-from ..base import RefinementRule, SplitRule
+from ..base import SplitRule
 
 
 class GradSplit(SplitRule):

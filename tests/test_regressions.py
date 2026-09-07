@@ -8,18 +8,18 @@ loop), so several NameError/shape bugs survived unnoticed:
 * ``MappedSampleProcessor.process_map`` passed undefined ``distances`` to a
   custom ``proc_fn``; ``process`` also never dropped the batch dim of
   ``mask_sample`` output.
-* ``TrainSampler.jitter_target`` had an undefined ``co_patches``, a
-  normalized-vs-pixel unit mismatch, and an inverted y-sign between the
-  coordinate shift and the image shift.
 * ``MetaPrimitive.forward`` skipped local-frame culling (all coordinates
   were sampled regardless of the ``inside`` test).
+
+Note: the ``TrainSampler.jitter_target`` regression test was removed when
+the ``TrainSampler`` class itself was deleted; target handling moved to
+the individual loss functions.
 """
 
 from __future__ import annotations
 
 import pytest
 import torch
-import torch.nn.functional as F
 
 from splanything.primitives import GaussianPrimitive, RadialFreqPrimitive
 from splanything.primitives.initializers.flex import FlexibleInitializer
@@ -27,7 +27,6 @@ from splanything.primitives.meta import MetaPrimitive
 from splanything.rendering.processors.flex import FlexibleSampleProcessor
 from splanything.rendering.processors.mapped import MappedSampleProcessor
 from splanything.rendering.sample_output import SampleOutput
-from splanything.training.sampler import TrainSampler
 from splanything.utils.img import Splimage
 
 
@@ -97,13 +96,9 @@ def test_mapped_sample_processor_proc_fn_receives_sampled_vals():
 
     def proc_fn(sample, primitive, sampled_vals):
         seen["vals"] = sampled_vals
-        return SampleOutput(
-            rgb=sample.rgb, weights=sample.weights * 2.0, co=sample.co
-        )
+        return SampleOutput(rgb=sample.rgb, weights=sample.weights * 2.0, co=sample.co)
 
-    proc = MappedSampleProcessor(
-        FlexibleSampleProcessor(lambda s, p: s), mp, proc_fn
-    )
+    proc = MappedSampleProcessor(FlexibleSampleProcessor(lambda s, p: s), mp, proc_fn)
     sample = SampleOutput(
         rgb=torch.rand(4, 3, 3), weights=torch.rand(4, 3), co=torch.rand(4, 2)
     )
@@ -112,43 +107,6 @@ def test_mapped_sample_processor_proc_fn_receives_sampled_vals():
     assert seen["vals"].shape == (3,)
     assert torch.allclose(seen["vals"], torch.full((3,), 0.5))
     assert torch.allclose(out.weights, sample.weights * 2.0)
-
-
-# --------------------------------------------------------------------------- #
-# TrainSampler.jitter_target
-# --------------------------------------------------------------------------- #
-
-
-def test_jitter_target_matches_image_at_jittered_coords():
-    """The jittered target patches must equal a direct bilinear sample of
-    the image at the jittered coordinates (pairing of co/image shifts)."""
-    H, W, ps = 32, 32, 16
-    img = torch.arange(H * W, dtype=torch.float32).reshape(1, 1, H, W)
-    img = img.repeat(1, 4, 1, 1)  # (1, 4, H, W)
-    sampler = TrainSampler(target=Splimage(img), patch_size=ps, jitter_coords=True)
-    co_before = sampler.co_patches.clone()
-
-    co_j, tgt = sampler.jitter_target()
-
-    # co_patches must not be mutated (clone, no drift across epochs).
-    assert torch.equal(sampler.co_patches, co_before)
-    assert not torch.equal(co_j, co_before)
-    dy = co_j[..., 0] - co_before[..., 0]
-    dx = co_j[..., 1] - co_before[..., 1]
-    assert dy.abs().max() <= 1 / (2 * H) + 1e-6
-    assert dx.abs().max() <= 1 / (2 * W) + 1e-6
-
-    # Independent check: bilinear sample the image at the jittered coords.
-    # Sample per coordinate (patch order is patch-major, not image row-major),
-    # with border padding to match extract_image_patches' jitter sampling.
-    flat = co_j.reshape(H * W, 2)
-    grid = torch.stack([flat[:, 1] * 2 - 1, flat[:, 0] * 2 - 1], dim=-1)
-    grid = grid.view(1, -1, 1, 2)
-    expected = F.grid_sample(
-        img, grid, align_corners=False, padding_mode="border"
-    )  # (1, C, H*W, 1)
-    expected = expected.squeeze(-1).permute(0, 2, 1).reshape(H * W, 4)
-    assert torch.allclose(tgt.reshape(H * W, 4), expected, atol=1e-3)
 
 
 # --------------------------------------------------------------------------- #

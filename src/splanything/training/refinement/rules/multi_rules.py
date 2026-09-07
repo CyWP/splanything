@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import functools
 import logging
-from typing import Any, Callable, List, Literal, Optional
+from typing import Callable, List, Literal, Optional
 
 import torch
 from jaxtyping import Bool, Float
 from torch import Tensor
 
 from ....primitives.base import Primitive
-from ..base import FilterRule, RefinementRule, SplitRule
+from ..base import FilterRule, SplitRule
 
 _logger = logging.getLogger(__name__)
 

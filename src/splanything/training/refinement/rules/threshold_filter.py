@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from typing import Literal, Optional, Union
 
-import torch
 from jaxtyping import Bool, Float
 from torch import Tensor
 
 from ....primitives.base import Primitive
-from ..base import FilterRule, RefinementRule
+from ..base import FilterRule
 
 
 class ThresholdFilter(FilterRule):

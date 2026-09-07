@@ -63,7 +63,7 @@ processors (`-g/--generate`).
 | --- | --- |
 | `splanything.primitives` | `Primitive` base class, `CubicFanPrimitive`, `GaussianPrimitive`, `RadialFreqPrimitive`, `StarPrimitive`, `MetaPrimitive`, `MultiPrimitive`; `initializers/` and `splitters/` |
 | `splanything.rendering` | `Sampler`, `SampleOutput`; `rasterizers/`, `processors/` |
-| `splanything.training` | `Trainer`, `TrainSampler`, `OptimizerWrapper`; `losses/`, `callbacks/`, `refinement/`, `regularizers/` |
+| `splanything.training` | `Trainer`, `OptimizerWrapper`; `losses/`, `callbacks/`, `refinement/`, `regularizers/` |
 | `splanything.utils` | `ImgUtils` static image ops and the `Splimage` image wrapper |
 
 The top-level package exposes only these subpackages plus `ImgUtils`; import classes from

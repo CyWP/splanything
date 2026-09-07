@@ -1,34 +1,28 @@
 import argparse
 import torch
 import math
-from typing import Tuple
-from jaxtyping import Float
-from torch import Tensor
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from pathlib import Path
 
-from splanything.training import Trainer, TrainSampler, OptimizerWrapper
+from splanything.training import Trainer, OptimizerWrapper
 from splanything.primitives import PolygonPrimitive
-from splanything.primitives.initializers import Initializer, MappedInitializer
+from splanything.primitives.initializers import MappedInitializer
 from splanything.training.callbacks import (
     PreviewWindow,
     StatsPanel,
 )
 from splanything.training.refinement.rules import (
     ThresholdFilter,
-    ThresholdSplit,
     GradSplit,
     MapSplit,
     PrimitiveCeiling,
 )
-from splanything.training.losses import L2ImageLoss, SSIMImageLoss
+from splanything.training.losses import L2Loss
 from splanything.training.regularizers import (
-    AttributeProximity,
     AttributeRange,
     AttributeMap,
 )
-from splanything.training.refinement.processors import MapCriterionProcessor
 from splanything.utils.img import ImgUtils, Splimage
 from splanything.rendering import Sampler, SampleOutput
 from splanything.rendering.processors import (
@@ -84,7 +78,6 @@ def train():
     trap_msk_smoothed = trap_msk.expand(-150).blur(100)
     grad_x, grad_y = trap_msk_smoothed.grad()
     theta_tgt = Splimage(torch.atan2(grad_y, grad_x))
-    breakpoint()
     theta_weights = Splimage(trap_msk_smoothed.grad_mag())
     # Primitive
     prim = get_primitive()
@@ -93,7 +86,7 @@ def train():
     alpha_cull = ThresholdFilter(
         attr_name="alphas", threshold=0.1, interval=52, comparison="OVER"
     )
-    area_split = ThresholdSplit("areas", 0.03, interval=83, comparison="OVER")
+    # area_split = ThresholdSplit("areas", 0.03, interval=83, comparison="OVER")
     grad_split_lo = GradSplit(threshold=0.005, interval=201, attr_names=["centroids"])
     map_split = MapSplit(msk.blur(10) * 0.1 + 0.005, interval=23)
     ceiling = PrimitiveCeiling(1000)
@@ -108,15 +101,15 @@ def train():
     # map_proc = MapCriterionProcessor(msk.expand(20) * 0.6 + 0.4)
     # area_split.add_processor(map_proc)
 
-    # Training sampler: subsamples pixels per patch using the blurred mask
-    # as probability map; max_batch bounds the per-step compute budget.
-    sampler = TrainSampler(
-        target=(tgt * trap_msk).resize(204, 360),
+    # Training sampler: renders the full image each epoch; max_batch
+    # bounds the per-step compute budget.
+    train_H, train_W = 204, 360
+    sampler = Sampler.train_sampler(
+        train_H,
+        train_W,
         patch_size=64,
         max_batch=100000,
-        sampling_map=msk.blur(30) * 0.2 + 1e-5,
-        low_vram=True,
-        jitter_coords=False,
+        device=device,
     )
 
     # Callbacks: live preview rendered at the display resolution (with
@@ -150,11 +143,12 @@ def train():
     )
     for _ in range(100):
         scheduler.step()
-    # Image-level losses on full renders; both use blurred masks as
-    # per-pixel weights so the background does not dominate the loss.
+    # Losses own their target image; the blurred mask is a per-pixel
+    # weight map, and the masked target restricts the loss to the flag.
+    train_tgt = (tgt * trap_msk).resize(train_H, train_W)
     losses = {
-        "L2": (L2ImageLoss(), 1.0),
-        # "SSIM": (SSIMImageLoss(trap_msk), 0.1),
+        "L2": (L2Loss(train_tgt, weight_map=msk.blur(30)), 1.0),
+        # "SSIM": (SSIMLoss(train_tgt), 0.1),
     }
     # Regularizers
     prim.add_regularizer("Alpha Target", AttributeRange("alphas", min=0.6), weight=12.0)
