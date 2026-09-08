@@ -1,7 +1,7 @@
 """Cubic fan primitive: oriented two-color gradient fans."""
 
 from __future__ import annotations
-from typing import Tuple, TYPE_CHECKING
+from typing import Tuple
 
 import torch
 from jaxtyping import Bool, Float, Integer

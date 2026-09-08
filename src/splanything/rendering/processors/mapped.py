@@ -81,5 +81,5 @@ class MappedSampleProcessor(SampleProcessor):
         if self._proc_fn is not None:
             return self._proc_fn(sample, primitive, sampled_vals)
         return SampleOutput(
-            rgb=sample.rgb, weights=sample.weights * sampled_vals[:, None], co=sample.co
+            rgb=sample.rgb, weights=sample.weights * sampled_vals[None, :], co=sample.co
         )

@@ -386,14 +386,16 @@ class ImgUtils:
             if jh != 0.0 or jw != 0.0:
                 B, C, H, W = img.shape
                 theta = torch.tensor(
-                    [[[1.0, 0.0, 2.0 * jw / W],
-                      [0.0, 1.0, -2.0 * jh / H]]],
+                    [[[1.0, 0.0, 2.0 * jw / W], [0.0, 1.0, -2.0 * jh / H]]],
                     device=img.device,
                     dtype=img.dtype,
                 ).expand(B, -1, -1)
                 grid = F.affine_grid(theta, img.size(), align_corners=False)
                 img = F.grid_sample(
-                    img, grid, mode="bilinear", padding_mode="border",
+                    img,
+                    grid,
+                    mode="bilinear",
+                    padding_mode="border",
                     align_corners=False,
                 )
 
@@ -1042,9 +1044,7 @@ class ImgUtils:
             ValueError: Fewer than two images or mismatched shapes.
         """
         if len(imgs) < 2:
-            raise ValueError(
-                f"stack requires at least 2 images, got {len(imgs)}."
-            )
+            raise ValueError(f"stack requires at least 2 images, got {len(imgs)}.")
         cat_dim = 2 if dim == "H" else 3
         other_dim = 3 if dim == "H" else 2
         ref_B, ref_C = imgs[0].shape[:2]
@@ -1076,14 +1076,24 @@ class ImgUtils:
             measures vertical change (top→bottom).
         """
         B, C, H, W = img.shape
-        sobel_x = torch.tensor(
-            [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]],
-            dtype=img.dtype, device=img.device,
-        ).reshape(1, 1, 3, 3).repeat(C, 1, 1, 1)
-        sobel_y = torch.tensor(
-            [[-1, -2, -1], [0, 0, 0], [1, 2, 1]],
-            dtype=img.dtype, device=img.device,
-        ).reshape(1, 1, 3, 3).repeat(C, 1, 1, 1)
+        sobel_x = (
+            torch.tensor(
+                [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]],
+                dtype=img.dtype,
+                device=img.device,
+            )
+            .reshape(1, 1, 3, 3)
+            .repeat(C, 1, 1, 1)
+        )
+        sobel_y = (
+            torch.tensor(
+                [[-1, -2, -1], [0, 0, 0], [1, 2, 1]],
+                dtype=img.dtype,
+                device=img.device,
+            )
+            .reshape(1, 1, 3, 3)
+            .repeat(C, 1, 1, 1)
+        )
         padded = F.pad(img, (1, 1, 1, 1), mode="replicate")
         grad_x = F.conv2d(padded, sobel_x, groups=C)
         grad_y = F.conv2d(padded, sobel_y, groups=C)
@@ -1105,8 +1115,63 @@ class ImgUtils:
             Gradient magnitude ``(B, 1, H, W)``.
         """
         grad_x, grad_y = ImgUtils.compute_grad(img)
-        mag = torch.sqrt(grad_x ** 2 + grad_y ** 2)
+        mag = torch.sqrt(grad_x**2 + grad_y**2)
         return mag.mean(dim=1, keepdim=True)
+
+    @staticmethod
+    def stochastic_sample(
+        img: Float[Tensor, "B C H_in W_in"],
+        H: int,
+        W: int,
+    ) -> Float[Tensor, "B C H W"]:
+        """Resample an image to ``(H, W)`` via stochastic neighbourhood sampling.
+
+        Each output pixel ``i`` (row) / ``j`` (col) is assigned the source
+        neighbourhood ``[(i-0.5)*s_y, (i+0.5)*s_y) x [(j-0.5)*s_x, (j+0.5)*s_x)``
+        where ``s = in_size / out_size`` is the per-axis scaling factor, and
+        samples the source at a uniformly drawn coordinate inside it using
+        bilinear (sub-pixel) interpolation. Downsampling therefore picks a
+        random point within each pixel's footprint, while upsampling jitters
+        sub-pixel around the corresponding source location. Jitter is drawn
+        independently per batch element and spatial position.
+
+        Args:
+            img: Input image tensor ``(B, C, H_in, W_in)``.
+            H: Target height.
+            W: Target width.
+
+        Returns:
+            Resampled image ``(B, C, H, W)``.
+
+        Raises:
+            ValueError: If ``H`` or ``W`` is not strictly positive.
+        """
+        if H < 1 or W < 1:
+            raise ValueError(f"Target size must be positive, got H={H}, W={W}.")
+
+        B, C, H_in, W_in = img.shape
+        device = img.device
+        dtype = img.dtype
+
+        scale_y = H_in / H
+        scale_x = W_in / W
+
+        y_starts = torch.arange(H, device=device, dtype=dtype) * scale_y
+        x_starts = torch.arange(W, device=device, dtype=dtype) * scale_x
+
+        rand_y = torch.rand(B, H, W, device=device, dtype=dtype) * scale_y
+        rand_x = torch.rand(B, H, W, device=device, dtype=dtype) * scale_x
+
+        y = y_starts.view(1, H, 1) + rand_y - scale_y / 2
+        x = x_starts.view(1, 1, W) + rand_x - scale_x / 2
+
+        gy = (y + 0.5) / H_in * 2.0 - 1.0
+        gx = (x + 0.5) / W_in * 2.0 - 1.0
+
+        grid = torch.stack([gx, gy], dim=-1)  # (B, H, W, 2) as (x, y)
+        return F.grid_sample(
+            img, grid, mode="bilinear", padding_mode="border", align_corners=False
+        )
 
 
 _SplimageInput = Union[
@@ -1843,7 +1908,9 @@ class Splimage:
             sh, sw = factor
         H = max(1, round(self.H * sh))
         W = max(1, round(self.W * sw))
-        return self.resize(H, W, mode=mode, align_corners=align_corners, antialias=antialias)
+        return self.resize(
+            H, W, mode=mode, align_corners=align_corners, antialias=antialias
+        )
 
     def scale_(
         self,
@@ -1870,7 +1937,29 @@ class Splimage:
             sh, sw = factor
         H = max(1, round(self.H * sh))
         W = max(1, round(self.W * sw))
-        return self.resize_(H, W, mode=mode, align_corners=align_corners, antialias=antialias)
+        return self.resize_(
+            H, W, mode=mode, align_corners=align_corners, antialias=antialias
+        )
+
+    def stochastic_sample(self, H: int, W: int) -> Splimage:
+        """Resample to ``(H, W)`` via stochastic neighbourhood sampling.
+
+        Each output pixel samples the source at a uniformly drawn
+        coordinate within its assigned neighbourhood (see
+        :meth:`ImgUtils.stochastic_sample`). Jitter is drawn
+        independently per batch element and spatial position.
+
+        Args:
+            H: Target height.
+            W: Target width.
+
+        Returns:
+            New Splimage at the target resolution.
+        """
+        new = Splimage(ImgUtils.stochastic_sample(self._tensor, H, W))
+        new._padding = self._padding
+        new._mask_mode = self._mask_mode
+        return new
 
     def convolve(
         self,
@@ -2020,14 +2109,20 @@ class Splimage:
         if (mask < 0).any():
             raise ValueError("sample_points expects non-negative mask values.")
         weights = mask.reshape(B, -1)  # (B, H*W)
-        indices = torch.multinomial(weights, num_points, replacement=True)  # (B, num_points)
+        indices = torch.multinomial(
+            weights, num_points, replacement=True
+        )  # (B, num_points)
         co = ImgUtils.gen_px_coords(H, W, mask.device)  # (2, H, W)
         co_flat = co.reshape(2, -1).T  # (H*W, 2)
         sampled = co_flat[indices]  # (B, num_points, 2)
         if noise:
             sampled = sampled.clone()
-            sampled[..., 0].add_((torch.rand(B, num_points, device=mask.device) - 0.5) / H)
-            sampled[..., 1].add_((torch.rand(B, num_points, device=mask.device) - 0.5) / W)
+            sampled[..., 0].add_(
+                (torch.rand(B, num_points, device=mask.device) - 0.5) / H
+            )
+            sampled[..., 1].add_(
+                (torch.rand(B, num_points, device=mask.device) - 0.5) / W
+            )
         return sampled
 
     def extract_image_patches(
@@ -2223,8 +2318,12 @@ class Splimage:
         return self
 
     def grad(
-        self, stack: bool = False,
-    ) -> Union[Tuple[Float[Tensor, "B C H W"], Float[Tensor, "B C H W"]], Float[Tensor, "B 2C H W"]]:
+        self,
+        stack: bool = False,
+    ) -> Union[
+        Tuple[Float[Tensor, "B C H W"], Float[Tensor, "B C H W"]],
+        Float[Tensor, "B 2C H W"],
+    ]:
         """Compute per-channel x/y gradients via3×3 Sobel.
 
         Args:

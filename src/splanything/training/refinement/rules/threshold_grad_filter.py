@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Literal, Optional, Union
 
-import torch
 from jaxtyping import Bool, Float
 from torch import Tensor
 

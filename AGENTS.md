@@ -39,16 +39,14 @@ splanything/
 │       │       ├── mapped.py
 │       │       ├── multi.py
 │       │       └── flex.py
-│       ├── training/      # Training orchestration
-│       │   ├── trainer.py       # Trainer + TrainerLogHandler/Formatter
-│       │   ├── sampler.py       # TrainSampler
-│       │   ├── optimizer.py     # OptimizerWrapper
-│       │   ├── stages.py        # Stage name constants
-│       │   ├── losses/          # Loss functions
-│       │   │   ├── base.py      # Loss / ImageLoss bases
-│       │   │   ├── l1.py, l2.py
-│       │   │   ├── l1_image.py, l2_image.py
-│       │   │   └── ssim.py
+│   ├── training/      # Training orchestration
+│   │   ├── trainer.py       # Trainer + TrainerLogHandler/Formatter
+│   │   ├── optimizer.py     # OptimizerWrapper
+│   │   ├── stages.py        # Stage name constants
+│   │   ├── losses/          # Loss functions
+│   │   │   ├── base.py      # Loss base (image-level)
+│   │   │   ├── l1.py, l2.py
+│   │   │   └── ssim.py
 │       │   ├── callbacks/       # Training callbacks
 │       │   │   ├── base.py
 │       │   │   ├── loop_control.py
@@ -83,7 +81,7 @@ splanything/
 - **Core Framework**: `Trainer` class managing optimization loops with callbacks
 - **Primitives**: Geometric image representations (`CubicFanPrimitive`, `GaussianPrimitive`, `RadialFreqPrimitive`, `StarPrimitive`, `MultiPrimitive`, `MetaPrimitive`) as trainable modules
 - **Rendering**: `Sampler` (patch grid + batching), `Rasterizer` strategies for aggregating per-primitive samples into RGBA, `SampleOutput` data flow, sample `Processor` transforms
-- **Loss Functions**: per-sample (`L1Loss`, `L2Loss`) and image-level (`L1ImageLoss`, `L2ImageLoss`, `SSIMImageLoss`) losses
+- **Loss Functions**: image-level losses (`L1Loss`, `L2Loss`, `SSIMLoss`); subclasses own their reference targets
 - **Callbacks**: Loop management, checkpoints, previews, logging
 - **Refinement Rules**: Adaptive optimization (`FilterRule`/`SplitRule` subclasses such as `ThresholdFilter`, `GradSplit`, `IsoSplit`, `BoundsFilter`)
 - **Regularizers**: Attribute-based parameter regularization (`AttributeProximity`, `AttributeRange`, `AttributeMap`, `AttributeAttractor`)
@@ -109,7 +107,8 @@ splanything/
   ```python
   from splanything.primitives import CubicFanPrimitive
   from splanything.rendering.rasterizers import WeightedRasterizer
-  from splanything.training import Trainer, TrainSampler, OptimizerWrapper
+  from splanything.training import Trainer, OptimizerWrapper
+  from splanything.rendering import Sampler
   from splanything.training.losses import L2Loss
   from splanything.utils.img import ImgUtils, Splimage
   ```
@@ -118,13 +117,13 @@ splanything/
 ### Images
 - `Splimage` (in `utils/img.py`) is the canonical image wrapper: BCHW torch tensor in [0, 1], lazy conversion to numpy/PIL/mask, cached and invalidated on mutation
 - `ImgUtils` provides static image ops (`extract_image_patches`, `assemble_patches`, `get_patches`, `gen_px_coords`, ...)
-- `TrainSampler` / `MapFilter` / `MapSplit` expect `Splimage` instances, not raw tensors
+- `MapFilter` / `MapSplit` expect `Splimage` instances, not raw tensors
 
 ### Training
 - `Trainer` takes `name`, `primitive`, `sampler`, `optimizer`, `losses`, `callbacks`, `base_folder`, optional `scheduler`
-- `losses` is a `Dict[str, Tuple[Callable, float]]` mapping a name to `(loss_fn, weight)`
-- `Loss` (per-sample) and `ImageLoss` (full BCHW image) are distinct bases; the trainer dispatches per-sample patches vs. full-image rendering based on which types are present
-- `TrainSampler(target=Splimage, patch_size=...)` handles patch creation and feeds `(output, target, batch_co)` batches to the trainer; optional `sampling_map` (Splimage) does per-pixel Bernoulli subsampling
+- `losses` is a `Dict[str, Tuple[Loss, float]]` mapping a name to `(loss_fn, weight)`; every entry must be a `Loss` instance
+- Each loss owns its own reference target (`Splimage`) and is called on the rendered BCHW output only: `loss_fn(last_output)` — the trainer holds no target
+- `exec_epoch` renders the full image once (`sampler.rasterize`), computes losses, one backward pass, then the optimizer step
 - `OptimizerWrapper(primitive, OptimizerClass, **kwargs)` wraps a torch optimizer; `filter`/`split` keep its state aligned with the primitive
 - Saves trainer state, primitive state, and logs at end of training
 - Handles `KeyboardInterrupt` gracefully
@@ -134,7 +133,7 @@ splanything/
 ### Rendering
 - `Sampler` (in `rendering/sampler.py`) renders a primitive over a patch grid: `rasterize()` returns a BCHW tensor, `render()` returns a `Splimage`
 - Requires `H`, `W`, `patch_size` for rendering at a specified resolution
-- `TrainSampler` subclasses it for training with target extraction and subsampling
+- `Sampler.train_sampler(...)` is a factory classmethod building a sampler for training-time rendering (`low_vram` and `verbose` forced off)
 
 ### Callbacks
 - Base `Callback` ABC: subclasses define `_stages` (class attribute) and implement `run(trainer, stage)`; `__call__` dispatches only when the stage is in `_stages`
@@ -150,7 +149,7 @@ splanything/
 
 ### No CLI / No Config Loader
 - The package is a library; users write Python scripts
-- Factory functions and YAML config loaders have been removed
+- Global factory functions and YAML config loaders have been removed (the `Sampler.train_sampler` classmethod is the single sanctioned construction helper)
 - ComfyUI-specific code has been removed
 
 ### Development

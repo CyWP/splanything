@@ -1,4 +1,5 @@
 """MetaPrimitive: per-splat affine transforms plus color/alpha modulation over a child primitive."""
+
 from __future__ import annotations
 
 import logging

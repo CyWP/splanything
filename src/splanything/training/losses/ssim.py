@@ -1,19 +1,19 @@
-"""SSIM image-level loss."""
+"""SSIM loss."""
 
 from typing import Literal, Optional
-
 from jaxtyping import Float
 from torch import Tensor
 
 from ...utils.img import ImgUtils, Splimage
-from .base import ImageLoss
+from .base import Loss
 
 
-class SSIMImageLoss(ImageLoss):
-    """Structural Similarity Index (SSIM) image loss.
+class SSIMLoss(Loss):
+    """Structural Similarity Index (SSIM) loss.
 
-    Computes ``1 - SSIM`` per-pixel, where SSIM ∈ [-1, 1].
-    Loss ∈ [0, 2] (0 = identical).
+    Computes ``1 - SSIM`` per-pixel, where SSIM ∈ [-1, 1] against the
+    loss's own target. Loss ∈ [0, 2] (0 = identical). The target is
+    resized to the output resolution in ``compute``.
 
     Attributes:
         kernel_size (int): Gaussian kernel side length.
@@ -26,6 +26,7 @@ class SSIMImageLoss(ImageLoss):
 
     def __init__(
         self,
+        target: Splimage,
         weight_map: Optional[Splimage] = None,
         reduction: Literal["mean", "sum", "none"] = "mean",
         kernel_size: int = 11,
@@ -34,12 +35,14 @@ class SSIMImageLoss(ImageLoss):
         """Initialize the loss.
 
         Args:
+            target: Reference image the output is compared against.
             weight_map: Optional spatial weight map.
             reduction: Reduction mode — ``"mean"``, ``"sum"``, or ``"none"``.
             kernel_size: Gaussian kernel side length.
             sigma: Gaussian kernel standard deviation.
         """
         super().__init__(weight_map=weight_map, reduction=reduction)
+        self.target = target
         self.kernel_size = kernel_size
         self.sigma = sigma
         kernel = ImgUtils.gaussian_kernel(kernel_size, [sigma, sigma])
@@ -48,16 +51,17 @@ class SSIMImageLoss(ImageLoss):
     def compute(
         self,
         x: Float[Tensor, "B C H W"],
-        target: Float[Tensor, "B C H W"],
     ) -> Float[Tensor, "B C H W"]:
-        """Compute SSIM loss map between output and target.
+        """Compute SSIM loss map between target and output.
+
+        The target is resized to the output resolution first.
 
         Args:
             x: Model output (B, C, H, W).
-            target: Ground truth target (B, C, H, W).
 
         Returns:
             Per-pixel ``1 - SSIM`` (B, C, H, W).
         """
-        ssim_map = ImgUtils.SSIM(x, target, self.kernel)
+        tgt = self.target.to(x.device).resize(*x.shape[-2:]).image()
+        ssim_map = ImgUtils.SSIM(x, tgt, self.kernel)
         return 1.0 - ssim_map

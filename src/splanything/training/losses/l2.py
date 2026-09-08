@@ -1,29 +1,50 @@
-"""L2 (mean squared error) per-sample loss."""
+"""L2 (squared error) loss."""
 
+from typing import Literal, Optional
 from jaxtyping import Float
 from torch import Tensor
 
+from ...utils.img import Splimage
 from .base import Loss
 
 
 class L2Loss(Loss):
-    """L2 (Mean Squared Error) loss.
+    """L2 (Squared Error) loss.
 
-    Computes the mean squared difference between target and output pixels.
+    Per-pixel squared difference between the loss's target and the
+    model output. Requires a ``target``;
+    it is resized to the output resolution in ``compute``.
     """
+
+    def __init__(
+        self,
+        target: Splimage,
+        weight_map: Optional[Splimage] = None,
+        reduction: Literal["mean", "sum", "none"] = "mean",
+    ):
+        """Initialize the loss.
+
+        Args:
+            target: Reference image the output is compared against.
+            weight_map: Optional spatial weight map.
+            reduction: Reduction mode — ``"mean"``, ``"sum"``, or ``"none"``.
+        """
+        super().__init__(weight_map=weight_map, reduction=reduction)
+        self.target = target
 
     def compute(
         self,
-        x: Float[Tensor, "..."],
-        target: Float[Tensor, "..."],
-    ) -> Float[Tensor, ""]:
-        """Compute L2 loss between output and target.
+        x: Float[Tensor, "B C H W"],
+    ) -> Float[Tensor, "B C H W"]:
+        """Compute L2 loss map between target and output.
+
+        The target is resized to the output resolution first.
 
         Args:
-            x: Model output.
-            target: Ground truth target.
+            x: Model output (B, C, H, W).
 
         Returns:
-            Mean squared error scalar.
+            Per-pixel squared error (B, C, H, W).
         """
-        return ((target - x) ** 2).mean()
+        tgt = self.target.to(x.device).resize(*x.shape[-2:]).image()
+        return (tgt - x) ** 2

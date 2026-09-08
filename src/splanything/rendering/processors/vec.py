@@ -27,7 +27,12 @@ class VecSampleProcessor(SampleProcessor):
         processor: SampleProcessor,
         proc_fn: Optional[
             Callable[
-                [SampleOutput, Primitive, Float[Tensor, "Nc Np"], Float[Tensor, "Nc Np"]],
+                [
+                    SampleOutput,
+                    Primitive,
+                    Float[Tensor, "Nc Np"],
+                    Float[Tensor, "Nc Np"],
+                ],
                 SampleOutput,
             ]
         ] = None,
@@ -67,9 +72,7 @@ class VecSampleProcessor(SampleProcessor):
             diff = primitive.centroids[None, :, :] - self._ref_coords[:, None, :]
         dx = diff[..., 0]
         dy = diff[..., 1]
-        return self.process_vec(
-            self._processor(sample, primitive), primitive, dx, dy
-        )
+        return self.process_vec(self._processor(sample, primitive), primitive, dx, dy)
 
     def process_vec(
         self,
@@ -92,7 +95,7 @@ class VecSampleProcessor(SampleProcessor):
         """
         if self._proc_fn is not None:
             return self._proc_fn(sample, primitive, dx, dy)
-        dists = dx ** 2 + dy ** 2
+        dists = dx**2 + dy**2
         return SampleOutput(
             rgb=sample.rgb,
             weights=torch.exp(-dists.min(dim=0).values)[None, :] * sample.weights,

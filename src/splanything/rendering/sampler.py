@@ -1,4 +1,5 @@
 """Patch-grid rendering of primitives to full images."""
+
 from __future__ import annotations
 
 from typing import Iterator, Optional, Tuple, TYPE_CHECKING
@@ -186,13 +187,17 @@ class Sampler:
             return
         patch_mask_sums = patch_masks.sum(dim=1)  # [P,]
         i = 0
-        mask = torch.empty((len(p),), dtype=torch.bool, device=patches.device)
         while i < P:
             if verbose:
                 progress.update(task, completed=i)
             acc_patches = []
             co_size = 0
-            mask.zero_()
+            # Fresh mask per group: the mask is saved by autograd
+            # (IndexBackward0 of the primitive's masked indexing), so it
+            # must never be mutated in place across yields — otherwise a
+            # single end-of-epoch backward over all batches fails with an
+            # in-place version-counter error.
+            mask = torch.zeros((len(p),), dtype=torch.bool, device=patches.device)
             while (
                 i < P
                 and (mask.sum() + patch_mask_sums[i]).item() * (co_size + S) < max_batch
@@ -285,4 +290,46 @@ class Sampler:
         """
         return Splimage(
             self.rasterize(p, max_batch=max_batch, low_vram=low_vram, verbose=verbose)
+        )
+
+    @classmethod
+    def train_sampler(
+        cls,
+        H: int,
+        W: int,
+        patch_size: int = 32,
+        max_batch: Optional[int] = None,
+        rasterizer: Optional[Rasterizer] = None,
+        padding: Tuple[int, int, int, int] = (0, 0, 0, 0),
+        device: torch.device = torch.device("cpu"),
+    ) -> Sampler:
+        """Create a sampler configured for training-time rendering.
+
+        Training renders must be deterministic, silent, and grad-friendly,
+        so ``low_vram`` is forced off (keeps the autograd graph on one
+        device) and progress bars are disabled.
+
+        Args:
+            H: Image height.
+            W: Image width.
+            patch_size: Side length of square sampling patches.
+            max_batch: Coordinate-times-primitive budget per sample step;
+                None samples one patch per step.
+            rasterizer: Rasterizer aggregating SampleOutputs; defaults to
+                ``WeightedRasterizer``.
+            padding: Padding as (top, bottom, left, right).
+            device: Device for the patch coordinate tensors.
+
+        Returns:
+            Sampler configured for training.
+        """
+        return cls(
+            H,
+            W,
+            patch_size=patch_size,
+            max_batch=max_batch,
+            rasterizer=rasterizer,
+            padding=padding,
+            low_vram=False,
+            device=device,
         )

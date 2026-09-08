@@ -1,4 +1,5 @@
 """MultiPrimitive container grouping named child primitives."""
+
 from __future__ import annotations
 
 import logging

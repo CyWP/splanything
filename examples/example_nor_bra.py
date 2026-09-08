@@ -14,7 +14,7 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from pathlib import Path
 
-from splanything.training import Trainer, TrainSampler, OptimizerWrapper
+from splanything.training import Trainer, OptimizerWrapper
 from splanything.primitives import (
     MultiPrimitive,
     RadialFreqPrimitive,
@@ -114,6 +114,7 @@ def train():
     msk_blur10 = msk.blur(10)
     # Primitive
     prim = get_primitive()
+    # prim.adjust_to_canvas(tgt.H, tgt.W)
 
     # Refinement rules, applied by the trainer around each optimizer step:
     # cull faded and tiny splats, split by position via the blurred mask,
@@ -140,14 +141,14 @@ def train():
     grad_split_lo.add_processor(map_proc)
     grad_split_hi.add_processor(map_proc)
 
-    # Training sampler: subsamples pixels per patch using the blurred mask
-    # as probability map; max_batch bounds the per-step compute budget.
-    sampler = TrainSampler(
-        target=tgt,
+    # Training sampler: renders the full image each epoch; max_batch
+    # bounds the per-step compute budget.
+    sampler = Sampler.train_sampler(
+        tgt.H,
+        tgt.W,
         patch_size=128,
         max_batch=1000000,
-        sampling_map=msk_blur10 * 0.2 + 0.05,
-        low_vram=True,
+        device=device,
     )
 
     # Callbacks: live preview rendered at the display resolution (with
@@ -178,9 +179,10 @@ def train():
     scheduler = CosineAnnealingWarmRestarts(
         optimizer._optimizer, T_0=1000, eta_min=0.001
     )
-    # Per-sample loss: L2 on the subsampled pixel batches.
+    # Loss owns its target image; the blurred mask weights pixels inside
+    # the flag
     losses = {
-        "L2": (L2Loss(), 1.0),
+        "L2": (L2Loss(tgt, weight_map=msk_blur10), 1.0),
     }
     # Regularizers: push the radial colors apart, keep splat areas and
     # alphas high, and keep the star axes near a fixed ratio.
@@ -211,7 +213,6 @@ def train():
         losses=losses,
         callbacks=train_callbacks,
         base_folder=base_folder,
-        adjust_prim=False,
     )
     for _ in trainer.train():
         pass

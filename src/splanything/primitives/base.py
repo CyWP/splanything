@@ -1,4 +1,5 @@
 """Base ``Primitive`` class: parameter registration, mask-aware access, sampling, and refinement plumbing."""
+
 from __future__ import annotations
 
 import copy
