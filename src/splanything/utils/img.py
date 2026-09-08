@@ -1118,6 +1118,61 @@ class ImgUtils:
         mag = torch.sqrt(grad_x**2 + grad_y**2)
         return mag.mean(dim=1, keepdim=True)
 
+    @staticmethod
+    def stochastic_sample(
+        img: Float[Tensor, "B C H_in W_in"],
+        H: int,
+        W: int,
+    ) -> Float[Tensor, "B C H W"]:
+        """Resample an image to ``(H, W)`` via stochastic neighbourhood sampling.
+
+        Each output pixel ``i`` (row) / ``j`` (col) is assigned the source
+        neighbourhood ``[(i-0.5)*s_y, (i+0.5)*s_y) x [(j-0.5)*s_x, (j+0.5)*s_x)``
+        where ``s = in_size / out_size`` is the per-axis scaling factor, and
+        samples the source at a uniformly drawn coordinate inside it using
+        bilinear (sub-pixel) interpolation. Downsampling therefore picks a
+        random point within each pixel's footprint, while upsampling jitters
+        sub-pixel around the corresponding source location. Jitter is drawn
+        independently per batch element and spatial position.
+
+        Args:
+            img: Input image tensor ``(B, C, H_in, W_in)``.
+            H: Target height.
+            W: Target width.
+
+        Returns:
+            Resampled image ``(B, C, H, W)``.
+
+        Raises:
+            ValueError: If ``H`` or ``W`` is not strictly positive.
+        """
+        if H < 1 or W < 1:
+            raise ValueError(f"Target size must be positive, got H={H}, W={W}.")
+
+        B, C, H_in, W_in = img.shape
+        device = img.device
+        dtype = img.dtype
+
+        scale_y = H_in / H
+        scale_x = W_in / W
+
+        y_starts = torch.arange(H, device=device, dtype=dtype) * scale_y
+        x_starts = torch.arange(W, device=device, dtype=dtype) * scale_x
+
+        rand_y = torch.rand(B, H, W, device=device, dtype=dtype) * scale_y
+        rand_x = torch.rand(B, H, W, device=device, dtype=dtype) * scale_x
+
+        y = y_starts.view(1, H, 1) + rand_y - scale_y / 2
+        x = x_starts.view(1, 1, W) + rand_x - scale_x / 2
+
+        gy = (y + 0.5) / H_in * 2.0 - 1.0
+        gx = (x + 0.5) / W_in * 2.0 - 1.0
+
+        grid = torch.stack([gx, gy], dim=-1)  # (B, H, W, 2) as (x, y)
+        return F.grid_sample(
+            img, grid, mode="bilinear", padding_mode="border", align_corners=False
+        )
+
 
 _SplimageInput = Union[
     np.ndarray,
@@ -1885,6 +1940,26 @@ class Splimage:
         return self.resize_(
             H, W, mode=mode, align_corners=align_corners, antialias=antialias
         )
+
+    def stochastic_sample(self, H: int, W: int) -> Splimage:
+        """Resample to ``(H, W)`` via stochastic neighbourhood sampling.
+
+        Each output pixel samples the source at a uniformly drawn
+        coordinate within its assigned neighbourhood (see
+        :meth:`ImgUtils.stochastic_sample`). Jitter is drawn
+        independently per batch element and spatial position.
+
+        Args:
+            H: Target height.
+            W: Target width.
+
+        Returns:
+            New Splimage at the target resolution.
+        """
+        new = Splimage(ImgUtils.stochastic_sample(self._tensor, H, W))
+        new._padding = self._padding
+        new._mask_mode = self._mask_mode
+        return new
 
     def convolve(
         self,

@@ -14,11 +14,12 @@ from splanything.training.callbacks import (
 )
 from splanything.training.refinement.rules import (
     ThresholdFilter,
+    ThresholdSplit,
     GradSplit,
     MapSplit,
     PrimitiveCeiling,
 )
-from splanything.training.losses import L2Loss
+from splanything.training.losses import L2Loss, SSIMLoss
 from splanything.training.regularizers import (
     AttributeRange,
     AttributeMap,
@@ -29,7 +30,7 @@ from splanything.rendering.processors import (
     FlexibleSampleProcessor,
     MultiSampleProcessor,
     ColorSkewSampleProcessor,
-    VecSampleProcessor,
+    MappedSampleProcessor,
 )
 from splanything.rendering.rasterizers import (
     ProbabilisticRasterizer,
@@ -54,7 +55,7 @@ def get_primitive():
         "../assets/usa_aus_offside_masked.png", mask_mode="A", as_mask=True
     ).to(device)
     cubic = PolygonPrimitive(
-        size=20,
+        size=50,
         n_sides=3,
         initializers={
             "centroids": MappedInitializer(msk.blur(100)),
@@ -81,20 +82,20 @@ def train():
     theta_weights = Splimage(trap_msk_smoothed.grad_mag())
     # Primitive
     prim = get_primitive()
-    prim.scale(0.25)
+    prim.scale(0.08)
 
     alpha_cull = ThresholdFilter(
         attr_name="alphas", threshold=0.1, interval=52, comparison="OVER"
     )
-    # area_split = ThresholdSplit("areas", 0.03, interval=83, comparison="OVER")
-    grad_split_lo = GradSplit(threshold=0.005, interval=201, attr_names=["centroids"])
-    map_split = MapSplit(msk.blur(10) * 0.1 + 0.005, interval=23)
-    ceiling = PrimitiveCeiling(1000)
+    area_split = ThresholdSplit("areas", 0.03, interval=83, comparison="OVER")
+    grad_split_lo = GradSplit(threshold=0.002, interval=201, attr_names=["centroids"])
+    map_split = MapSplit(msk.blur(10) * 0.025 + 0.005, interval=87)
+    ceiling = PrimitiveCeiling(1500)
     prim.add_split_rule(map_split)
     prim.add_filter_rule(alpha_cull)
     prim.add_filter_rule(ceiling)
     prim.add_split_rule(grad_split_lo)
-    # prim.add_split_rule(area_split)
+    prim.add_split_rule(area_split)
 
     # Rule processor: scale the area-split criterion by the mask so
     # splitting concentrates inside the flag.
@@ -103,7 +104,7 @@ def train():
 
     # Training sampler: renders the full image each epoch; max_batch
     # bounds the per-step compute budget.
-    train_H, train_W = 204, 360
+    train_H, train_W = 407, 720
     sampler = Sampler.train_sampler(
         train_H,
         train_W,
@@ -126,10 +127,10 @@ def train():
     )
     train_callbacks = [
         PreviewWindow(
-            frequency=10,
+            frequency=1,
             show_target=False,
             sampler=vis_sampler,
-            # save_folder=run_folder / "train_preview",
+            save_folder=run_folder / "train_preview",
         ),
         StatsPanel(),
     ]
@@ -147,8 +148,14 @@ def train():
     # weight map, and the masked target restricts the loss to the flag.
     train_tgt = (tgt * trap_msk).resize(train_H, train_W)
     losses = {
-        "L2": (L2Loss(train_tgt, weight_map=msk.blur(30)), 1.0),
-        # "SSIM": (SSIMLoss(train_tgt), 0.1),
+        "L2": (L2Loss(train_tgt * trap_msk, weight_map=msk), 1.0),
+        # "SSIM": (
+        #     SSIMLoss(
+        #         train_tgt * (trap_msk.blur(100) - trap_msk).normalize(),
+        #         weight_map=msk.blur(100),
+        #     ),
+        #     -0.02,
+        # ),
     }
     # Regularizers
     prim.add_regularizer("Alpha Target", AttributeRange("alphas", min=0.6), weight=12.0)
@@ -172,7 +179,6 @@ def train():
         losses=losses,
         callbacks=train_callbacks,
         base_folder=base_folder,
-        adjust_prim=True,
     )
     for _ in trainer.train():
         pass
@@ -183,7 +189,7 @@ def generate():
     sample processors and a blended rasterizer."""
     gen_H = 2040
     gen_W = 3600
-    gen_padding = (1536, 1536, 712, 800)
+    gen_padding = (1280, 1792, 712, 800)
     # Load the trained checkpoint; adapt splat size to the larger canvas.
     prim = get_primitive()
     prim.load(run_folder / "primitive.pt")
@@ -191,70 +197,56 @@ def generate():
     prim = prim.to(device)
     prim.adjust_to_canvas(gen_H, gen_W)
     msk = (
-        Splimage("../assets/usa_aus_offside_masked.png", mask_mode="A", as_mask=True)
-        .to(device)
-        .resize(gen_H, gen_W)
-    )
-    theta_msk = (
         Splimage(
-            "../assets/usa_aus_offside_theta_mask.png", mask_mode="mean", as_mask=True
+            "../assets/usa_aus_offside_masked.png", mask_mode="A", as_mask=True
         ).to(device)
-        * math.pi
-        / 2
-        + math.pi / 6
+        # .resize(gen_H, gen_W)
     )
-    # Pin fan angles from the angle map and fade small splats so they do
-    # not dominate the high-res render.
-    prim.thetas.weight = theta_msk.mask_sample(prim.centroids)[0].squeeze(-1)
-    areas = prim.areas
-    areas_weight = 1 - ((areas - areas.min()) / (areas.max() - areas.min())) * 0.5 + 0.5
-    prim.alphas.weight = prim.alphas * areas_weight
+    trap_msk = Splimage(
+        "../assets/usa_aus_offside_trapeze.png", mask_mode="A", as_mask=True
+    ).to(device)
 
-    # Sample processors for the final look: a slight weight sharpening
-    # inside the flag, plain weights outside, and a color skew toward a
-    # fixed palette; MultiSampleProcessor blends them by mask weight.
     exp_proc = FlexibleSampleProcessor(
-        lambda s, p: SampleOutput(s.rgb, s.weights**1.1, s.co)
+        lambda s, p: SampleOutput(s.rgb, s.weights**2, s.co)
     )
     reg_proc = FlexibleSampleProcessor(lambda s, p: s)
     color_proc = ColorSkewSampleProcessor(
         torch.tensor(
             [[1.0, 0.65, 0.0], [0.25, 0.0, 1.0], [0.95, 0.8, 0.65], [0.0, 0.0, 0.0]]
         ).to(device),
-        sigma=4.0,
+        sigma=3.0,
         reduction="MIN",
         rescale=True,
     )
-
+    color_mod_proc = FlexibleSampleProcessor(
+        lambda s, p: SampleOutput(
+            torch.cos(
+                s.rgb
+                * torch.pi
+                * 25.0
+                / p.sigma.mean()
+                * s.weights.unsqueeze(-1)
+                * p.sigma[None, :, None]
+            )
+            * 0.5
+            + 0.5,
+            s.weights,
+            s.co,
+        )
+    )
+    pmsk = msk.pad((0, 300, 0, 0), "replicate")
     proc = MultiSampleProcessor(
-        [(exp_proc, msk.blur(40)), (reg_proc, 1 - msk.blur(40)), (color_proc, 2.0)],
+        [
+            (exp_proc, pmsk.blur(40)),
+            (reg_proc, 1 - pmsk.blur(40)),
+            (color_mod_proc, (1 - pmsk.blur(60)) * 0.35),
+            (color_proc, 2.0),
+        ],
         normalize_weights=True,
     )
+    map_proc = MappedSampleProcessor(proc, trap_msk.expand(50).blur(200))
 
-    # Rays: modulate weights along each splat's dominant axis to draw
-    # radial rays at high frequency.
-    def _radius_proc(s, p, x, y):
-        ax_1, ax_2 = p.axes
-        ax = torch.where((p.range_1 > p.range_2)[:, None], ax_1, ax_2)  # [N, 2]
-        delta = torch.stack([x, y], dim=-1)  # [Nc, N, 2]
-        proj = (delta * ax).sum(dim=-1)  # [Nc, N]
-        W = s.weights * (torch.cos(proj * 3000) * 0.4 + 0.6)
-        return SampleOutput(s.rgb, W, s.co)
-
-    radius_proc = VecSampleProcessor(
-        proc,
-        _radius_proc,
-    )
-    prim.add_sample_processor(radius_proc)
-
-    # Rasterizer blend: weighted aggregation inside the flag, Monte Carlo
-    # sampling outside.
-    rast = MultiRasterizer(
-        [
-            (WeightedRasterizer(), msk.blur(200)),
-            (ProbabilisticRasterizer(top_k=50), 1 - msk.blur(200)),
-        ]
-    )
+    prim.add_sample_processor(map_proc)
 
     # Inference sampler over the large canvas, then render and save.
     sampler = Sampler(
@@ -262,16 +254,16 @@ def generate():
         gen_W,
         patch_size=756,
         max_batch=10000000,
-        rasterizer=rast,
+        rasterizer=ProbabilisticRasterizer(top_k=10),
         padding=gen_padding,
         device=device,
         low_vram=False,
     )
 
     # Output
-    out = sampler.rasterize(prim, verbose=True)
-    img = ImgUtils.tensor2pil(out)
-    img.save(run_folder / "output.png")
+    img = Splimage(sampler.rasterize(prim, verbose=True))
+    img.to_pil().save(run_folder / "output.png")
+    img.stochastic_sample(1080, 1080).to_pil().save(run_folder / "output_down.png")
     print(f"Saved output to {run_folder}.")
 
 
